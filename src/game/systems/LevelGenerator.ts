@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { BIOMES, WORLD } from "../config/GameConfig";
+import { BIOMES, SLOPES, WORLD } from "../config/GameConfig";
 import {
   PlatformType,
   PLATFORM_DEFS,
@@ -135,14 +135,22 @@ export class LevelGenerator {
     const params = this.getDifficultyParams(altitude);
     const patternRoll = Math.random();
 
-    if (patternRoll < 0.2) {
+    // Distribution: Standard 25%, Rolling Hills 15%, Halfpipe 12%, ZigZag 12%,
+    // Launch Sequence 10%, Wall Jump 10%, Slope Run 8%, Bounce Chain 8%
+    if (patternRoll < 0.12) {
       this.generateZigZagPattern(params);
-    } else if (patternRoll < 0.35) {
+    } else if (patternRoll < 0.22) {
       this.generateWallJumpSection(params);
-    } else if (patternRoll < 0.5) {
+    } else if (patternRoll < 0.3) {
       this.generateSlopeRun(params);
-    } else if (patternRoll < 0.6) {
+    } else if (patternRoll < 0.38) {
       this.generateBounceChain(params);
+    } else if (patternRoll < 0.5) {
+      this.generateHalfpipeSection(params);
+    } else if (patternRoll < 0.6) {
+      this.generateLaunchSequence(params);
+    } else if (patternRoll < 0.75) {
+      this.generateRollingHills(params);
     } else {
       this.generateStandardPlatform(params);
     }
@@ -261,6 +269,135 @@ export class LevelGenerator {
       PlatformType.STANDARD,
     );
     this.lastPlatformY = rewardY;
+  }
+
+  private generateHalfpipeSection(params: DifficultyParams) {
+    const biomeKey = params.biomeKey;
+    const biomeDef = BIOMES[biomeKey as keyof typeof BIOMES];
+    const tint = biomeDef?.platform ?? 0xffaa44;
+
+    const width = Phaser.Math.Between(
+      SLOPES.HALF_PIPE_WIDTH.min,
+      SLOPES.HALF_PIPE_WIDTH.max,
+    );
+    const depth = Phaser.Math.Between(
+      SLOPES.HALF_PIPE_DEPTH.min,
+      SLOPES.HALF_PIPE_DEPTH.max,
+    );
+
+    const yGap = Phaser.Math.Between(params.minGap, params.maxGap);
+    const y = this.lastPlatformY - yGap;
+
+    // Center the halfpipe near the last X position, clamped to world bounds
+    const x = Math.max(
+      100,
+      Math.min(WORLD.WIDTH - 100 - width, this.lastPlatformX - width / 2),
+    );
+
+    // Halfpipe opens at y, bowl extends downward by depth
+    this.slopeManager.createHalfPipe(x, y, width, depth, tint);
+
+    this.lastPlatformY = y - depth;
+    this.lastPlatformX = x + width / 2;
+
+    // Exit platform above the halfpipe opening
+    const exitY = this.lastPlatformY - Phaser.Math.Between(80, 140);
+    this.createPlatform(this.lastPlatformX, exitY, 1.5, PlatformType.STANDARD);
+    this.lastPlatformY = exitY;
+  }
+
+  private generateLaunchSequence(params: DifficultyParams) {
+    const biomeKey = params.biomeKey;
+    const biomeDef = BIOMES[biomeKey as keyof typeof BIOMES];
+    const tint = biomeDef?.platform ?? 0xffaa44;
+
+    const rampCount = Phaser.Math.Between(2, 3);
+
+    for (let i = 0; i < rampCount; i++) {
+      const width = Phaser.Math.Between(
+        SLOPES.QUARTER_PIPE_WIDTH.min,
+        SLOPES.QUARTER_PIPE_WIDTH.max,
+      );
+      const height = Phaser.Math.Between(
+        SLOPES.QUARTER_PIPE_HEIGHT.min,
+        SLOPES.QUARTER_PIPE_HEIGHT.max,
+      );
+
+      const yGap = Phaser.Math.Between(40, 80);
+      const y = this.lastPlatformY - yGap;
+
+      const minX = Math.max(100, this.lastPlatformX - 300);
+      const maxX = Math.min(
+        WORLD.WIDTH - 100 - width,
+        this.lastPlatformX + 300,
+      );
+      const x = Phaser.Math.Between(Math.min(minX, maxX), Math.max(minX, maxX));
+
+      // Alternate directions so player zigzags upward
+      const direction: "left" | "right" = i % 2 === 0 ? "left" : "right";
+      this.slopeManager.createQuarterPipe(x, y, width, height, direction, tint);
+
+      this.lastPlatformY = y - height;
+      this.lastPlatformX = x + width / 2;
+    }
+
+    // Reward platform at the top of the launch sequence
+    const rewardY = this.lastPlatformY - Phaser.Math.Between(80, 140);
+    this.createPlatform(
+      this.lastPlatformX,
+      rewardY,
+      2.0,
+      PlatformType.STANDARD,
+    );
+    this.lastPlatformY = rewardY;
+  }
+
+  private generateRollingHills(params: DifficultyParams) {
+    const biomeKey = params.biomeKey;
+    const biomeDef = BIOMES[biomeKey as keyof typeof BIOMES];
+    const tint = biomeDef?.platform ?? 0xffaa44;
+
+    const hillCount = Phaser.Math.Between(2, 4);
+
+    for (let i = 0; i < hillCount; i++) {
+      const width = Phaser.Math.Between(
+        SLOPES.HILL_WIDTH.min,
+        SLOPES.HILL_WIDTH.max,
+      );
+      const height = Phaser.Math.Between(
+        SLOPES.HILL_HEIGHT.min,
+        SLOPES.HILL_HEIGHT.max,
+      );
+
+      // Small Y gaps between hills for smooth flowing terrain
+      const yGap = Phaser.Math.Between(20, 50);
+      const y = this.lastPlatformY - yGap;
+
+      const minX = Math.max(100, this.lastPlatformX - 250);
+      const maxX = Math.min(
+        WORLD.WIDTH - 100 - width,
+        this.lastPlatformX + 250,
+      );
+      const x = Phaser.Math.Between(Math.min(minX, maxX), Math.max(minX, maxX));
+
+      this.slopeManager.createHill(x, y, width, height, tint);
+
+      // Platform on top of each hill peak for landing
+      this.createPlatform(
+        x + width / 2,
+        y - height + 10,
+        0.6,
+        PlatformType.STANDARD,
+      );
+
+      this.lastPlatformY = y - height;
+      this.lastPlatformX = x + width / 2;
+    }
+
+    // Safety platform after the hills
+    const safeY = this.lastPlatformY - Phaser.Math.Between(60, 100);
+    this.createPlatform(this.lastPlatformX, safeY, 1.5, PlatformType.STANDARD);
+    this.lastPlatformY = safeY;
   }
 
   private createPlatform(

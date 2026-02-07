@@ -90,6 +90,19 @@ export const SLOPES = {
   SLIDE_GRAVITY_MULT: 0.5,
   MAX_SLOPE_ANGLE: 45,
   SNAP_TOLERANCE: 8,
+
+  // Curve segment counts (quality vs performance)
+  QUARTER_PIPE_SEGMENTS: 12,
+  HILL_SEGMENTS: 16,
+  HALF_PIPE_SEGMENTS: 20,
+
+  // Curve dimension ranges (used by LevelGenerator)
+  QUARTER_PIPE_WIDTH: { min: 150, max: 350 },
+  QUARTER_PIPE_HEIGHT: { min: 80, max: 180 },
+  HILL_WIDTH: { min: 250, max: 500 },
+  HILL_HEIGHT: { min: 60, max: 130 },
+  HALF_PIPE_WIDTH: { min: 300, max: 600 },
+  HALF_PIPE_DEPTH: { min: 80, max: 180 },
 } as const;
 
 export const PLATFORM_CONFIG = {
