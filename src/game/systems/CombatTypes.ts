@@ -1,192 +1,1192 @@
-import { ClassType } from '../config/ClassConfig';
+import { ClassType } from "../config/ClassConfig";
 
 export const AttackType = {
-    LIGHT: 'LIGHT',
-    HEAVY: 'HEAVY',
-    SPECIAL: 'SPECIAL'
+  LIGHT: "LIGHT",
+  HEAVY: "HEAVY",
+  SPECIAL: "SPECIAL",
 } as const;
-export type AttackType = typeof AttackType[keyof typeof AttackType];
+export type AttackType = (typeof AttackType)[keyof typeof AttackType];
 
 export const AttackDirection = {
-    NEUTRAL: 'NEUTRAL',
-    UP: 'UP',
-    DOWN: 'DOWN'
+  NEUTRAL: "NEUTRAL",
+  UP: "UP",
+  DOWN: "DOWN",
 } as const;
-export type AttackDirection = typeof AttackDirection[keyof typeof AttackDirection];
+export type AttackDirection =
+  (typeof AttackDirection)[keyof typeof AttackDirection];
 
 export interface HitboxConfig {
-    width: number;
-    height: number;
-    offsetX: number; // Relative to player center, assumes facing right
-    offsetY: number;
-    duration: number; // ms
+  width: number;
+  height: number;
+  offsetX: number; // Relative to player center, assumes facing right
+  offsetY: number;
+  duration: number; // ms
 }
 
 export interface AttackDefinition {
-    id: string;
-    damageMultiplier: number; // Multiplier of base damage
-    knockback: { x: number; y: number };
-    hitstun: number; // ms
-    startup: number; // ms before hitbox active
-    recovery: number; // ms after hitbox ends before acting
-    hitbox: HitboxConfig;
-    animationKey?: string; // Placeholder for future animation
-    color: number; // Debug color
+  id: string;
+  damageMultiplier: number; // Multiplier of base damage
+  knockback: { x: number; y: number };
+  hitstun: number; // ms
+  startup: number; // ms before hitbox active
+  recovery: number; // ms after hitbox ends before acting
+  hitbox: HitboxConfig;
+  animationKey?: string; // Placeholder for future animation
+  color: number; // Debug color
 }
 
 export interface ComboNode {
-    attack: AttackDefinition;
-    next: {
-        [key in AttackType]?: string; // Map input to next AttackDefinition ID
-    };
+  attack: AttackDefinition;
+  next: {
+    [key in AttackType]?: string; // Map input to next AttackDefinition ID
+  };
 }
 
 export interface ClassCombatConfig {
-    groundAttacks: {
-        [key in AttackType]: {
-            [key in AttackDirection]: string; // Maps to AttackDefinition ID
-        }
+  groundAttacks: {
+    [key in AttackType]: {
+      [key in AttackDirection]: string; // Maps to AttackDefinition ID
     };
-    airAttacks: {
-        [key in AttackType]: {
-            [key in AttackDirection]: string;
-        }
+  };
+  airAttacks: {
+    [key in AttackType]: {
+      [key in AttackDirection]: string;
     };
-    attacks: Record<string, AttackDefinition>; // All available attacks by ID
-    combos: Record<string, ComboNode>; // Combo trees starting from specific attacks
+  };
+  attacks: Record<string, AttackDefinition>; // All available attacks by ID
+  combos: Record<string, ComboNode>; // Combo trees starting from specific attacks
 }
 
 // Placeholder configurations for classes (can be moved to a config file later)
 export const COMBAT_CONFIG: Record<ClassType, ClassCombatConfig> = {
-    [ClassType.MONK]: {
-        groundAttacks: {
-            [AttackType.LIGHT]: {
-                [AttackDirection.NEUTRAL]: 'monk_jab_1',
-                [AttackDirection.UP]: 'monk_uppercut',
-                [AttackDirection.DOWN]: 'monk_low_kick'
-            },
-            [AttackType.HEAVY]: {
-                [AttackDirection.NEUTRAL]: 'monk_dash_punch',
-                [AttackDirection.UP]: 'monk_high_kick',
-                [AttackDirection.DOWN]: 'monk_sweep'
-            },
-            [AttackType.SPECIAL]: {
-                [AttackDirection.NEUTRAL]: 'monk_blast',
-                [AttackDirection.UP]: 'monk_rising_blast',
-                [AttackDirection.DOWN]: 'monk_ground_slam'
-            }
-        },
-        airAttacks: {
-            [AttackType.LIGHT]: {
-                [AttackDirection.NEUTRAL]: 'monk_air_kick',
-                [AttackDirection.UP]: 'monk_air_up_kick',
-                [AttackDirection.DOWN]: 'monk_dive_kick'
-            },
-            [AttackType.HEAVY]: {
-                [AttackDirection.NEUTRAL]: 'monk_air_heavy',
-                [AttackDirection.UP]: 'monk_air_up_heavy',
-                [AttackDirection.DOWN]: 'monk_dive_bomb'
-            },
-            [AttackType.SPECIAL]: {
-                [AttackDirection.NEUTRAL]: 'monk_air_blast',
-                [AttackDirection.UP]: 'monk_air_rising',
-                [AttackDirection.DOWN]: 'monk_meteor'
-            }
-        },
-        attacks: {
-            'monk_jab_1': {
-                id: 'monk_jab_1',
-                damageMultiplier: 0.8,
-                knockback: { x: 100, y: -50 },
-                hitstun: 200,
-                startup: 50,
-                recovery: 100,
-                hitbox: { width: 40, height: 30, offsetX: 30, offsetY: 0, duration: 100 },
-                color: 0xffff00
-            },
-            'monk_jab_2': {
-                id: 'monk_jab_2',
-                damageMultiplier: 0.9,
-                knockback: { x: 150, y: -50 },
-                hitstun: 250,
-                startup: 50,
-                recovery: 100,
-                hitbox: { width: 40, height: 30, offsetX: 30, offsetY: 0, duration: 100 },
-                color: 0xffaa00
-            },
-            'monk_jab_3': {
-                id: 'monk_jab_3',
-                damageMultiplier: 1.2,
-                knockback: { x: 400, y: -200 },
-                hitstun: 400,
-                startup: 100,
-                recovery: 300,
-                hitbox: { width: 50, height: 40, offsetX: 40, offsetY: 0, duration: 150 },
-                color: 0xff0000
-            },
-            // ... Add other attacks as needed, using defaults for now
-            'monk_uppercut': {
-                id: 'monk_uppercut',
-                damageMultiplier: 1.0,
-                knockback: { x: 50, y: -500 },
-                hitstun: 400,
-                startup: 100,
-                recovery: 200,
-                hitbox: { width: 30, height: 60, offsetX: 20, offsetY: -30, duration: 150 },
-                color: 0x00ff00
-            },
-            'monk_low_kick': {
-                id: 'monk_low_kick',
-                damageMultiplier: 0.8,
-                knockback: { x: 100, y: 0 },
-                hitstun: 200,
-                startup: 50,
-                recovery: 100,
-                hitbox: { width: 40, height: 20, offsetX: 30, offsetY: 20, duration: 100 },
-                color: 0x0000ff
-            },
-            'monk_dash_punch': {
-                id: 'monk_dash_punch',
-                damageMultiplier: 1.1,
-                knockback: { x: 300, y: -100 },
-                hitstun: 300,
-                startup: 150,
-                recovery: 250,
-                hitbox: { width: 60, height: 30, offsetX: 40, offsetY: 0, duration: 200 },
-                color: 0xff00ff
-            },
-            // Defaults for others to prevent crashes
-            'monk_high_kick': { id: 'monk_high_kick', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: -20, duration: 100 }, color: 0xcccccc },
-            'monk_sweep': { id: 'monk_sweep', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: 20, duration: 100 }, color: 0xcccccc },
-            'monk_blast': { id: 'monk_blast', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: 0, duration: 100 }, color: 0xcccccc },
-            'monk_rising_blast': { id: 'monk_rising_blast', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: -20, duration: 100 }, color: 0xcccccc },
-            'monk_ground_slam': { id: 'monk_ground_slam', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: 20, duration: 100 }, color: 0xcccccc },
-            'monk_air_kick': { id: 'monk_air_kick', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: 0, duration: 100 }, color: 0xcccccc },
-            'monk_air_up_kick': { id: 'monk_air_up_kick', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: -20, duration: 100 }, color: 0xcccccc },
-            'monk_dive_kick': { id: 'monk_dive_kick', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: 20, duration: 100 }, color: 0xcccccc },
-            'monk_air_heavy': { id: 'monk_air_heavy', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: 0, duration: 100 }, color: 0xcccccc },
-            'monk_air_up_heavy': { id: 'monk_air_up_heavy', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: -20, duration: 100 }, color: 0xcccccc },
-            'monk_dive_bomb': { id: 'monk_dive_bomb', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: 20, duration: 100 }, color: 0xcccccc },
-            'monk_air_blast': { id: 'monk_air_blast', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: 0, duration: 100 }, color: 0xcccccc },
-            'monk_air_rising': { id: 'monk_air_rising', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: -20, duration: 100 }, color: 0xcccccc },
-            'monk_meteor': { id: 'monk_meteor', damageMultiplier: 1, knockback: { x: 100, y: -100 }, hitstun: 200, startup: 100, recovery: 200, hitbox: { width: 40, height: 40, offsetX: 30, offsetY: 20, duration: 100 }, color: 0xcccccc },
-
-        },
-        combos: {
-            'monk_jab_1': {
-                attack: { id: 'monk_jab_1' } as any, // Resolved at runtime or just use ID
-                next: {
-                    [AttackType.LIGHT]: 'monk_jab_2'
-                }
-            },
-            'monk_jab_2': {
-                attack: { id: 'monk_jab_2' } as any,
-                next: {
-                    [AttackType.LIGHT]: 'monk_jab_3'
-                }
-            }
-        }
+  [ClassType.MONK]: {
+    groundAttacks: {
+      [AttackType.LIGHT]: {
+        [AttackDirection.NEUTRAL]: "monk_jab_1",
+        [AttackDirection.UP]: "monk_uppercut",
+        [AttackDirection.DOWN]: "monk_low_kick",
+      },
+      [AttackType.HEAVY]: {
+        [AttackDirection.NEUTRAL]: "monk_dash_punch",
+        [AttackDirection.UP]: "monk_high_kick",
+        [AttackDirection.DOWN]: "monk_sweep",
+      },
+      [AttackType.SPECIAL]: {
+        [AttackDirection.NEUTRAL]: "monk_blast",
+        [AttackDirection.UP]: "monk_rising_blast",
+        [AttackDirection.DOWN]: "monk_ground_slam",
+      },
     },
-    [ClassType.PALADIN]: { groundAttacks: {} as any, airAttacks: {} as any, attacks: {}, combos: {} }, // TODO
-    [ClassType.PRIEST]: { groundAttacks: {} as any, airAttacks: {} as any, attacks: {}, combos: {} } // TODO
+    airAttacks: {
+      [AttackType.LIGHT]: {
+        [AttackDirection.NEUTRAL]: "monk_air_kick",
+        [AttackDirection.UP]: "monk_air_up_kick",
+        [AttackDirection.DOWN]: "monk_dive_kick",
+      },
+      [AttackType.HEAVY]: {
+        [AttackDirection.NEUTRAL]: "monk_air_heavy",
+        [AttackDirection.UP]: "monk_air_up_heavy",
+        [AttackDirection.DOWN]: "monk_dive_bomb",
+      },
+      [AttackType.SPECIAL]: {
+        [AttackDirection.NEUTRAL]: "monk_air_blast",
+        [AttackDirection.UP]: "monk_air_rising",
+        [AttackDirection.DOWN]: "monk_meteor",
+      },
+    },
+    attacks: {
+      monk_jab_1: {
+        id: "monk_jab_1",
+        damageMultiplier: 0.8,
+        knockback: { x: 100, y: -50 },
+        hitstun: 200,
+        startup: 50,
+        recovery: 100,
+        hitbox: {
+          width: 40,
+          height: 30,
+          offsetX: 30,
+          offsetY: 0,
+          duration: 100,
+        },
+        color: 0xffff00,
+      },
+      monk_jab_2: {
+        id: "monk_jab_2",
+        damageMultiplier: 0.9,
+        knockback: { x: 150, y: -50 },
+        hitstun: 250,
+        startup: 50,
+        recovery: 100,
+        hitbox: {
+          width: 40,
+          height: 30,
+          offsetX: 30,
+          offsetY: 0,
+          duration: 100,
+        },
+        color: 0xffaa00,
+      },
+      monk_jab_3: {
+        id: "monk_jab_3",
+        damageMultiplier: 1.2,
+        knockback: { x: 400, y: -200 },
+        hitstun: 400,
+        startup: 100,
+        recovery: 300,
+        hitbox: {
+          width: 50,
+          height: 40,
+          offsetX: 40,
+          offsetY: 0,
+          duration: 150,
+        },
+        color: 0xff0000,
+      },
+      // ... Add other attacks as needed, using defaults for now
+      monk_uppercut: {
+        id: "monk_uppercut",
+        damageMultiplier: 1.0,
+        knockback: { x: 50, y: -500 },
+        hitstun: 400,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 30,
+          height: 60,
+          offsetX: 20,
+          offsetY: -30,
+          duration: 150,
+        },
+        color: 0x00ff00,
+      },
+      monk_low_kick: {
+        id: "monk_low_kick",
+        damageMultiplier: 0.8,
+        knockback: { x: 100, y: 0 },
+        hitstun: 200,
+        startup: 50,
+        recovery: 100,
+        hitbox: {
+          width: 40,
+          height: 20,
+          offsetX: 30,
+          offsetY: 20,
+          duration: 100,
+        },
+        color: 0x0000ff,
+      },
+      monk_dash_punch: {
+        id: "monk_dash_punch",
+        damageMultiplier: 1.1,
+        knockback: { x: 300, y: -100 },
+        hitstun: 300,
+        startup: 150,
+        recovery: 250,
+        hitbox: {
+          width: 60,
+          height: 30,
+          offsetX: 40,
+          offsetY: 0,
+          duration: 200,
+        },
+        color: 0xff00ff,
+      },
+      // Defaults for others to prevent crashes
+      monk_high_kick: {
+        id: "monk_high_kick",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: -20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_sweep: {
+        id: "monk_sweep",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: 20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_blast: {
+        id: "monk_blast",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: 0,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_rising_blast: {
+        id: "monk_rising_blast",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: -20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_ground_slam: {
+        id: "monk_ground_slam",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: 20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_air_kick: {
+        id: "monk_air_kick",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: 0,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_air_up_kick: {
+        id: "monk_air_up_kick",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: -20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_dive_kick: {
+        id: "monk_dive_kick",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: 20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_air_heavy: {
+        id: "monk_air_heavy",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: 0,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_air_up_heavy: {
+        id: "monk_air_up_heavy",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: -20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_dive_bomb: {
+        id: "monk_dive_bomb",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: 20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_air_blast: {
+        id: "monk_air_blast",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: 0,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_air_rising: {
+        id: "monk_air_rising",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: -20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+      monk_meteor: {
+        id: "monk_meteor",
+        damageMultiplier: 1,
+        knockback: { x: 100, y: -100 },
+        hitstun: 200,
+        startup: 100,
+        recovery: 200,
+        hitbox: {
+          width: 40,
+          height: 40,
+          offsetX: 30,
+          offsetY: 20,
+          duration: 100,
+        },
+        color: 0xcccccc,
+      },
+    },
+    combos: {
+      monk_jab_1: {
+        attack: { id: "monk_jab_1" } as any, // Resolved at runtime or just use ID
+        next: {
+          [AttackType.LIGHT]: "monk_jab_2",
+        },
+      },
+      monk_jab_2: {
+        attack: { id: "monk_jab_2" } as any,
+        next: {
+          [AttackType.LIGHT]: "monk_jab_3",
+        },
+      },
+    },
+  },
+  [ClassType.PALADIN]: {
+    groundAttacks: {
+      [AttackType.LIGHT]: {
+        [AttackDirection.NEUTRAL]: "paladin_slash_1",
+        [AttackDirection.UP]: "paladin_rising_slash",
+        [AttackDirection.DOWN]: "paladin_low_sweep",
+      },
+      [AttackType.HEAVY]: {
+        [AttackDirection.NEUTRAL]: "paladin_cleave",
+        [AttackDirection.UP]: "paladin_sky_splitter",
+        [AttackDirection.DOWN]: "paladin_ground_pound",
+      },
+      [AttackType.SPECIAL]: {
+        [AttackDirection.NEUTRAL]: "paladin_holy_charge",
+        [AttackDirection.UP]: "paladin_divine_pillar",
+        [AttackDirection.DOWN]: "paladin_consecrate",
+      },
+    },
+    airAttacks: {
+      [AttackType.LIGHT]: {
+        [AttackDirection.NEUTRAL]: "paladin_air_slash",
+        [AttackDirection.UP]: "paladin_air_up_slash",
+        [AttackDirection.DOWN]: "paladin_plunging_strike",
+      },
+      [AttackType.HEAVY]: {
+        [AttackDirection.NEUTRAL]: "paladin_air_cleave",
+        [AttackDirection.UP]: "paladin_air_sky_splitter",
+        [AttackDirection.DOWN]: "paladin_judgment_drop",
+      },
+      [AttackType.SPECIAL]: {
+        [AttackDirection.NEUTRAL]: "paladin_air_holy_burst",
+        [AttackDirection.UP]: "paladin_air_ascension",
+        [AttackDirection.DOWN]: "paladin_air_smite",
+      },
+    },
+    attacks: {
+      // Ground Light attacks
+      paladin_slash_1: {
+        id: "paladin_slash_1",
+        damageMultiplier: 1.2,
+        knockback: { x: 200, y: -80 },
+        hitstun: 300,
+        startup: 150,
+        recovery: 200,
+        hitbox: {
+          width: 60,
+          height: 40,
+          offsetX: 40,
+          offsetY: 0,
+          duration: 180,
+        },
+        color: 0x3333ff,
+      },
+      paladin_slash_2: {
+        id: "paladin_slash_2",
+        damageMultiplier: 1.3,
+        knockback: { x: 250, y: -100 },
+        hitstun: 350,
+        startup: 150,
+        recovery: 200,
+        hitbox: {
+          width: 65,
+          height: 40,
+          offsetX: 45,
+          offsetY: 0,
+          duration: 180,
+        },
+        color: 0x4444ff,
+      },
+      paladin_slash_3: {
+        id: "paladin_slash_3",
+        damageMultiplier: 1.8,
+        knockback: { x: 500, y: -250 },
+        hitstun: 500,
+        startup: 200,
+        recovery: 350,
+        hitbox: {
+          width: 75,
+          height: 50,
+          offsetX: 50,
+          offsetY: 0,
+          duration: 250,
+        },
+        color: 0x5555ff,
+      },
+      paladin_rising_slash: {
+        id: "paladin_rising_slash",
+        damageMultiplier: 1.3,
+        knockback: { x: 80, y: -600 },
+        hitstun: 450,
+        startup: 180,
+        recovery: 250,
+        hitbox: {
+          width: 50,
+          height: 70,
+          offsetX: 30,
+          offsetY: -35,
+          duration: 200,
+        },
+        color: 0x3333ff,
+      },
+      paladin_low_sweep: {
+        id: "paladin_low_sweep",
+        damageMultiplier: 1.2,
+        knockback: { x: 200, y: -50 },
+        hitstun: 300,
+        startup: 150,
+        recovery: 200,
+        hitbox: {
+          width: 65,
+          height: 25,
+          offsetX: 40,
+          offsetY: 25,
+          duration: 180,
+        },
+        color: 0x3333ff,
+      },
+      // Ground Heavy attacks
+      paladin_cleave: {
+        id: "paladin_cleave",
+        damageMultiplier: 1.6,
+        knockback: { x: 400, y: -150 },
+        hitstun: 450,
+        startup: 250,
+        recovery: 350,
+        hitbox: {
+          width: 80,
+          height: 50,
+          offsetX: 50,
+          offsetY: 0,
+          duration: 250,
+        },
+        color: 0x5555ff,
+      },
+      paladin_sky_splitter: {
+        id: "paladin_sky_splitter",
+        damageMultiplier: 1.5,
+        knockback: { x: 50, y: -700 },
+        hitstun: 500,
+        startup: 250,
+        recovery: 300,
+        hitbox: {
+          width: 55,
+          height: 80,
+          offsetX: 30,
+          offsetY: -40,
+          duration: 220,
+        },
+        color: 0x5555ff,
+      },
+      paladin_ground_pound: {
+        id: "paladin_ground_pound",
+        damageMultiplier: 1.8,
+        knockback: { x: 300, y: -400 },
+        hitstun: 500,
+        startup: 300,
+        recovery: 400,
+        hitbox: {
+          width: 90,
+          height: 30,
+          offsetX: 35,
+          offsetY: 25,
+          duration: 300,
+        },
+        color: 0x5555ff,
+      },
+      // Ground Special attacks
+      paladin_holy_charge: {
+        id: "paladin_holy_charge",
+        damageMultiplier: 1.7,
+        knockback: { x: 500, y: -200 },
+        hitstun: 500,
+        startup: 200,
+        recovery: 350,
+        hitbox: {
+          width: 85,
+          height: 50,
+          offsetX: 50,
+          offsetY: 0,
+          duration: 250,
+        },
+        color: 0x6666ff,
+      },
+      paladin_divine_pillar: {
+        id: "paladin_divine_pillar",
+        damageMultiplier: 1.6,
+        knockback: { x: 50, y: -800 },
+        hitstun: 500,
+        startup: 250,
+        recovery: 350,
+        hitbox: {
+          width: 50,
+          height: 90,
+          offsetX: 25,
+          offsetY: -45,
+          duration: 280,
+        },
+        color: 0x6666ff,
+      },
+      paladin_consecrate: {
+        id: "paladin_consecrate",
+        damageMultiplier: 2.0,
+        knockback: { x: 200, y: -500 },
+        hitstun: 600,
+        startup: 350,
+        recovery: 400,
+        hitbox: {
+          width: 100,
+          height: 40,
+          offsetX: 30,
+          offsetY: 20,
+          duration: 350,
+        },
+        color: 0x6666ff,
+      },
+      // Air Light attacks
+      paladin_air_slash: {
+        id: "paladin_air_slash",
+        damageMultiplier: 1.2,
+        knockback: { x: 200, y: -80 },
+        hitstun: 300,
+        startup: 150,
+        recovery: 200,
+        hitbox: {
+          width: 60,
+          height: 40,
+          offsetX: 40,
+          offsetY: 0,
+          duration: 150,
+        },
+        color: 0x3333ff,
+      },
+      paladin_air_up_slash: {
+        id: "paladin_air_up_slash",
+        damageMultiplier: 1.2,
+        knockback: { x: 50, y: -550 },
+        hitstun: 350,
+        startup: 150,
+        recovery: 200,
+        hitbox: {
+          width: 45,
+          height: 65,
+          offsetX: 25,
+          offsetY: -35,
+          duration: 160,
+        },
+        color: 0x3333ff,
+      },
+      paladin_plunging_strike: {
+        id: "paladin_plunging_strike",
+        damageMultiplier: 1.5,
+        knockback: { x: 150, y: 300 },
+        hitstun: 400,
+        startup: 180,
+        recovery: 300,
+        hitbox: {
+          width: 55,
+          height: 60,
+          offsetX: 25,
+          offsetY: 25,
+          duration: 200,
+        },
+        color: 0x3333ff,
+      },
+      // Air Heavy attacks
+      paladin_air_cleave: {
+        id: "paladin_air_cleave",
+        damageMultiplier: 1.5,
+        knockback: { x: 350, y: -150 },
+        hitstun: 400,
+        startup: 200,
+        recovery: 300,
+        hitbox: {
+          width: 75,
+          height: 50,
+          offsetX: 45,
+          offsetY: 0,
+          duration: 220,
+        },
+        color: 0x5555ff,
+      },
+      paladin_air_sky_splitter: {
+        id: "paladin_air_sky_splitter",
+        damageMultiplier: 1.4,
+        knockback: { x: 50, y: -650 },
+        hitstun: 450,
+        startup: 200,
+        recovery: 300,
+        hitbox: {
+          width: 50,
+          height: 75,
+          offsetX: 25,
+          offsetY: -40,
+          duration: 200,
+        },
+        color: 0x5555ff,
+      },
+      paladin_judgment_drop: {
+        id: "paladin_judgment_drop",
+        damageMultiplier: 1.9,
+        knockback: { x: 200, y: 500 },
+        hitstun: 550,
+        startup: 250,
+        recovery: 350,
+        hitbox: {
+          width: 70,
+          height: 70,
+          offsetX: 30,
+          offsetY: 30,
+          duration: 280,
+        },
+        color: 0x5555ff,
+      },
+      // Air Special attacks
+      paladin_air_holy_burst: {
+        id: "paladin_air_holy_burst",
+        damageMultiplier: 1.6,
+        knockback: { x: 400, y: -200 },
+        hitstun: 450,
+        startup: 200,
+        recovery: 300,
+        hitbox: {
+          width: 80,
+          height: 50,
+          offsetX: 45,
+          offsetY: 0,
+          duration: 220,
+        },
+        color: 0x6666ff,
+      },
+      paladin_air_ascension: {
+        id: "paladin_air_ascension",
+        damageMultiplier: 1.5,
+        knockback: { x: 50, y: -750 },
+        hitstun: 500,
+        startup: 200,
+        recovery: 300,
+        hitbox: {
+          width: 50,
+          height: 85,
+          offsetX: 25,
+          offsetY: -45,
+          duration: 250,
+        },
+        color: 0x6666ff,
+      },
+      paladin_air_smite: {
+        id: "paladin_air_smite",
+        damageMultiplier: 2.0,
+        knockback: { x: 150, y: 600 },
+        hitstun: 600,
+        startup: 300,
+        recovery: 400,
+        hitbox: {
+          width: 80,
+          height: 80,
+          offsetX: 30,
+          offsetY: 35,
+          duration: 300,
+        },
+        color: 0x6666ff,
+      },
+    },
+    combos: {
+      paladin_slash_1: {
+        attack: { id: "paladin_slash_1" } as any,
+        next: {
+          [AttackType.LIGHT]: "paladin_slash_2",
+        },
+      },
+      paladin_slash_2: {
+        attack: { id: "paladin_slash_2" } as any,
+        next: {
+          [AttackType.LIGHT]: "paladin_slash_3",
+        },
+      },
+    },
+  },
+  [ClassType.PRIEST]: {
+    groundAttacks: {
+      [AttackType.LIGHT]: {
+        [AttackDirection.NEUTRAL]: "priest_bolt_1",
+        [AttackDirection.UP]: "priest_sky_bolt",
+        [AttackDirection.DOWN]: "priest_ground_wave",
+      },
+      [AttackType.HEAVY]: {
+        [AttackDirection.NEUTRAL]: "priest_lance",
+        [AttackDirection.UP]: "priest_judgment_beam",
+        [AttackDirection.DOWN]: "priest_sanctify",
+      },
+      [AttackType.SPECIAL]: {
+        [AttackDirection.NEUTRAL]: "priest_radiance",
+        [AttackDirection.UP]: "priest_pillar_of_light",
+        [AttackDirection.DOWN]: "priest_hallowed_ground",
+      },
+    },
+    airAttacks: {
+      [AttackType.LIGHT]: {
+        [AttackDirection.NEUTRAL]: "priest_air_bolt",
+        [AttackDirection.UP]: "priest_air_sky_bolt",
+        [AttackDirection.DOWN]: "priest_air_smite_bolt",
+      },
+      [AttackType.HEAVY]: {
+        [AttackDirection.NEUTRAL]: "priest_air_lance",
+        [AttackDirection.UP]: "priest_air_judgment",
+        [AttackDirection.DOWN]: "priest_air_condemn",
+      },
+      [AttackType.SPECIAL]: {
+        [AttackDirection.NEUTRAL]: "priest_air_radiance",
+        [AttackDirection.UP]: "priest_air_ascend",
+        [AttackDirection.DOWN]: "priest_air_divine_rain",
+      },
+    },
+    attacks: {
+      // Ground Light attacks
+      priest_bolt_1: {
+        id: "priest_bolt_1",
+        damageMultiplier: 0.9,
+        knockback: { x: 150, y: -50 },
+        hitstun: 250,
+        startup: 80,
+        recovery: 120,
+        hitbox: {
+          width: 120,
+          height: 25,
+          offsetX: 90,
+          offsetY: 0,
+          duration: 130,
+        },
+        color: 0xffffff,
+      },
+      priest_bolt_2: {
+        id: "priest_bolt_2",
+        damageMultiplier: 1.0,
+        knockback: { x: 180, y: -60 },
+        hitstun: 280,
+        startup: 80,
+        recovery: 130,
+        hitbox: {
+          width: 130,
+          height: 25,
+          offsetX: 95,
+          offsetY: 0,
+          duration: 140,
+        },
+        color: 0xffffcc,
+      },
+      priest_bolt_3: {
+        id: "priest_bolt_3",
+        damageMultiplier: 1.3,
+        knockback: { x: 350, y: -180 },
+        hitstun: 400,
+        startup: 120,
+        recovery: 250,
+        hitbox: {
+          width: 150,
+          height: 35,
+          offsetX: 100,
+          offsetY: 0,
+          duration: 200,
+        },
+        color: 0xffdd66,
+      },
+      priest_sky_bolt: {
+        id: "priest_sky_bolt",
+        damageMultiplier: 0.9,
+        knockback: { x: 50, y: -400 },
+        hitstun: 300,
+        startup: 100,
+        recovery: 150,
+        hitbox: {
+          width: 100,
+          height: 50,
+          offsetX: 80,
+          offsetY: -30,
+          duration: 150,
+        },
+        color: 0xffffff,
+      },
+      priest_ground_wave: {
+        id: "priest_ground_wave",
+        damageMultiplier: 0.8,
+        knockback: { x: 120, y: 0 },
+        hitstun: 220,
+        startup: 80,
+        recovery: 130,
+        hitbox: {
+          width: 140,
+          height: 20,
+          offsetX: 85,
+          offsetY: 25,
+          duration: 140,
+        },
+        color: 0xffffff,
+      },
+      // Ground Heavy attacks
+      priest_lance: {
+        id: "priest_lance",
+        damageMultiplier: 1.2,
+        knockback: { x: 300, y: -100 },
+        hitstun: 350,
+        startup: 150,
+        recovery: 220,
+        hitbox: {
+          width: 180,
+          height: 20,
+          offsetX: 120,
+          offsetY: 0,
+          duration: 200,
+        },
+        color: 0xffffcc,
+      },
+      priest_judgment_beam: {
+        id: "priest_judgment_beam",
+        damageMultiplier: 1.1,
+        knockback: { x: 50, y: -550 },
+        hitstun: 400,
+        startup: 150,
+        recovery: 220,
+        hitbox: {
+          width: 110,
+          height: 70,
+          offsetX: 90,
+          offsetY: -35,
+          duration: 180,
+        },
+        color: 0xffffcc,
+      },
+      priest_sanctify: {
+        id: "priest_sanctify",
+        damageMultiplier: 1.3,
+        knockback: { x: 200, y: -300 },
+        hitstun: 400,
+        startup: 180,
+        recovery: 250,
+        hitbox: {
+          width: 160,
+          height: 30,
+          offsetX: 100,
+          offsetY: 20,
+          duration: 220,
+        },
+        color: 0xffffcc,
+      },
+      // Ground Special attacks
+      priest_radiance: {
+        id: "priest_radiance",
+        damageMultiplier: 1.4,
+        knockback: { x: 350, y: -150 },
+        hitstun: 450,
+        startup: 150,
+        recovery: 280,
+        hitbox: {
+          width: 200,
+          height: 40,
+          offsetX: 130,
+          offsetY: 0,
+          duration: 250,
+        },
+        color: 0xffdd66,
+      },
+      priest_pillar_of_light: {
+        id: "priest_pillar_of_light",
+        damageMultiplier: 1.3,
+        knockback: { x: 50, y: -650 },
+        hitstun: 450,
+        startup: 180,
+        recovery: 280,
+        hitbox: {
+          width: 120,
+          height: 80,
+          offsetX: 100,
+          offsetY: -40,
+          duration: 230,
+        },
+        color: 0xffdd66,
+      },
+      priest_hallowed_ground: {
+        id: "priest_hallowed_ground",
+        damageMultiplier: 1.5,
+        knockback: { x: 200, y: -400 },
+        hitstun: 500,
+        startup: 200,
+        recovery: 300,
+        hitbox: {
+          width: 180,
+          height: 35,
+          offsetX: 110,
+          offsetY: 20,
+          duration: 280,
+        },
+        color: 0xffdd66,
+      },
+      // Air Light attacks
+      priest_air_bolt: {
+        id: "priest_air_bolt",
+        damageMultiplier: 0.9,
+        knockback: { x: 150, y: -50 },
+        hitstun: 250,
+        startup: 80,
+        recovery: 120,
+        hitbox: {
+          width: 120,
+          height: 25,
+          offsetX: 90,
+          offsetY: 0,
+          duration: 130,
+        },
+        color: 0xffffff,
+      },
+      priest_air_sky_bolt: {
+        id: "priest_air_sky_bolt",
+        damageMultiplier: 0.9,
+        knockback: { x: 50, y: -400 },
+        hitstun: 300,
+        startup: 100,
+        recovery: 150,
+        hitbox: {
+          width: 100,
+          height: 50,
+          offsetX: 80,
+          offsetY: -30,
+          duration: 150,
+        },
+        color: 0xffffff,
+      },
+      priest_air_smite_bolt: {
+        id: "priest_air_smite_bolt",
+        damageMultiplier: 1.0,
+        knockback: { x: 100, y: 250 },
+        hitstun: 300,
+        startup: 100,
+        recovery: 150,
+        hitbox: {
+          width: 110,
+          height: 45,
+          offsetX: 85,
+          offsetY: 25,
+          duration: 150,
+        },
+        color: 0xffffff,
+      },
+      // Air Heavy attacks
+      priest_air_lance: {
+        id: "priest_air_lance",
+        damageMultiplier: 1.2,
+        knockback: { x: 300, y: -100 },
+        hitstun: 350,
+        startup: 150,
+        recovery: 220,
+        hitbox: {
+          width: 170,
+          height: 20,
+          offsetX: 115,
+          offsetY: 0,
+          duration: 180,
+        },
+        color: 0xffffcc,
+      },
+      priest_air_judgment: {
+        id: "priest_air_judgment",
+        damageMultiplier: 1.1,
+        knockback: { x: 50, y: -500 },
+        hitstun: 380,
+        startup: 150,
+        recovery: 200,
+        hitbox: {
+          width: 110,
+          height: 65,
+          offsetX: 85,
+          offsetY: -35,
+          duration: 170,
+        },
+        color: 0xffffcc,
+      },
+      priest_air_condemn: {
+        id: "priest_air_condemn",
+        damageMultiplier: 1.3,
+        knockback: { x: 150, y: 400 },
+        hitstun: 400,
+        startup: 150,
+        recovery: 250,
+        hitbox: {
+          width: 130,
+          height: 50,
+          offsetX: 95,
+          offsetY: 30,
+          duration: 200,
+        },
+        color: 0xffffcc,
+      },
+      // Air Special attacks
+      priest_air_radiance: {
+        id: "priest_air_radiance",
+        damageMultiplier: 1.4,
+        knockback: { x: 350, y: -150 },
+        hitstun: 430,
+        startup: 150,
+        recovery: 260,
+        hitbox: {
+          width: 190,
+          height: 40,
+          offsetX: 125,
+          offsetY: 0,
+          duration: 230,
+        },
+        color: 0xffdd66,
+      },
+      priest_air_ascend: {
+        id: "priest_air_ascend",
+        damageMultiplier: 1.2,
+        knockback: { x: 50, y: -600 },
+        hitstun: 400,
+        startup: 150,
+        recovery: 250,
+        hitbox: {
+          width: 110,
+          height: 75,
+          offsetX: 90,
+          offsetY: -40,
+          duration: 200,
+        },
+        color: 0xffdd66,
+      },
+      priest_air_divine_rain: {
+        id: "priest_air_divine_rain",
+        damageMultiplier: 1.5,
+        knockback: { x: 100, y: 500 },
+        hitstun: 500,
+        startup: 180,
+        recovery: 300,
+        hitbox: {
+          width: 160,
+          height: 60,
+          offsetX: 100,
+          offsetY: 30,
+          duration: 250,
+        },
+        color: 0xffdd66,
+      },
+    },
+    combos: {
+      priest_bolt_1: {
+        attack: { id: "priest_bolt_1" } as any,
+        next: {
+          [AttackType.LIGHT]: "priest_bolt_2",
+        },
+      },
+      priest_bolt_2: {
+        attack: { id: "priest_bolt_2" } as any,
+        next: {
+          [AttackType.LIGHT]: "priest_bolt_3",
+        },
+      },
+    },
+  },
 };

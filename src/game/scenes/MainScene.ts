@@ -80,11 +80,13 @@ export class MainScene extends Phaser.Scene {
     this.levelGenerator.init();
 
     // Player
+    const selectedClass: ClassType =
+      (window as any).__selectedClass || ClassType.MONK;
     this.player = new Player(
       this,
       WORLD.PLAYER_SPAWN.x,
       WORLD.PLAYER_SPAWN.y,
-      ClassType.MONK,
+      selectedClass,
     );
     this.highestY = WORLD.PLAYER_SPAWN.y;
 

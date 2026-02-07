@@ -3,6 +3,8 @@ import { Player } from "../entities/Player";
 import { Enemy } from "../entities/Enemy";
 import { ImpCrawler } from "../entities/ImpCrawler";
 import { ShadowBat } from "../entities/ShadowBat";
+import { DemonTurret } from "../entities/DemonTurret";
+import { HellHound } from "../entities/HellHound";
 import { ItemDrop } from "../entities/ItemDrop";
 import { ITEMS } from "../config/ItemDatabase";
 import { SPAWNING } from "../config/GameConfig";
@@ -92,8 +94,8 @@ export class SpawnManager {
 
     if (roll < comp.basic) return "crawler";
     if (roll < comp.basic + comp.intermediate) return "bat";
-    // Advanced and elite types will use bat for now until more enemies are implemented
-    return "bat";
+    if (roll < comp.basic + comp.intermediate + comp.advanced) return "turret";
+    return "hound";
   }
 
   private spawnEnemyNearPlayer(altitude: number): void {
@@ -147,6 +149,12 @@ export class SpawnManager {
     switch (type) {
       case "bat":
         enemy = new ShadowBat(this.scene, x, y, this.player);
+        break;
+      case "turret":
+        enemy = new DemonTurret(this.scene, x, y, this.player);
+        break;
+      case "hound":
+        enemy = new HellHound(this.scene, x, y, this.player);
         break;
       case "crawler":
       default:
