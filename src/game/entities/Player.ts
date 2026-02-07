@@ -32,6 +32,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private jumpTimer: number = 0;
   private coyoteTimer: number = 0;
   private jumpBufferTimer: number = 0;
+  private jumpJustPressed: boolean = false;
 
   // Double Jump State
   private canDoubleJump: boolean = false;
@@ -54,6 +55,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return this.invincibilityTimer > 0;
   }
 
+  private get onGround(): boolean {
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    return body.touching.down || body.blocked.down;
+  }
+
   constructor(
     scene: Phaser.Scene,
     x: number,
@@ -72,7 +78,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setTint(this.classStats.color);
 
     this.setCollideWorldBounds(false);
-    this.setGravityY(PHYSICS.GRAVITY);
+    // Scene already applies PHYSICS.GRAVITY globally — don't double it
     this.setBounce(0);
 
     this.initInput();
@@ -101,22 +107,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   update(time: number, delta: number) {
+    // Cache JustDown once per frame — Phaser consumes it on first read
+    this.jumpJustPressed = Phaser.Input.Keyboard.JustDown(this.cursors.space!);
+
+    this.updateTimers(delta);
     this.handleMovement();
     this.handleJumping(delta);
     this.handleWallInteraction();
     this.handleCombat(delta);
-    this.updateTimers(delta);
     this.updateInvincibility(delta);
   }
 
   private updateTimers(delta: number) {
-    if (this.body!.touching.down) {
+    if (this.onGround) {
       this.coyoteTimer = PHYSICS.COYOTE_TIME;
     } else {
       this.coyoteTimer -= delta;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.space!)) {
+    if (this.jumpJustPressed) {
       this.jumpBufferTimer = PHYSICS.JUMP_BUFFER;
     } else {
       this.jumpBufferTimer -= delta;
@@ -150,18 +159,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   private handleMovement() {
-    if (
-      this.isAttacking &&
-      this.body!.touching.down &&
-      this.attackState !== "RECOVERY"
-    ) {
+    if (this.isAttacking && this.onGround && this.attackState !== "RECOVERY") {
       this.setAccelerationX(0);
       this.setVelocityX(0);
       return;
     }
 
     const { left, right } = this.cursors;
-    const onGround = this.body!.touching.down;
+    const onGround = this.onGround;
 
     this.setDragX(onGround ? PHYSICS.GROUND_DRAG : PHYSICS.AIR_DRAG);
 
@@ -198,7 +203,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     );
 
     // Reset double jump when on ground
-    if (this.body!.touching.down) {
+    if (this.onGround) {
       this.canDoubleJump = true;
       this.hasDoubleJumped = false;
     }
@@ -213,7 +218,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
     // Double Jump
     else if (
-      Phaser.Input.Keyboard.JustDown(this.cursors.space!) &&
+      this.jumpJustPressed &&
       !canJump &&
       this.canDoubleJump &&
       !this.hasDoubleJumped &&
@@ -257,8 +262,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   private handleWallInteraction() {
-    const onWall = this.body!.blocked.left || this.body!.blocked.right;
-    const onGround = this.body!.touching.down;
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    const onWall =
+      body.blocked.left ||
+      body.blocked.right ||
+      body.touching.left ||
+      body.touching.right;
+    const onGround = body.touching.down || body.blocked.down;
 
     if (onWall && !onGround) {
       this.isWallSliding = true;
@@ -267,8 +277,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.setVelocityY(PHYSICS.WALL_SLIDE_SPEED);
       }
 
-      if (Phaser.Input.Keyboard.JustDown(this.cursors.space!)) {
-        const jumpDir = this.body!.blocked.left ? 1 : -1;
+      if (this.jumpJustPressed) {
+        const jumpDir = body.blocked.left || body.touching.left ? 1 : -1;
         const jumpForceY = this.getStat(
           "jumpHeight",
           PHYSICS.WALL_JUMP.y,
@@ -354,7 +364,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     else if (this.cursors.down.isDown) direction = AttackDirection.DOWN;
 
     const config = COMBAT_CONFIG[this.classType];
-    const onGround = this.body!.touching.down;
+    const onGround = this.onGround;
 
     let nextAttackId: string | undefined;
 
@@ -376,13 +386,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   private startAttack(attackId: string) {
+    this.cleanupHitbox();
     this.isAttacking = true;
     this.currentAttackId = attackId;
     this.attackState = "STARTUP";
     this.attackTimer = 0;
     this.hitEnemies.clear();
 
-    if (this.body!.touching.down) {
+    if (this.onGround) {
       this.setVelocityX(0);
     }
 
@@ -412,6 +423,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   private enterRecoveryState(_def: AttackDefinition) {
     this.attackState = "RECOVERY";
+    this.cleanupHitbox();
+  }
+
+  private cleanupHitbox() {
     if (this.attackHitbox) {
       this.attackHitbox.destroy();
       this.attackHitbox = null;
@@ -421,6 +436,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private endAttack() {
     this.isAttacking = false;
     this.attackState = "IDLE";
+    this.cleanupHitbox();
     this.setTint(this.classStats.color);
     this.comboTimer = COMBAT.COMBO_WINDOW;
   }

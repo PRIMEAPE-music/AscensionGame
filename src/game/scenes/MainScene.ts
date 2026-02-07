@@ -19,6 +19,7 @@ export class MainScene extends Phaser.Scene {
   private leftWall!: Phaser.GameObjects.Rectangle;
   private rightWall!: Phaser.GameObjects.Rectangle;
   private highestY: number = WORLD.PLAYER_SPAWN.y;
+  private ridingPlatform: Phaser.GameObjects.GameObject | null = null;
 
   constructor() {
     super({ key: "MainScene" });
@@ -108,7 +109,17 @@ export class MainScene extends Phaser.Scene {
       undefined,
       this,
     );
-    this.physics.add.collider(this.player, this.movingPlatforms);
+    this.physics.add.collider(
+      this.player,
+      this.movingPlatforms,
+      (_player, platform) => {
+        if (this.player.body!.touching.down || this.player.body!.blocked.down) {
+          this.ridingPlatform = platform;
+        }
+      },
+      undefined,
+      this,
+    );
     this.physics.add.collider(this.enemies, this.staticPlatforms);
     this.physics.add.collider(this.enemies, this.movingPlatforms);
     this.physics.add.collider(this.items, this.staticPlatforms);
@@ -136,6 +147,15 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
     this.cameras.main.setDeadzone(100, 100);
 
+    // Prevent Alt from triggering browser menu (resizes game window)
+    this.input.keyboard!.addCapture([
+      Phaser.Input.Keyboard.KeyCodes.ALT,
+      Phaser.Input.Keyboard.KeyCodes.SPACE,
+    ]);
+
+    // Auto-focus the game canvas for keyboard input
+    this.game.canvas.focus();
+
     // Emit initial health
     EventBus.emit("health-change", {
       health: this.player.health,
@@ -144,6 +164,25 @@ export class MainScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
+    // Carry player with moving platform
+    if (this.ridingPlatform) {
+      const plat = this.ridingPlatform as any;
+      const prevX = plat.getData("prevX");
+      if (prevX !== undefined && prevX !== null) {
+        const dx = plat.x - prevX;
+        if (dx !== 0) {
+          this.player.x += dx;
+        }
+      }
+    }
+    this.ridingPlatform = null;
+
+    // Store prevX for all moving platforms
+    this.movingPlatforms.children.each((plat: any) => {
+      plat.setData("prevX", plat.x);
+      return true;
+    });
+
     this.player.update(time, delta);
     this.levelGenerator.update(this.player.y);
 

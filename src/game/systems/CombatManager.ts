@@ -46,10 +46,25 @@ export class CombatManager {
         : null;
 
     const damage = this.calculateDamage(attackDef?.damageMultiplier ?? 1);
+
+    // Capture position before takeDamage (which may destroy the enemy)
+    const enemyX = enemy.x;
+    const enemyY = enemy.y;
+
     enemy.takeDamage(damage);
 
-    // Knockback
-    const direction = enemy.x > this.player.x ? 1 : -1;
+    // Enemy may have been destroyed by takeDamage — check before accessing
+    if (!enemy.active) {
+      EventBus.emit("enemy-killed", {
+        enemyType: "unknown",
+        x: enemyX,
+        y: enemyY,
+      });
+      return;
+    }
+
+    // Knockback (only if enemy survived)
+    const direction = enemyX > this.player.x ? 1 : -1;
     const kb = attackDef?.knockback ?? COMBAT.KNOCKBACK_ENEMY;
     enemy.setVelocityX(kb.x * direction);
     enemy.setVelocityY(kb.y);
@@ -58,15 +73,6 @@ export class CombatManager {
     this.scene.time.delayedCall(COMBAT.HIT_FLASH_DURATION, () => {
       if (enemy.active) enemy.clearTint();
     });
-
-    // Check if enemy died
-    if (!enemy.active) {
-      EventBus.emit("enemy-killed", {
-        enemyType: "unknown",
-        x: enemy.x,
-        y: enemy.y,
-      });
-    }
   }
 
   handleContactDamage(_player: any, enemy: any): void {
