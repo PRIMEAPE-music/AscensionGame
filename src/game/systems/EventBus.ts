@@ -7,6 +7,9 @@ export interface GameEvents {
   "enemy-killed": { enemyType: string; x: number; y: number };
   "player-died": { altitude: number; kills: number };
   "boss-warning": { distance: number };
+  "style-change": { meter: number; tier: string; multiplier: number };
+  "biome-change": { biome: string };
+  "slope-launch": { speed: number; angle: number };
 }
 
 export const EventBus = {

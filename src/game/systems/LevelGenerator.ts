@@ -1,173 +1,320 @@
-import Phaser from 'phaser';
+import Phaser from "phaser";
+import { BIOMES, WORLD } from "../config/GameConfig";
+import {
+  PlatformType,
+  PLATFORM_DEFS,
+  BIOME_PLATFORM_WEIGHTS,
+} from "../config/PlatformTypes";
+import type { SlopeManager } from "./SlopeManager";
+
+interface DifficultyParams {
+  minGap: number;
+  maxGap: number;
+  biomeKey: string;
+}
 
 export class LevelGenerator {
-    private scene: Phaser.Scene;
-    private staticPlatforms: Phaser.Physics.Arcade.StaticGroup;
-    private movingPlatforms: Phaser.Physics.Arcade.Group;
-    private lastPlatformY: number;
-    private lastPlatformX: number;
+  private scene: Phaser.Scene;
+  private staticPlatforms: Phaser.Physics.Arcade.StaticGroup;
+  private movingPlatforms: Phaser.Physics.Arcade.Group;
+  private slopeManager: SlopeManager;
+  private lastPlatformY: number;
+  private lastPlatformX: number;
 
-    constructor(scene: Phaser.Scene, staticPlatforms: Phaser.Physics.Arcade.StaticGroup, movingPlatforms: Phaser.Physics.Arcade.Group) {
-        this.scene = scene;
-        this.staticPlatforms = staticPlatforms;
-        this.movingPlatforms = movingPlatforms;
-        this.lastPlatformY = 1050; // Start from the bottom
-        this.lastPlatformX = 960;
+  constructor(
+    scene: Phaser.Scene,
+    staticPlatforms: Phaser.Physics.Arcade.StaticGroup,
+    movingPlatforms: Phaser.Physics.Arcade.Group,
+    slopeManager: SlopeManager,
+  ) {
+    this.scene = scene;
+    this.staticPlatforms = staticPlatforms;
+    this.movingPlatforms = movingPlatforms;
+    this.slopeManager = slopeManager;
+    this.lastPlatformY = WORLD.BASE_PLATFORM_Y;
+    this.lastPlatformX = 960;
+  }
+
+  init() {
+    this.createPlatform(960, WORLD.BASE_PLATFORM_Y, 10, PlatformType.STANDARD);
+    this.createPlatform(600, 800, 2, PlatformType.STANDARD);
+    this.createPlatform(1400, 700, 2, PlatformType.MOVING);
+    this.createPlatform(200, 500, 2, PlatformType.STANDARD);
+    this.createPlatform(1000, 300, 2, PlatformType.BREAKABLE);
+
+    this.lastPlatformY = 300;
+    this.lastPlatformX = 1000;
+  }
+
+  update(playerY: number) {
+    const generationThreshold = playerY - WORLD.GENERATION_LOOKAHEAD;
+
+    while (this.lastPlatformY > generationThreshold) {
+      const altitude = Math.max(
+        0,
+        (WORLD.BASE_PLATFORM_Y - this.lastPlatformY) / WORLD.ALTITUDE_SCALE,
+      );
+      this.generateNextChunk(altitude);
     }
 
-    init() {
-        // Create initial platforms
-        this.createPlatform(960, 1050, 10, 'standard'); // Base floor
-        this.createPlatform(600, 800, 2, 'standard');
-        this.createPlatform(1400, 700, 2, 'moving');
-        this.createPlatform(200, 500, 2, 'standard');
-        this.createPlatform(1000, 300, 2, 'breakable');
+    this.cleanupPlatforms(this.staticPlatforms, playerY);
+    this.cleanupPlatforms(this.movingPlatforms, playerY);
+    this.slopeManager.cleanup(playerY, WORLD.PLATFORM_CLEANUP_BUFFER);
+  }
 
-        this.lastPlatformY = 300;
-        this.lastPlatformX = 1000;
+  private cleanupPlatforms(
+    group: Phaser.Physics.Arcade.Group | Phaser.Physics.Arcade.StaticGroup,
+    playerY: number,
+  ) {
+    group.children.each((child: any) => {
+      if (child.y > playerY + WORLD.PLATFORM_CLEANUP_BUFFER) {
+        group.remove(child, true, true);
+      }
+      return true;
+    });
+  }
+
+  private getBiomeKey(altitude: number): string {
+    const entries = Object.entries(BIOMES);
+    for (const [key, biome] of entries) {
+      if (altitude < biome.maxAltitude) return key;
+    }
+    return "SUMMIT";
+  }
+
+  private getDifficultyParams(altitude: number): DifficultyParams {
+    const biomeKey = this.getBiomeKey(altitude);
+
+    if (altitude < 500) {
+      return { minGap: 80, maxGap: 150, biomeKey };
+    } else if (altitude < 2000) {
+      return { minGap: 100, maxGap: 200, biomeKey };
+    } else if (altitude < 5000) {
+      return { minGap: 130, maxGap: 260, biomeKey };
+    } else {
+      return { minGap: 150, maxGap: 300, biomeKey };
+    }
+  }
+
+  private rollPlatformType(biomeKey: string): PlatformType {
+    const weights = BIOME_PLATFORM_WEIGHTS[biomeKey];
+    if (!weights) return PlatformType.STANDARD;
+
+    const roll = Math.random();
+    let cumulative = 0;
+
+    cumulative += weights.standard;
+    if (roll < cumulative) return PlatformType.STANDARD;
+
+    cumulative += weights.moving;
+    if (roll < cumulative) return PlatformType.MOVING;
+
+    cumulative += weights.breakable;
+    if (roll < cumulative) return PlatformType.BREAKABLE;
+
+    cumulative += weights.ice;
+    if (roll < cumulative) return PlatformType.ICE;
+
+    cumulative += weights.sticky;
+    if (roll < cumulative) return PlatformType.STICKY;
+
+    cumulative += weights.bounce;
+    if (roll < cumulative) return PlatformType.BOUNCE;
+
+    cumulative += weights.slope;
+    if (roll < cumulative) {
+      return Math.random() > 0.5
+        ? PlatformType.SLOPE_LEFT
+        : PlatformType.SLOPE_RIGHT;
     }
 
-    update(playerY: number) {
-        // Generate new platforms as player climbs
-        const generationThreshold = playerY - 1200; // Generate ahead of player (increased range)
+    return PlatformType.STANDARD;
+  }
 
-        if (this.lastPlatformY > generationThreshold) {
-            this.generateNextChunk(Math.abs(playerY - 1000)); // Pass approximate altitude
-        }
+  private generateNextChunk(altitude: number) {
+    const params = this.getDifficultyParams(altitude);
+    const patternRoll = Math.random();
 
-        // Cleanup old platforms
-        this.cleanupPlatforms(this.staticPlatforms, playerY);
-        this.cleanupPlatforms(this.movingPlatforms, playerY);
+    if (patternRoll < 0.2) {
+      this.generateZigZagPattern(params);
+    } else if (patternRoll < 0.35) {
+      this.generateWallJumpSection(params);
+    } else if (patternRoll < 0.5) {
+      this.generateSlopeRun(params);
+    } else if (patternRoll < 0.6) {
+      this.generateBounceChain(params);
+    } else {
+      this.generateStandardPlatform(params);
+    }
+  }
+
+  private generateStandardPlatform(params: DifficultyParams) {
+    const yGap = Phaser.Math.Between(params.minGap, params.maxGap);
+    const y = this.lastPlatformY - yGap;
+
+    const minX = Math.max(100, this.lastPlatformX - 400);
+    const maxX = Math.min(1820, this.lastPlatformX + 400);
+    const x = Phaser.Math.Between(minX, maxX);
+
+    const scale = Phaser.Math.FloatBetween(0.8, 2.0);
+    const type = this.rollPlatformType(params.biomeKey);
+
+    this.createPlatform(x, y, scale, type);
+    this.lastPlatformY = y;
+    this.lastPlatformX = x;
+  }
+
+  private generateZigZagPattern(params: DifficultyParams) {
+    const steps = Phaser.Math.Between(3, 5);
+    const yGap = Phaser.Math.Between(params.minGap, params.maxGap);
+
+    for (let i = 0; i < steps; i++) {
+      const y = this.lastPlatformY - yGap;
+      const isLeft = this.lastPlatformX < 960;
+      const x = isLeft
+        ? Phaser.Math.Between(1000, 1700)
+        : Phaser.Math.Between(200, 900);
+
+      this.createPlatform(x, y, 1.5, PlatformType.STANDARD);
+      this.lastPlatformY = y;
+      this.lastPlatformX = x;
+    }
+  }
+
+  private generateWallJumpSection(params: DifficultyParams) {
+    const steps = Phaser.Math.Between(3, 6);
+    const yGap = Math.min(150, params.maxGap);
+    const wallX = Math.random() > 0.5 ? 200 : 1720;
+
+    for (let i = 0; i < steps; i++) {
+      const y = this.lastPlatformY - yGap;
+      const x = wallX + Phaser.Math.Between(-50, 50);
+
+      this.createPlatform(x, y, 0.8, PlatformType.STANDARD);
+      this.lastPlatformY = y;
+      this.lastPlatformX = x;
+    }
+  }
+
+  private generateSlopeRun(params: DifficultyParams) {
+    const slopeCount = Phaser.Math.Between(2, 3);
+    const slopeWidth = Phaser.Math.Between(200, 350);
+    const slopeHeight = Phaser.Math.Between(60, 120);
+    const biomeKey = params.biomeKey;
+    const biomeDef = BIOMES[biomeKey as keyof typeof BIOMES];
+    const tint = biomeDef?.platform ?? 0xffaa44;
+
+    for (let i = 0; i < slopeCount; i++) {
+      const yGap = Phaser.Math.Between(40, 80);
+      const y = this.lastPlatformY - yGap;
+
+      const minX = Math.max(100, this.lastPlatformX - 300);
+      const maxX = Math.min(
+        WORLD.WIDTH - 100 - slopeWidth,
+        this.lastPlatformX + 300,
+      );
+      const x = Phaser.Math.Between(Math.min(minX, maxX), Math.max(minX, maxX));
+
+      const direction: "left" | "right" = i % 2 === 0 ? "left" : "right";
+
+      this.slopeManager.createSlope(
+        x,
+        y,
+        slopeWidth,
+        slopeHeight,
+        direction,
+        tint,
+      );
+
+      this.lastPlatformY = y - slopeHeight;
+      this.lastPlatformX = x + slopeWidth / 2;
     }
 
-    private cleanupPlatforms(group: Phaser.Physics.Arcade.Group | Phaser.Physics.Arcade.StaticGroup, playerY: number) {
-        group.children.each((child: any) => {
-            if (child.y > playerY + 1500) { // Increased cleanup buffer
-                group.remove(child, true, true);
-            }
-            return true;
-        });
+    // Safety platform at the end of slope run
+    const safeY = this.lastPlatformY - Phaser.Math.Between(60, 100);
+    this.createPlatform(this.lastPlatformX, safeY, 1.5, PlatformType.STANDARD);
+    this.lastPlatformY = safeY;
+  }
+
+  private generateBounceChain(params: DifficultyParams) {
+    const count = Phaser.Math.Between(2, 4);
+
+    for (let i = 0; i < count; i++) {
+      const yGap = Phaser.Math.Between(80, 140);
+      const y = this.lastPlatformY - yGap;
+
+      const minX = Math.max(100, this.lastPlatformX - 350);
+      const maxX = Math.min(1820, this.lastPlatformX + 350);
+      const x = Phaser.Math.Between(minX, maxX);
+
+      this.createPlatform(x, y, 0.6, PlatformType.BOUNCE);
+      this.lastPlatformY = y;
+      this.lastPlatformX = x;
     }
 
-    private getDifficultyParams(altitude: number) {
-        // Difficulty Tiers based on altitude
-        if (altitude < 3000) {
-            return { minGap: 100, maxGap: 200, density: 'high', movingChance: 0.1, breakableChance: 0.1 };
-        } else if (altitude < 6000) {
-            return { minGap: 150, maxGap: 280, density: 'medium', movingChance: 0.25, breakableChance: 0.2 };
-        } else {
-            return { minGap: 200, maxGap: 350, density: 'low', movingChance: 0.4, breakableChance: 0.3 };
-        }
+    // Reward platform at top of bounce chain
+    const rewardY = this.lastPlatformY - Phaser.Math.Between(200, 300);
+    this.createPlatform(
+      this.lastPlatformX,
+      rewardY,
+      2.0,
+      PlatformType.STANDARD,
+    );
+    this.lastPlatformY = rewardY;
+  }
+
+  private createPlatform(
+    x: number,
+    y: number,
+    scale: number,
+    type: PlatformType,
+  ) {
+    // Slope types are handled by SlopeManager, not physics bodies
+    if (type === PlatformType.SLOPE_LEFT || type === PlatformType.SLOPE_RIGHT) {
+      const width = scale * 400;
+      const height = 80;
+      const direction = type === PlatformType.SLOPE_LEFT ? "left" : "right";
+      const biomeKey = this.getBiomeKey(
+        Math.max(0, (WORLD.BASE_PLATFORM_Y - y) / WORLD.ALTITUDE_SCALE),
+      );
+      const biomeDef = BIOMES[biomeKey as keyof typeof BIOMES];
+      this.slopeManager.createSlope(
+        x - width / 2,
+        y,
+        width,
+        height,
+        direction,
+        biomeDef?.platform ?? 0xffaa44,
+      );
+      return;
     }
 
-    private generateNextChunk(altitude: number) {
-        const params = this.getDifficultyParams(altitude);
-        const patternRoll = Math.random();
+    const def = PLATFORM_DEFS[type];
 
-        // Select Pattern
-        if (patternRoll < 0.3) {
-            this.generateZigZagPattern(params);
-        } else if (patternRoll < 0.5) {
-            this.generateWallJumpSection(params);
-        } else {
-            this.generateStandardPlatform(params);
-        }
+    if (type === PlatformType.MOVING) {
+      const platform = this.movingPlatforms.create(x, y, "ground");
+      platform.setScale(scale, 1);
+      platform.setImmovable(true);
+      platform.body.allowGravity = false;
+      platform.setData("type", PlatformType.MOVING);
+      platform.setTint(def.color);
+
+      const moveDist = 200;
+      const targetX = x + moveDist > 1850 ? x - moveDist : x + moveDist;
+
+      this.scene.tweens.add({
+        targets: platform,
+        x: targetX,
+        duration: 2000,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    } else {
+      const platform = this.staticPlatforms.create(x, y, "ground");
+      platform.setScale(scale, 1).refreshBody();
+      platform.setData("type", type);
+      platform.setTint(def.color);
     }
-
-    private generateStandardPlatform(params: any) {
-        const yGap = Phaser.Math.Between(params.minGap, params.maxGap);
-        const y = this.lastPlatformY - yGap;
-
-        // Random X but keep it reachable from last X (max horizontal jump is ~300-400)
-        // We clamp it to screen bounds with padding
-        let minX = Math.max(100, this.lastPlatformX - 400);
-        let maxX = Math.min(1820, this.lastPlatformX + 400);
-        const x = Phaser.Math.Between(minX, maxX);
-
-        const scale = Phaser.Math.FloatBetween(0.8, 2.0);
-
-        // Determine type
-        const typeRoll = Math.random();
-        let type = 'standard';
-        if (typeRoll < params.movingChance) type = 'moving';
-        else if (typeRoll < params.movingChance + params.breakableChance) type = 'breakable';
-
-        this.createPlatform(x, y, scale, type);
-        this.lastPlatformY = y;
-        this.lastPlatformX = x;
-    }
-
-    private generateZigZagPattern(params: any) {
-        const steps = Phaser.Math.Between(3, 5);
-        const yGap = Phaser.Math.Between(params.minGap, params.maxGap);
-
-        for (let i = 0; i < steps; i++) {
-            const y = this.lastPlatformY - yGap;
-            // Alternate Left/Right
-            // If last was left (< 960), go right. Else go left.
-            const isLeft = this.lastPlatformX < 960;
-            const x = isLeft ?
-                Phaser.Math.Between(1000, 1700) :
-                Phaser.Math.Between(200, 900);
-
-            this.createPlatform(x, y, 1.5, 'standard');
-            this.lastPlatformY = y;
-            this.lastPlatformX = x;
-        }
-    }
-
-    private generateWallJumpSection(params: any) {
-        const steps = Phaser.Math.Between(3, 6);
-        const yGap = 150; // Fixed small gap for wall jumps
-        const wallX = Math.random() > 0.5 ? 200 : 1720; // Left or Right wall area
-
-        for (let i = 0; i < steps; i++) {
-            const y = this.lastPlatformY - yGap;
-            // Platforms close to the wall
-            const x = wallX + Phaser.Math.Between(-50, 50);
-
-            this.createPlatform(x, y, 0.8, 'standard');
-            this.lastPlatformY = y;
-            this.lastPlatformX = x;
-        }
-    }
-
-    private createPlatform(x: number, y: number, scale: number, type: string) {
-        let platform: any;
-
-        if (type === 'moving') {
-            platform = this.movingPlatforms.create(x, y, 'ground');
-            platform.setScale(scale, 1);
-            platform.setImmovable(true);
-            platform.body.allowGravity = false;
-            platform.setData('type', 'moving');
-
-            // Add movement tween
-            const moveDist = 200;
-            // Ensure we don't move offscreen
-            const targetX = x + moveDist > 1850 ? x - moveDist : x + moveDist;
-
-            this.scene.tweens.add({
-                targets: platform,
-                x: targetX,
-                duration: 2000,
-                yoyo: true,
-                repeat: -1,
-                ease: 'Sine.easeInOut'
-            });
-
-            // Tint for visual distinction
-            platform.setTint(0x00ffff);
-        } else if (type === 'breakable') {
-            platform = this.staticPlatforms.create(x, y, 'ground');
-            platform.setScale(scale, 1).refreshBody();
-            platform.setTint(0xff0000); // Red for breakable
-            platform.setData('type', 'breakable');
-        } else {
-            // Standard
-            platform = this.staticPlatforms.create(x, y, 'ground');
-            platform.setScale(scale, 1).refreshBody();
-            platform.setData('type', 'standard');
-        }
-    }
+  }
 }

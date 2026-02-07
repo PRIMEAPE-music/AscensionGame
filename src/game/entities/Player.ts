@@ -1,7 +1,9 @@
 import Phaser from "phaser";
 import { ClassType, type ClassStats, CLASSES } from "../config/ClassConfig";
 import type { ItemData, StatType } from "../config/ItemConfig";
-import { PHYSICS, COMBAT } from "../config/GameConfig";
+import { PHYSICS, COMBAT, PLATFORM_CONFIG, SLOPES } from "../config/GameConfig";
+import { PlatformType } from "../config/PlatformTypes";
+import type { SlopeCollisionResult } from "../systems/SlopeManager";
 import { EventBus } from "../systems/EventBus";
 import {
   AttackType,
@@ -41,6 +43,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Invincibility
   private invincibilityTimer: number = 0;
   private flashTimer: number = 0;
+
+  // Platform Surface
+  public onSlope: boolean = false;
+  public slopeAngle: number = 0;
+  public currentPlatformType: PlatformType = PlatformType.STANDARD;
+  private wasOnSlope: boolean = false;
+  private pendingLaunchVector: { x: number; y: number } | null = null;
 
   // Stats & Inventory
   public health: number;
@@ -166,44 +175,77 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     const { left, right } = this.cursors;
-    const onGround = this.onGround;
+    const onGround = this.onGround || this.onSlope;
+    const platType = this.currentPlatformType;
 
-    this.setDragX(onGround ? PHYSICS.GROUND_DRAG : PHYSICS.AIR_DRAG);
+    // Platform-specific drag
+    let drag = onGround ? PHYSICS.GROUND_DRAG : PHYSICS.AIR_DRAG;
+    if (platType === PlatformType.ICE && onGround) {
+      drag = PHYSICS.GROUND_DRAG * PLATFORM_CONFIG.ICE_FRICTION;
+    }
+    this.setDragX(drag);
 
-    const moveSpeed = this.getStat(
+    let moveSpeed = this.getStat(
       "moveSpeed",
       PHYSICS.MOVE_SPEED,
       this.classStats.moveSpeed,
     );
 
+    // Platform speed modifiers
+    if (platType === PlatformType.STICKY && onGround) {
+      moveSpeed *= PLATFORM_CONFIG.STICKY_SPEED_MULT;
+    }
+
+    // Platform-specific acceleration
+    let accel = PHYSICS.ACCELERATION;
+    if (platType === PlatformType.ICE && onGround) {
+      accel *= PLATFORM_CONFIG.ICE_ACCEL_MULT;
+    }
+
     if (left.isDown) {
-      this.setAccelerationX(-PHYSICS.ACCELERATION);
+      this.setAccelerationX(-accel);
       this.setFlipX(true);
     } else if (right.isDown) {
-      this.setAccelerationX(PHYSICS.ACCELERATION);
+      this.setAccelerationX(accel);
       this.setFlipX(false);
     } else {
       this.setAccelerationX(0);
     }
 
-    if (this.body!.velocity.x > moveSpeed) {
-      this.setVelocityX(moveSpeed);
-    } else if (this.body!.velocity.x < -moveSpeed) {
-      this.setVelocityX(-moveSpeed);
+    // On ice, don't cap speed (let momentum carry)
+    if (platType !== PlatformType.ICE) {
+      if (this.body!.velocity.x > moveSpeed) {
+        this.setVelocityX(moveSpeed);
+      } else if (this.body!.velocity.x < -moveSpeed) {
+        this.setVelocityX(-moveSpeed);
+      }
     }
   }
 
   private handleJumping(delta: number) {
-    const canJump = this.coyoteTimer > 0;
+    const canJump = this.coyoteTimer > 0 || this.onSlope;
     const wantsToJump = this.jumpBufferTimer > 0;
-    const jumpForce = this.getStat(
+    let jumpForce = this.getStat(
       "jumpHeight",
       PHYSICS.JUMP_FORCE,
       this.classStats.jumpHeight,
     );
 
+    // Platform jump modifiers
+    if (
+      this.currentPlatformType === PlatformType.BOUNCE &&
+      (this.onGround || this.onSlope)
+    ) {
+      jumpForce = PLATFORM_CONFIG.BOUNCE_FORCE;
+    } else if (
+      this.currentPlatformType === PlatformType.STICKY &&
+      (this.onGround || this.onSlope)
+    ) {
+      jumpForce *= PLATFORM_CONFIG.STICKY_JUMP_MULT;
+    }
+
     // Reset double jump when on ground
-    if (this.onGround) {
+    if (this.onGround || this.onSlope) {
       this.canDoubleJump = true;
       this.hasDoubleJumped = false;
     }
@@ -211,6 +253,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Initial Jump (coyote + buffer)
     if (wantsToJump && canJump) {
       this.setVelocityY(jumpForce);
+      this.onSlope = false;
       this.isJumping = true;
       this.jumpTimer = 0;
       this.coyoteTimer = 0;
@@ -458,6 +501,68 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this.health <= 0) {
       this.scene.scene.restart();
+    }
+  }
+
+  public handleSlopePhysics(result: SlopeCollisionResult): void {
+    // Snap player to slope surface
+    const targetY = result.surfaceY - this.height / 2;
+    this.y = targetY;
+    this.onSlope = true;
+    this.slopeAngle = result.angle;
+    this.wasOnSlope = true;
+
+    // Prevent falling through — zero out downward velocity
+    if (this.body!.velocity.y > 0) {
+      this.setVelocityY(0);
+    }
+
+    // Apply slope speed modifier to horizontal velocity
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    body.velocity.x *= result.speedMod;
+
+    // Store launch vector for when player leaves the slope
+    this.pendingLaunchVector = result.launchVector ?? null;
+
+    // Reduce gravity while on slope
+    body.setAllowGravity(false);
+  }
+
+  /**
+   * Clears slope state. Returns the launch speed if the player just
+   * launched off a slope, or 0 if no launch occurred.
+   */
+  public clearSlopeState(): number {
+    if (this.wasOnSlope && !this.onSlope) {
+      // Just left a slope — re-enable gravity
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      body.setAllowGravity(true);
+      this.wasOnSlope = false;
+
+      // Apply stored launch vector
+      if (this.pendingLaunchVector) {
+        const lv = this.pendingLaunchVector;
+        body.velocity.x += lv.x;
+        body.velocity.y += lv.y;
+        const launchSpeed = Math.sqrt(lv.x * lv.x + lv.y * lv.y);
+        this.pendingLaunchVector = null;
+        EventBus.emit("slope-launch", {
+          speed: launchSpeed,
+          angle: this.slopeAngle,
+        });
+        return launchSpeed;
+      }
+    }
+    this.onSlope = false;
+    return 0;
+  }
+
+  public detectPlatformType(platform: any): void {
+    const type = platform?.getData?.("type");
+    if (type && Object.values(PlatformType).includes(type)) {
+      this.currentPlatformType = type as PlatformType;
+    } else {
+      this.currentPlatformType = PlatformType.STANDARD;
     }
   }
 

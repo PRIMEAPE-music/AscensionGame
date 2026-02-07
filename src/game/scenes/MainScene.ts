@@ -3,9 +3,13 @@ import { Player } from "../entities/Player";
 import { LevelGenerator } from "../systems/LevelGenerator";
 import { SpawnManager } from "../systems/SpawnManager";
 import { CombatManager } from "../systems/CombatManager";
+import { SlopeManager } from "../systems/SlopeManager";
+import { StyleManager } from "../systems/StyleManager";
+import { BiomeRenderer } from "../systems/BiomeRenderer";
 import { EventBus } from "../systems/EventBus";
 import { ClassType } from "../config/ClassConfig";
 import { WORLD } from "../config/GameConfig";
+import { PlatformType } from "../config/PlatformTypes";
 
 export class MainScene extends Phaser.Scene {
   private player!: Player;
@@ -16,6 +20,9 @@ export class MainScene extends Phaser.Scene {
   private levelGenerator!: LevelGenerator;
   private spawnManager!: SpawnManager;
   private combatManager!: CombatManager;
+  private slopeManager!: SlopeManager;
+  private styleManager!: StyleManager;
+  private biomeRenderer!: BiomeRenderer;
   private leftWall!: Phaser.GameObjects.Rectangle;
   private rightWall!: Phaser.GameObjects.Rectangle;
   private highestY: number = WORLD.PLAYER_SPAWN.y;
@@ -43,8 +50,6 @@ export class MainScene extends Phaser.Scene {
   }
 
   create() {
-    this.add.image(960, 540, "sky").setScale(2).setScrollFactor(0);
-
     // Groups
     this.staticPlatforms = this.physics.add.staticGroup();
     this.movingPlatforms = this.physics.add.group({
@@ -53,6 +58,11 @@ export class MainScene extends Phaser.Scene {
     });
     this.enemies = this.physics.add.group({ runChildUpdate: true });
     this.items = this.physics.add.group();
+
+    // Systems (order matters: BiomeRenderer creates bg layers first)
+    this.biomeRenderer = new BiomeRenderer(this);
+    this.slopeManager = new SlopeManager(this);
+    this.styleManager = new StyleManager(this);
 
     // Walls
     this.leftWall = this.add.rectangle(
@@ -72,11 +82,12 @@ export class MainScene extends Phaser.Scene {
     );
     this.physics.add.existing(this.rightWall, true);
 
-    // Level generator
+    // Level generator (needs SlopeManager reference)
     this.levelGenerator = new LevelGenerator(
       this,
       this.staticPlatforms,
       this.movingPlatforms,
+      this.slopeManager,
     );
     this.levelGenerator.init();
 
@@ -115,6 +126,7 @@ export class MainScene extends Phaser.Scene {
       (_player, platform) => {
         if (this.player.body!.touching.down || this.player.body!.blocked.down) {
           this.ridingPlatform = platform;
+          this.player.detectPlatformType(platform);
         }
       },
       undefined,
@@ -147,7 +159,7 @@ export class MainScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
     this.cameras.main.setDeadzone(100, 100);
 
-    // Prevent Alt from triggering browser menu (resizes game window)
+    // Prevent Alt from triggering browser menu
     this.input.keyboard!.addCapture([
       Phaser.Input.Keyboard.KeyCodes.ALT,
       Phaser.Input.Keyboard.KeyCodes.SPACE,
@@ -186,17 +198,36 @@ export class MainScene extends Phaser.Scene {
     this.player.update(time, delta);
     this.levelGenerator.update(this.player.y);
 
+    // Slope collision (after player update, before other systems)
+    const slopeLaunchSpeed = this.player.clearSlopeState();
+    if (slopeLaunchSpeed > 0) {
+      this.styleManager.onSlopeLaunch(slopeLaunchSpeed);
+    }
+    const slopeResult = this.slopeManager.update(this.player);
+    if (slopeResult) {
+      this.player.handleSlopePhysics(slopeResult);
+    }
+
     // Track highest point reached
     if (this.player.y < this.highestY) {
       this.highestY = this.player.y;
     }
 
-    // Calculate altitude (base platform Y is altitude 0)
+    // Calculate altitude
     const altitude = Math.max(
       0,
       (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
     );
     EventBus.emit("altitude-change", { altitude });
+
+    // Style tracking
+    const vx = this.player.body!.velocity.x;
+    const vy = this.player.body!.velocity.y;
+    const speed = Math.sqrt(vx * vx + vy * vy);
+    this.styleManager.update(delta, speed);
+
+    // Biome visuals
+    this.biomeRenderer.update(altitude, this.cameras.main.scrollY);
 
     // Systems
     this.spawnManager.update(altitude, delta);
@@ -229,8 +260,24 @@ export class MainScene extends Phaser.Scene {
   }
 
   private handleStaticPlatformCollision(_player: any, platform: any) {
+    // Detect platform type for surface effects
+    if (_player.body.touching.down) {
+      this.player.detectPlatformType(platform);
+    }
+
+    // Bounce platforms auto-bounce on contact
     if (
-      platform.getData("type") === "breakable" &&
+      platform.getData("type") === PlatformType.BOUNCE &&
+      _player.body.touching.down &&
+      platform.body.touching.up
+    ) {
+      this.player.setVelocityY(-800);
+      this.styleManager.addStyle(5);
+    }
+
+    // Breakable platform logic
+    if (
+      platform.getData("type") === PlatformType.BREAKABLE &&
       platform.body.touching.up &&
       _player.body.touching.down
     ) {

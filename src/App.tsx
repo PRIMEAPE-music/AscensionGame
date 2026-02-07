@@ -20,6 +20,8 @@ function App() {
   const [maxHealth, setMaxHealth] = useState(3);
   const [altitude, setAltitude] = useState(0);
   const [inventory, setInventory] = useState<ItemData[]>([]);
+  const [styleMeter, setStyleMeter] = useState(0);
+  const [styleTier, setStyleTier] = useState("D");
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
@@ -64,6 +66,8 @@ function App() {
     setMaxHealth(3);
     setAltitude(0);
     setInventory([]);
+    setStyleMeter(0);
+    setStyleTier("D");
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("CLASS_SELECT");
@@ -78,6 +82,8 @@ function App() {
     setMaxHealth(3);
     setAltitude(0);
     setInventory([]);
+    setStyleMeter(0);
+    setStyleTier("D");
     setGameState("CLASS_SELECT");
     setSelectedClass(null);
   }, []);
@@ -136,6 +142,11 @@ function App() {
       setInventory(e.detail.inventory);
     };
 
+    const handleStyleChange = (e: CustomEvent) => {
+      setStyleMeter(e.detail.meter);
+      setStyleTier(e.detail.tier);
+    };
+
     window.addEventListener(
       "health-change",
       handleHealthChange as EventListener,
@@ -148,6 +159,7 @@ function App() {
       "inventory-change",
       handleInventoryChange as EventListener,
     );
+    window.addEventListener("style-change", handleStyleChange as EventListener);
 
     return () => {
       window.removeEventListener(
@@ -161,6 +173,10 @@ function App() {
       window.removeEventListener(
         "inventory-change",
         handleInventoryChange as EventListener,
+      );
+      window.removeEventListener(
+        "style-change",
+        handleStyleChange as EventListener,
       );
       gameRef.current?.destroy(true);
       gameRef.current = null;
@@ -189,6 +205,8 @@ function App() {
             altitude={altitude}
             inventory={inventory}
             className={selectedClass ? CLASSES[selectedClass].name : undefined}
+            styleMeter={styleMeter}
+            styleTier={styleTier}
           />
           {isPaused && (
             <PauseMenu

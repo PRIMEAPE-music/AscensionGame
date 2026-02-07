@@ -81,3 +81,64 @@ export const SPAWNING = {
     },
   },
 } as const;
+
+export const SLOPES = {
+  UPHILL_SPEED_MULT: 0.7,
+  DOWNHILL_SPEED_MULT: 1.4,
+  LAUNCH_FORCE_MULT: 0.6,
+  MIN_LAUNCH_SPEED: 200,
+  SLIDE_GRAVITY_MULT: 0.5,
+  MAX_SLOPE_ANGLE: 45,
+  SNAP_TOLERANCE: 8,
+} as const;
+
+export const PLATFORM_CONFIG = {
+  ICE_FRICTION: 0.05,
+  ICE_ACCEL_MULT: 0.3,
+  STICKY_SPEED_MULT: 0.4,
+  STICKY_JUMP_MULT: 1.3,
+  BOUNCE_FORCE: -800,
+  BOUNCE_HORIZONTAL_MULT: 0.3,
+} as const;
+
+export const STYLE = {
+  DECAY_RATE: 5,
+  DECAY_DELAY: 2000,
+  MAX_METER: 100,
+  SPEED_THRESHOLD: 250,
+  SPEED_GAIN: 0.3,
+  AIRBORNE_KILL_BONUS: 15,
+  MULTI_KILL_BONUS: 25,
+  WALL_JUMP_CHAIN_BONUS: 10,
+  SLOPE_LAUNCH_BONUS: 20,
+  TIER_THRESHOLDS: [0, 25, 50, 75, 90] as readonly number[],
+  TIER_NAMES: ["D", "C", "B", "A", "S"] as readonly string[],
+  TIER_MULTIPLIERS: [1.0, 1.2, 1.5, 2.0, 3.0] as readonly number[],
+} as const;
+
+export const BIOMES = {
+  DEPTHS: {
+    maxAltitude: 500,
+    bg: 0x0a0a1a,
+    platform: 0x334455,
+    name: "The Depths",
+  },
+  CAVERNS: {
+    maxAltitude: 2000,
+    bg: 0x1a0a0a,
+    platform: 0x553333,
+    name: "Infernal Caverns",
+  },
+  SPIRE: {
+    maxAltitude: 5000,
+    bg: 0x0a1a0a,
+    platform: 0x335533,
+    name: "The Spire",
+  },
+  SUMMIT: {
+    maxAltitude: Infinity,
+    bg: 0x1a1a2a,
+    platform: 0x555577,
+    name: "The Summit",
+  },
+} as const;
