@@ -11,6 +11,7 @@ import {
   type AttackDefinition,
   COMBAT_CONFIG,
 } from "../systems/CombatTypes";
+import { SPRITE_CONFIG } from "../config/AnimationConfig";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -39,6 +40,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Double Jump State
   private canDoubleJump: boolean = false;
   private hasDoubleJumped: boolean = false;
+
+  // Animation State
+  private currentAnim: string = "";
+  private wasAirborne: boolean = false;
+  private isLanding: boolean = false;
 
   // Invincibility
   private invincibilityTimer: number = 0;
@@ -75,7 +81,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     y: number,
     classType: ClassType = ClassType.MONK,
   ) {
-    super(scene, x, y, "dude");
+    super(scene, x, y, "monk_idle");
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -84,13 +90,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.classStats = CLASSES[classType];
     this.maxHealth = this.classStats.health;
     this.health = this.maxHealth;
-    this.setTint(this.classStats.color);
+
+    // Set physics body to 32x48 centered within the larger sprite frame
+    this.setSize(SPRITE_CONFIG.BODY_WIDTH, SPRITE_CONFIG.BODY_HEIGHT);
+    this.setOffset(SPRITE_CONFIG.BODY_OFFSET_X, SPRITE_CONFIG.BODY_OFFSET_Y);
 
     this.setCollideWorldBounds(false);
     // Scene already applies PHYSICS.GRAVITY globally — don't double it
     this.setBounce(0);
 
     this.initInput();
+
+    // Listen for land animation completion
+    this.on("animationcomplete-monk_land", () => {
+      this.isLanding = false;
+    });
   }
 
   private initInput() {
@@ -125,6 +139,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.handleWallInteraction();
     this.handleCombat(delta);
     this.updateInvincibility(delta);
+    this.updateAnimation();
   }
 
   private updateTimers(delta: number) {
@@ -163,7 +178,43 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.invincibilityTimer <= 0) {
       this.invincibilityTimer = 0;
       this.setAlpha(1);
-      this.setTint(this.classStats.color);
+      this.clearTint();
+    }
+  }
+
+  private updateAnimation() {
+    // Don't override animations during active attacks (no attack sprites yet)
+    if (this.isAttacking) return;
+
+    const airborne = !this.onGround && !this.onSlope;
+    const vy = this.body!.velocity.y;
+    const vx = this.body!.velocity.x;
+
+    let anim = "monk_idle";
+
+    if (this.isWallSliding) {
+      anim = "monk_wall_slide";
+    } else if (airborne && vy < 0) {
+      anim = "monk_jump";
+    } else if (airborne && vy >= 0) {
+      anim = "monk_fall";
+    } else if (this.wasAirborne && !airborne) {
+      // Just landed
+      anim = "monk_land";
+      this.isLanding = true;
+    } else if (this.isLanding) {
+      // Still playing land animation — don't interrupt
+      anim = "monk_land";
+    } else if (Math.abs(vx) > 10) {
+      anim = "monk_run";
+    }
+
+    this.wasAirborne = airborne;
+
+    // Only call play if animation changed (avoids restarting loops)
+    if (this.currentAnim !== anim) {
+      this.currentAnim = anim;
+      this.play(anim, true);
     }
   }
 
@@ -441,7 +492,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     const def = COMBAT_CONFIG[this.classType].attacks[attackId];
-    if (def) this.setTint(def.color);
+    if (def) this.setTint(def.color); // attack flash tint
   }
 
   private enterActiveState(def: AttackDefinition) {
@@ -480,7 +531,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.isAttacking = false;
     this.attackState = "IDLE";
     this.cleanupHitbox();
-    this.setTint(this.classStats.color);
+    this.clearTint();
     this.comboTimer = COMBAT.COMBO_WINDOW;
   }
 

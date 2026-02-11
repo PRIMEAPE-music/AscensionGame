@@ -10,6 +10,7 @@ import { EventBus } from "../systems/EventBus";
 import { ClassType } from "../config/ClassConfig";
 import { WORLD } from "../config/GameConfig";
 import { PlatformType } from "../config/PlatformTypes";
+import { SPRITE_CONFIG, ANIMATIONS } from "../config/AnimationConfig";
 
 export class MainScene extends Phaser.Scene {
   private player!: Player;
@@ -38,15 +39,22 @@ export class MainScene extends Phaser.Scene {
     ground.fillRect(0, 0, 400, 32);
     ground.generateTexture("ground", 400, 32);
 
-    const player = this.make.graphics({ x: 0, y: 0 }, false);
-    player.fillStyle(0xffffff);
-    player.fillRect(0, 0, 32, 48);
-    player.generateTexture("dude", 32, 48);
-
     const sky = this.make.graphics({ x: 0, y: 0 }, false);
     sky.fillStyle(0x000033);
     sky.fillRect(0, 0, 800, 600);
     sky.generateTexture("sky", 800, 600);
+
+    // Load monk spritesheets
+    for (const anim of ANIMATIONS) {
+      this.load.spritesheet(
+        anim.textureKey,
+        `assets/sprites/${anim.textureKey}_sheet.png`,
+        {
+          frameWidth: SPRITE_CONFIG.FRAME_WIDTH,
+          frameHeight: SPRITE_CONFIG.FRAME_HEIGHT,
+        },
+      );
+    }
   }
 
   create() {
@@ -154,6 +162,19 @@ export class MainScene extends Phaser.Scene {
       undefined,
       this,
     );
+
+    // Register sprite animations
+    for (const anim of ANIMATIONS) {
+      this.anims.create({
+        key: anim.key,
+        frames: this.anims.generateFrameNumbers(anim.textureKey, {
+          start: 0,
+          end: anim.frameCount - 1,
+        }),
+        frameRate: anim.frameRate,
+        repeat: anim.repeat,
+      });
+    }
 
     // Camera
     this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
