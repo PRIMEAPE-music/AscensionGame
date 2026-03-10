@@ -276,6 +276,50 @@ export class LevelGenerator {
     };
   }
 
+  // Remove existing platforms that overlap with a slope being placed
+  private clearPlatformsInArea(
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+    margin: number = 20,
+  ) {
+    const left = minX - margin;
+    const right = maxX + margin;
+    const top = minY - margin;
+    const bottom = maxY + margin;
+
+    const removeOverlapping = (
+      group: Phaser.Physics.Arcade.Group | Phaser.Physics.Arcade.StaticGroup,
+    ) => {
+      const toRemove: any[] = [];
+      group.children.each((child: any) => {
+        if (!child.active) return true;
+        const hw = child.displayWidth / 2;
+        const hh = child.displayHeight / 2;
+        if (
+          child.x + hw > left &&
+          child.x - hw < right &&
+          child.y + hh > top &&
+          child.y - hh < bottom
+        ) {
+          toRemove.push(child);
+        }
+        return true;
+      });
+      for (const child of toRemove) {
+        const shadowCb = child.getData("shadowUpdateCallback");
+        if (shadowCb) this.scene.events.off("update", shadowCb);
+        const shadow = child.getData("shadow");
+        if (shadow) shadow.destroy();
+        group.remove(child, true, true);
+      }
+    };
+
+    removeOverlapping(this.staticPlatforms);
+    removeOverlapping(this.movingPlatforms);
+  }
+
   private generateNextChunk(altitude: number) {
     const params = this.getDifficultyParams(altitude);
 
@@ -343,8 +387,7 @@ export class LevelGenerator {
       WORLD.WIDTH - 100,
     );
 
-    this.createPlatform(x, y, 1.5, PlatformType.STANDARD);
-    this.lastPlatformY = y;
+    this.lastPlatformY = this.createPlatform(x, y, 1.5, PlatformType.STANDARD);
     this.lastPlatformX = x;
   }
 
@@ -369,8 +412,7 @@ export class LevelGenerator {
     const scale = Phaser.Math.FloatBetween(0.8, 2.0);
     const type = this.rollPlatformType(params.biomeKey);
 
-    this.createPlatform(x, y, scale, type);
-    this.lastPlatformY = y;
+    this.lastPlatformY = this.createPlatform(x, y, scale, type);
     this.lastPlatformX = x;
   }
 
@@ -397,8 +439,7 @@ export class LevelGenerator {
 
       const scale = this.getPatternScale(i, steps);
       const type = this.rollPlatformType(params.biomeKey);
-      this.createPlatform(x, y, scale, type);
-      this.lastPlatformY = y;
+      this.lastPlatformY = this.createPlatform(x, y, scale, type);
       this.lastPlatformX = x;
     }
   }
@@ -413,13 +454,12 @@ export class LevelGenerator {
       const y = this.lastPlatformY - yGap;
       const x = wallX + Phaser.Math.Between(-50, 50);
 
-      this.createPlatform(x, y, 0.8, PlatformType.STANDARD);
-      this.lastPlatformY = y;
+      this.lastPlatformY = this.createPlatform(x, y, 0.8, PlatformType.STANDARD);
       this.lastPlatformX = x;
     }
   }
 
-  // Fix 8: Slope run with landing validation
+  // Fix 8: Slope run with landing validation + platform clearing
   private generateSlopeRun(params: DifficultyParams) {
     const slopeCount = Phaser.Math.Between(2, 3);
     const slopeWidth = Phaser.Math.Between(200, 350);
@@ -441,6 +481,9 @@ export class LevelGenerator {
         Math.min(minX, maxX),
         Math.max(minX, maxX),
       );
+
+      // Clear any existing platforms in the slope area before placing
+      this.clearPlatformsInArea(x, y - slopeHeight, x + slopeWidth, y);
 
       const direction: "left" | "right" = i % 2 === 0 ? "left" : "right";
 
@@ -467,8 +510,12 @@ export class LevelGenerator {
       slopeHeight,
       lastDir,
     );
-    this.createPlatform(landing.x, landing.y, 1.5, PlatformType.STANDARD);
-    this.lastPlatformY = landing.y;
+    this.lastPlatformY = this.createPlatform(
+      landing.x,
+      landing.y,
+      1.5,
+      PlatformType.STANDARD,
+    );
     this.lastPlatformX = landing.x;
   }
 
@@ -495,20 +542,23 @@ export class LevelGenerator {
       }
 
       const scale = Math.max(0.5, this.getPatternScale(i, count) * 0.5);
-      this.createPlatform(x, y, scale, PlatformType.BOUNCE);
-      this.lastPlatformY = y;
+      this.lastPlatformY = this.createPlatform(
+        x,
+        y,
+        scale,
+        PlatformType.BOUNCE,
+      );
       this.lastPlatformX = x;
     }
 
     // Reward platform at top of bounce chain
     const rewardY = this.lastPlatformY - Phaser.Math.Between(200, 300);
-    this.createPlatform(
+    this.lastPlatformY = this.createPlatform(
       this.lastPlatformX,
       rewardY,
       2.0,
       PlatformType.STANDARD,
     );
-    this.lastPlatformY = rewardY;
   }
 
   private generateHalfpipeSection(params: DifficultyParams) {
@@ -533,17 +583,24 @@ export class LevelGenerator {
       Math.min(WORLD.WIDTH - 100 - width, this.lastPlatformX - width / 2),
     );
 
+    // Clear platforms in the halfpipe area (bowl extends downward from y)
+    this.clearPlatformsInArea(x, y, x + width, y + depth);
+
     this.slopeManager.createHalfPipe(x, y, width, depth, tint);
 
     this.lastPlatformY = y - depth;
     this.lastPlatformX = x + width / 2;
 
     const exitY = this.lastPlatformY - Phaser.Math.Between(80, 140);
-    this.createPlatform(this.lastPlatformX, exitY, 1.5, PlatformType.STANDARD);
-    this.lastPlatformY = exitY;
+    this.lastPlatformY = this.createPlatform(
+      this.lastPlatformX,
+      exitY,
+      1.5,
+      PlatformType.STANDARD,
+    );
   }
 
-  // Fix 8: Launch sequence with landing validation
+  // Fix 8: Launch sequence with landing validation + platform clearing
   private generateLaunchSequence(params: DifficultyParams) {
     const biomeKey = params.biomeKey;
     const biomeDef = BIOMES[biomeKey as keyof typeof BIOMES];
@@ -577,6 +634,9 @@ export class LevelGenerator {
         Math.max(minX, maxX),
       );
 
+      // Clear platforms in the ramp area
+      this.clearPlatformsInArea(x, y - height, x + width, y);
+
       const direction: "left" | "right" = i % 2 === 0 ? "left" : "right";
       this.slopeManager.createQuarterPipe(x, y, width, height, direction, tint);
 
@@ -595,12 +655,16 @@ export class LevelGenerator {
       lastHeight,
       lastDirection,
     );
-    this.createPlatform(landing.x, landing.y, 2.0, PlatformType.STANDARD);
-    this.lastPlatformY = landing.y;
+    this.lastPlatformY = this.createPlatform(
+      landing.x,
+      landing.y,
+      2.0,
+      PlatformType.STANDARD,
+    );
     this.lastPlatformX = landing.x;
   }
 
-  // Fix 4 & 6: Rolling hills uses biome types + pattern scale
+  // Fix 4 & 6: Rolling hills uses biome types + pattern scale + platform clearing
   private generateRollingHills(params: DifficultyParams) {
     const biomeKey = params.biomeKey;
     const biomeDef = BIOMES[biomeKey as keyof typeof BIOMES];
@@ -631,19 +695,27 @@ export class LevelGenerator {
         Math.max(minX, maxX),
       );
 
+      // Clear platforms in the hill area before placing
+      this.clearPlatformsInArea(x, y - height, x + width, y);
+
       this.slopeManager.createHill(x, y, width, height, tint);
 
+      // Place landing platform ABOVE the hill peak (not inside the curve)
       const scale = Math.max(0.5, this.getPatternScale(i, hillCount) * 0.5);
       const type = this.rollPlatformType(params.biomeKey);
-      this.createPlatform(x + width / 2, y - height + 10, scale, type);
+      this.createPlatform(x + width / 2, y - height - 10, scale, type);
 
       this.lastPlatformY = y - height;
       this.lastPlatformX = x + width / 2;
     }
 
     const safeY = this.lastPlatformY - Phaser.Math.Between(60, 100);
-    this.createPlatform(this.lastPlatformX, safeY, 1.5, PlatformType.STANDARD);
-    this.lastPlatformY = safeY;
+    this.lastPlatformY = this.createPlatform(
+      this.lastPlatformX,
+      safeY,
+      1.5,
+      PlatformType.STANDARD,
+    );
   }
 
   // Fix 7: Diagonal ascent — 4-6 platforms in a ~45° diagonal line
@@ -672,8 +744,7 @@ export class LevelGenerator {
 
       const scale = this.getPatternScale(i, steps);
       const type = this.rollPlatformType(params.biomeKey);
-      this.createPlatform(x, y, scale, type);
-      this.lastPlatformY = y;
+      this.lastPlatformY = this.createPlatform(x, y, scale, type);
       this.lastPlatformX = x;
     }
   }
@@ -709,18 +780,18 @@ export class LevelGenerator {
 
       const scale = this.getPatternScale(i, steps);
       const type = this.rollPlatformType(params.biomeKey);
-      this.createPlatform(x, y, scale, type);
-      this.lastPlatformY = y;
+      this.lastPlatformY = this.createPlatform(x, y, scale, type);
       this.lastPlatformX = x;
     }
   }
 
+  // Returns actual y used (may differ from input if shifted to avoid slope overlap)
   private createPlatform(
     x: number,
     y: number,
     scale: number,
     type: PlatformType,
-  ) {
+  ): number {
     // Slope types are handled by SlopeManager, not physics bodies
     if (type === PlatformType.SLOPE_LEFT || type === PlatformType.SLOPE_RIGHT) {
       const width = scale * 400;
@@ -730,6 +801,15 @@ export class LevelGenerator {
         Math.max(0, (WORLD.BASE_PLATFORM_Y - y) / WORLD.ALTITUDE_SCALE),
       );
       const biomeDef = BIOMES[biomeKey as keyof typeof BIOMES];
+
+      // Clear overlapping platforms before placing slope
+      this.clearPlatformsInArea(
+        x - width / 2,
+        y - height,
+        x + width / 2,
+        y,
+      );
+
       this.slopeManager.createSlope(
         x - width / 2,
         y,
@@ -738,7 +818,14 @@ export class LevelGenerator {
         direction,
         biomeDef?.platform ?? 0xffaa44,
       );
-      return;
+      return y;
+    }
+
+    // Check slope overlap — shift platform above any conflicting slope
+    const platformHalfW = (scale * 400) / 2;
+    const clearY = this.slopeManager.findClearY(x, y, platformHalfW, 16);
+    if (clearY !== null) {
+      y = clearY;
     }
 
     const def = PLATFORM_DEFS[type];
@@ -840,5 +927,7 @@ export class LevelGenerator {
         this.platformEffectsManager.registerPlatform(platform, type);
       }
     }
+
+    return y;
   }
 }

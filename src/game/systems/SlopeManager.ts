@@ -563,6 +563,51 @@ export class SlopeManager {
   }
 
   /**
+   * Check if a rectangle overlaps any existing slope.
+   * Returns a y position above all overlapping slopes (with margin), or null if no overlap.
+   */
+  findClearY(
+    x: number,
+    y: number,
+    halfWidth: number,
+    halfHeight: number,
+    margin: number = 30,
+  ): number | null {
+    const left = x - halfWidth - margin;
+    const right = x + halfWidth + margin;
+    const top = y - halfHeight - margin;
+    const bottom = y + halfHeight + margin;
+
+    let highestSlopeTop: number | null = null;
+
+    for (const slope of this.slopes) {
+      let sMinX: number, sMaxX: number, sMinY: number, sMaxY: number;
+      if (this.isCurvedSlope(slope)) {
+        sMinX = slope.bounds.minX;
+        sMaxX = slope.bounds.maxX;
+        sMinY = slope.bounds.minY;
+        sMaxY = slope.bounds.maxY;
+      } else {
+        sMinX = Math.min(slope.x1, slope.x2);
+        sMaxX = Math.max(slope.x1, slope.x2);
+        sMinY = Math.min(slope.y1, slope.y2);
+        sMaxY = Math.max(slope.y1, slope.y2);
+      }
+
+      if (right > sMinX && left < sMaxX && bottom > sMinY && top < sMaxY) {
+        if (highestSlopeTop === null || sMinY < highestSlopeTop) {
+          highestSlopeTop = sMinY;
+        }
+      }
+    }
+
+    if (highestSlopeTop !== null) {
+      return highestSlopeTop - margin - halfHeight;
+    }
+    return null;
+  }
+
+  /**
    * Remove slopes far below the player to free memory.
    */
   cleanup(playerY: number, buffer: number): void {
