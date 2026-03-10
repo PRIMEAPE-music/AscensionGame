@@ -8,7 +8,7 @@ export const ITEMS: Record<string, ItemData> = {
         description: 'Increases Attack Damage by 20%',
         type: 'SILVER',
         rarity: 'COMMON',
-        effects: [{ targetStat: 'attackDamage', value: 0.2, operation: 'ADD' }], // Additive multiplier (e.g. +20% base)
+        effects: [{ targetStat: 'attackDamage', value: 0.12, operation: 'ADD' }], // Additive multiplier (e.g. +12% base)
         iconColor: 0xaaaaaa
     },
     'winged_boots': {
@@ -26,7 +26,7 @@ export const ITEMS: Record<string, ItemData> = {
         description: 'Increases Max Health by 1',
         type: 'SILVER',
         rarity: 'RARE',
-        effects: [{ targetStat: 'health', value: 1, operation: 'ADD' }], // Flat addition
+        effects: [{ targetStat: 'health', value: 3, operation: 'ADD' }], // Flat addition
         iconColor: 0xff0000
     },
     'swift_blade': {

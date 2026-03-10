@@ -22,15 +22,15 @@ export class CombatManager {
   }
 
   update(): void {
-    if (this.player.isAttacking && this.player.attackHitbox) {
-      this.scene.physics.overlap(
-        this.player.attackHitbox,
-        this.enemies,
-        (_hitbox: any, enemy: any) => this.handleAttackHit(enemy),
-        undefined,
-        this,
-      );
-    }
+    if (!this.player.isAttacking || !this.player.attackHitbox) return;
+
+    this.scene.physics.overlap(
+      this.player.attackHitbox,
+      this.enemies,
+      (_hitbox: any, enemy: any) => this.handleAttackHit(enemy),
+      undefined,
+      this,
+    );
   }
 
   private handleAttackHit(enemy: any): void {

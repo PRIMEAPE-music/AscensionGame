@@ -10,6 +10,7 @@ export class DemonTurret extends Enemy {
   private readonly PROJECTILE_SPEED = 250;
   private readonly PROJECTILE_LIFETIME = 3000;
   private projectiles: Phaser.Physics.Arcade.Group;
+  private projectileCollider: Phaser.Physics.Arcade.Collider;
 
   constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
     super(scene, x, y, "dude", player, 5, 1, 0); // 5 HP, 1 Dmg, 0 Speed (stationary)
@@ -27,7 +28,7 @@ export class DemonTurret extends Enemy {
     });
 
     // Overlap projectiles with player for damage
-    scene.physics.add.overlap(
+    this.projectileCollider = scene.physics.add.overlap(
       player,
       this.projectiles,
       (_p: any, proj: any) => this.onProjectileHitPlayer(proj),
@@ -94,7 +95,8 @@ export class DemonTurret extends Enemy {
   }
 
   protected die() {
-    // Clean up projectiles when turret dies
+    // Clean up projectiles and collider when turret dies
+    this.projectileCollider.destroy();
     this.projectiles.clear(true, true);
     super.die();
   }

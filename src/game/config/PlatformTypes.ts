@@ -37,7 +37,7 @@ export const PLATFORM_DEFS: Record<PlatformType, PlatformDef> = {
     type: PlatformType.ICE,
     color: 0x88ccff,
     friction: 0.05,
-    speedMult: 1.0,
+    speedMult: 0.6,
   },
   [PlatformType.STICKY]: {
     type: PlatformType.STICKY,
@@ -53,7 +53,7 @@ export const PLATFORM_DEFS: Record<PlatformType, PlatformDef> = {
   [PlatformType.SLOPE_LEFT]: {
     type: PlatformType.SLOPE_LEFT,
     color: 0xffaa44,
-    slopeAngle: 30,
+    slopeAngle: -30,
   },
   [PlatformType.SLOPE_RIGHT]: {
     type: PlatformType.SLOPE_RIGHT,

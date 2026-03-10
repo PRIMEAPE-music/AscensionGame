@@ -37,6 +37,8 @@ const BIOME_LIST = buildBiomeList();
 export class BiomeRenderer {
   private scene: Phaser.Scene;
   private currentBiomeName: string = "DEPTHS";
+  private currentTransitionT: number = 0;
+  private currentAltitude: number = 0;
   private bgLayer: Phaser.GameObjects.Rectangle;
   private midLayer: Phaser.GameObjects.Rectangle;
   private farLayer: Phaser.GameObjects.Rectangle;
@@ -69,7 +71,8 @@ export class BiomeRenderer {
       .setOrigin(0.5, 0.5);
   }
 
-  update(altitude: number, cameraY: number): void {
+  update(altitude: number, _cameraY: number): void {
+    this.currentAltitude = altitude;
     const biome = this.getBiomeAt(altitude);
 
     if (biome.key !== this.currentBiomeName) {
@@ -79,6 +82,7 @@ export class BiomeRenderer {
 
     // Find current biome index for transition blending
     const idx = BIOME_LIST.findIndex((b) => b.key === biome.key);
+    if (idx === -1) return;
     const current = BIOME_LIST[idx];
     const next = BIOME_LIST[Math.min(idx + 1, BIOME_LIST.length - 1)];
 
@@ -88,6 +92,7 @@ export class BiomeRenderer {
       isFinite(range) && range > 0
         ? Math.max(0, Math.min(1, (altitude - current.minAltitude) / range))
         : 0;
+    this.currentTransitionT = t;
 
     const blended = this.lerpColor(current.bgColor, next.bgColor, t);
 
@@ -103,6 +108,20 @@ export class BiomeRenderer {
     this.farLayer.setPosition(cx, cy);
     this.midLayer.setPosition(cx, cy);
     this.bgLayer.setPosition(cx, cy);
+  }
+
+  hideVisuals(): void {
+    this.farLayer.setVisible(false);
+    this.midLayer.setVisible(false);
+    this.bgLayer.setVisible(false);
+  }
+
+  getCurrentBiomeInfo(): { biome: string; t: number; altitude: number } {
+    return {
+      biome: this.currentBiomeName,
+      t: this.currentTransitionT,
+      altitude: this.currentAltitude,
+    };
   }
 
   getBiomeAt(altitude: number): BiomeInfo {
@@ -145,5 +164,11 @@ export class BiomeRenderer {
     const g = Math.max(0, ((color >> 8) & 0xff) - Math.round(255 * amount));
     const b = Math.max(0, (color & 0xff) - Math.round(255 * amount));
     return (r << 16) | (g << 8) | b;
+  }
+
+  destroy(): void {
+    this.farLayer?.destroy();
+    this.midLayer?.destroy();
+    this.bgLayer?.destroy();
   }
 }

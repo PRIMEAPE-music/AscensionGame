@@ -8,6 +8,9 @@ export class StyleManager {
   private wallJumpChain: number = 0;
   private wallJumpTimer: number = 0;
   private lastTier: string = "D";
+  private _cachedTier: string = "D";
+  private _cachedMultiplier: number = 1;
+  private _lastMeterValue: number = 0;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -92,7 +95,9 @@ export class StyleManager {
     this.addStyle(STYLE.SLOPE_LAUNCH_BONUS * (speed / 500));
   }
 
-  get tier(): string {
+  private recomputeCache(): void {
+    if (this.meter === this._lastMeterValue) return;
+    this._lastMeterValue = this.meter;
     let tierIndex = 0;
     for (let i = STYLE.TIER_THRESHOLDS.length - 1; i >= 0; i--) {
       if (this.meter >= STYLE.TIER_THRESHOLDS[i]) {
@@ -100,7 +105,13 @@ export class StyleManager {
         break;
       }
     }
-    return STYLE.TIER_NAMES[tierIndex];
+    this._cachedTier = STYLE.TIER_NAMES[tierIndex];
+    this._cachedMultiplier = STYLE.TIER_MULTIPLIERS[tierIndex];
+  }
+
+  get tier(): string {
+    this.recomputeCache();
+    return this._cachedTier;
   }
 
   get value(): number {
@@ -108,13 +119,7 @@ export class StyleManager {
   }
 
   get multiplier(): number {
-    let tierIndex = 0;
-    for (let i = STYLE.TIER_THRESHOLDS.length - 1; i >= 0; i--) {
-      if (this.meter >= STYLE.TIER_THRESHOLDS[i]) {
-        tierIndex = i;
-        break;
-      }
-    }
-    return STYLE.TIER_MULTIPLIERS[tierIndex];
+    this.recomputeCache();
+    return this._cachedMultiplier;
   }
 }

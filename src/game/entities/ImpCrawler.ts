@@ -9,6 +9,7 @@ export class ImpCrawler extends Enemy {
         super(scene, x, y, 'dude', player, 3, 1, 100); // Reusing 'dude' texture for now, will tint
         this.setTint(0x00ff00); // Greenish tint for Imp
         this.setScale(0.8);
+        this.setFlipX(this.direction < 0);
     }
 
     update(time: number, delta: number) {

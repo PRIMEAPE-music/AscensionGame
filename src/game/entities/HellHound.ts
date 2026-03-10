@@ -5,10 +5,11 @@ import Phaser from "phaser";
 type HoundState = "PATROL" | "CHASE" | "LUNGE" | "RECOVERY";
 
 export class HellHound extends Enemy {
-  private state: HoundState = "PATROL";
+  protected state: HoundState = "PATROL";
   private direction: number = 1;
   private patrolTimer: number = 0;
   private recoveryTimer: number = 0;
+  private lungeTimer: number = 0;
 
   private readonly DETECT_RANGE = 350;
   private readonly LUNGE_RANGE = 120;
@@ -35,7 +36,7 @@ export class HellHound extends Enemy {
         this.handleChase();
         break;
       case "LUNGE":
-        this.handleLunge();
+        this.handleLunge(delta);
         break;
       case "RECOVERY":
         this.handleRecovery(delta);
@@ -94,6 +95,7 @@ export class HellHound extends Enemy {
 
   private startLunge() {
     this.state = "LUNGE";
+    this.lungeTimer = 0;
 
     // Brief telegraph flash
     this.setTint(0xffaa00);
@@ -103,13 +105,24 @@ export class HellHound extends Enemy {
     this.setVelocityY(this.LUNGE_SPEED_Y);
   }
 
-  private handleLunge() {
+  private handleLunge(delta: number) {
     // Wait until landing (on ground)
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (body.blocked.down) {
       this.state = "RECOVERY";
       this.recoveryTimer = 0;
       this.setVelocityX(0);
+      this.setTint(0xff4400); // Reset tint
+      return;
+    }
+
+    // Safety timeout: force recovery if stuck in lunge for over 3 seconds
+    this.lungeTimer += delta;
+    if (this.lungeTimer >= 3000) {
+      this.state = "RECOVERY";
+      this.recoveryTimer = 0;
+      this.setVelocityX(0);
+      this.setVelocityY(0);
       this.setTint(0xff4400); // Reset tint
     }
   }

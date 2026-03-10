@@ -98,4 +98,10 @@ export class ShadowBat extends Enemy {
       this.y = this.startY; // Snap to grid
     }
   }
+
+  protected die() {
+    this.isDiving = false;
+    this.isRecovering = false;
+    super.die();
+  }
 }

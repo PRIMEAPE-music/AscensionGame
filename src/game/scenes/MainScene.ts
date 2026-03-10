@@ -6,6 +6,11 @@ import { CombatManager } from "../systems/CombatManager";
 import { SlopeManager } from "../systems/SlopeManager";
 import { StyleManager } from "../systems/StyleManager";
 import { BiomeRenderer } from "../systems/BiomeRenderer";
+import { PlatformTextureManager } from "../systems/PlatformTextureManager";
+import { BackgroundRenderer } from "../systems/BackgroundRenderer";
+import { PlatformEffectsManager } from "../systems/PlatformEffectsManager";
+import { ParticleManager } from "../systems/ParticleManager";
+import { AtmosphereManager } from "../systems/AtmosphereManager";
 import { EventBus } from "../systems/EventBus";
 import { ClassType } from "../config/ClassConfig";
 import { WORLD } from "../config/GameConfig";
@@ -24,6 +29,11 @@ export class MainScene extends Phaser.Scene {
   private slopeManager!: SlopeManager;
   private styleManager!: StyleManager;
   private biomeRenderer!: BiomeRenderer;
+  private platformTextureManager!: PlatformTextureManager;
+  private backgroundRenderer!: BackgroundRenderer;
+  private platformEffectsManager!: PlatformEffectsManager;
+  private particleManager!: ParticleManager;
+  private atmosphereManager!: AtmosphereManager;
   private leftWall!: Phaser.GameObjects.Rectangle;
   private rightWall!: Phaser.GameObjects.Rectangle;
   private highestY: number = WORLD.PLAYER_SPAWN.y;
@@ -67,8 +77,11 @@ export class MainScene extends Phaser.Scene {
     this.enemies = this.physics.add.group({ runChildUpdate: true });
     this.items = this.physics.add.group();
 
-    // Systems (order matters: BiomeRenderer creates bg layers first)
+    // Systems (order matters: background layers first)
     this.biomeRenderer = new BiomeRenderer(this);
+    this.backgroundRenderer = new BackgroundRenderer(this);
+    this.biomeRenderer.hideVisuals(); // BackgroundRenderer replaces BiomeRenderer's visual layers
+    this.atmosphereManager = new AtmosphereManager(this);
     this.slopeManager = new SlopeManager(this);
     this.styleManager = new StyleManager(this);
 
@@ -90,6 +103,10 @@ export class MainScene extends Phaser.Scene {
     );
     this.physics.add.existing(this.rightWall, true);
 
+    // Platform texture manager (procedural textures per biome)
+    this.platformTextureManager = new PlatformTextureManager(this);
+    this.platformEffectsManager = new PlatformEffectsManager(this);
+
     // Level generator (needs SlopeManager reference)
     this.levelGenerator = new LevelGenerator(
       this,
@@ -97,6 +114,8 @@ export class MainScene extends Phaser.Scene {
       this.movingPlatforms,
       this.slopeManager,
     );
+    this.levelGenerator.setTextureManager(this.platformTextureManager);
+    this.levelGenerator.setPlatformEffectsManager(this.platformEffectsManager);
     this.levelGenerator.init();
 
     // Player
@@ -109,6 +128,9 @@ export class MainScene extends Phaser.Scene {
       selectedClass,
     );
     this.highestY = WORLD.PLAYER_SPAWN.y;
+
+    // Particle effects (needs player for state tracking)
+    this.particleManager = new ParticleManager(this);
 
     // Systems
     this.spawnManager = new SpawnManager(
@@ -179,6 +201,8 @@ export class MainScene extends Phaser.Scene {
     // Camera
     this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
     this.cameras.main.setDeadzone(100, 100);
+    // Bound camera to world edges: left=0, top=-Infinity (player ascends forever), right=WORLD.WIDTH, bottom=WORLD.HEIGHT
+    this.cameras.main.setBounds(0, -Number.MAX_SAFE_INTEGER, WORLD.WIDTH, Number.MAX_SAFE_INTEGER + WORLD.HEIGHT);
 
     // Prevent Alt from triggering browser menu
     this.input.keyboard!.addCapture([
@@ -249,6 +273,10 @@ export class MainScene extends Phaser.Scene {
 
     // Biome visuals
     this.biomeRenderer.update(altitude, this.cameras.main.scrollY);
+    this.backgroundRenderer.update(this.player.y, this.cameras.main);
+    this.atmosphereManager.update(time, altitude);
+    this.platformEffectsManager.update(time, delta);
+    this.particleManager.update(this.player, time, delta);
 
     // Systems
     this.spawnManager.update(altitude, delta);
@@ -272,38 +300,53 @@ export class MainScene extends Phaser.Scene {
     this.leftWall.y = camY + camHeight / 2;
     this.rightWall.y = camY + camHeight / 2;
 
-    (
-      this.leftWall.body as Phaser.Physics.Arcade.StaticBody
-    ).updateFromGameObject();
-    (
-      this.rightWall.body as Phaser.Physics.Arcade.StaticBody
-    ).updateFromGameObject();
+    const leftBody = this.leftWall.body as Phaser.Physics.Arcade.StaticBody;
+    const rightBody = this.rightWall.body as Phaser.Physics.Arcade.StaticBody;
+    if (leftBody) leftBody.updateFromGameObject();
+    if (rightBody) rightBody.updateFromGameObject();
+  }
+
+  shutdown(): void {
+    this.tweens.killAll();
+    this.time.removeAllEvents();
+    this.backgroundRenderer?.destroy?.();
+    this.biomeRenderer?.destroy?.();
+    this.atmosphereManager?.destroy?.();
+    this.particleManager?.destroy();
+    this.platformEffectsManager?.destroy?.();
   }
 
   private handleStaticPlatformCollision(_player: any, platform: any) {
     // Detect platform type for surface effects
-    if (_player.body.touching.down) {
+    if (_player.body?.touching?.down) {
       this.player.detectPlatformType(platform);
     }
 
     // Bounce platforms auto-bounce on contact
     if (
       platform.getData("type") === PlatformType.BOUNCE &&
-      _player.body.touching.down &&
-      platform.body.touching.up
+      _player.body?.touching?.down &&
+      platform.body?.touching?.up
     ) {
       this.player.setVelocityY(-800);
       this.styleManager.addStyle(5);
+      this.particleManager.emitBounceEffect(platform.x, platform.y);
     }
 
     // Breakable platform logic
     if (
       platform.getData("type") === PlatformType.BREAKABLE &&
-      platform.body.touching.up &&
-      _player.body.touching.down
+      platform.body?.touching?.up &&
+      _player.body?.touching?.down
     ) {
       if (!platform.getData("isBreaking")) {
         platform.setData("isBreaking", true);
+
+        this.particleManager.emitCrumbleParticles(
+          platform.x,
+          platform.y,
+          platform.displayWidth,
+        );
 
         this.tweens.add({
           targets: platform,

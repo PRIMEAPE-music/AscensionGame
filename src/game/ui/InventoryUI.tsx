@@ -17,8 +17,8 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({ items }) => {
             minHeight: '40px',
             alignItems: 'center'
         }}>
-            {items.map((item, index) => (
-                <div key={`${item.id}-${index}`} title={item.name + '\n' + item.description} style={{
+            {items.map((item) => (
+                <div key={item.id} title={item.name + '\n' + item.description} style={{
                     width: '32px',
                     height: '32px',
                     backgroundColor: '#' + item.iconColor.toString(16).padStart(6, '0'),

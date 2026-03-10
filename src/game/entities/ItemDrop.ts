@@ -3,6 +3,7 @@ import type { ItemData } from '../config/ItemConfig';
 
 export class ItemDrop extends Phaser.Physics.Arcade.Sprite {
     public itemData: ItemData;
+    private bobbingTween: Phaser.Tweens.Tween;
     // private startY: number;
 
     constructor(scene: Phaser.Scene, x: number, y: number, itemData: ItemData) {
@@ -22,7 +23,7 @@ export class ItemDrop extends Phaser.Physics.Arcade.Sprite {
         (this.body as Phaser.Physics.Arcade.Body).setImmovable(true);
 
         // Bobbing animation
-        scene.tweens.add({
+        this.bobbingTween = scene.tweens.add({
             targets: this,
             y: y - 10,
             duration: 1000,
@@ -30,5 +31,12 @@ export class ItemDrop extends Phaser.Physics.Arcade.Sprite {
             repeat: -1,
             ease: 'Sine.easeInOut'
         });
+    }
+
+    destroy(fromScene?: boolean) {
+        if (this.bobbingTween) {
+            this.bobbingTween.stop();
+        }
+        super.destroy(fromScene);
     }
 }

@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { ClassType, type ClassStats, CLASSES } from "../config/ClassConfig";
 import type { ItemData, StatType } from "../config/ItemConfig";
-import { PHYSICS, COMBAT, PLATFORM_CONFIG, SLOPES } from "../config/GameConfig";
+import { PHYSICS, COMBAT, PLATFORM_CONFIG } from "../config/GameConfig";
 import { PlatformType } from "../config/PlatformTypes";
 import type { SlopeCollisionResult } from "../systems/SlopeManager";
 import { EventBus } from "../systems/EventBus";
@@ -14,6 +14,8 @@ import {
 import { SPRITE_CONFIG } from "../config/AnimationConfig";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
+  private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
+
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
 
   // Combat Keys
@@ -102,7 +104,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.initInput();
 
     // Listen for land animation completion
-    this.on("animationcomplete-monk_land", () => {
+    const classPrefix = this.classType.toLowerCase();
+    this.on(`animationcomplete-${classPrefix}_land`, () => {
       this.isLanding = false;
     });
   }
@@ -211,6 +214,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.wasAirborne = airborne;
 
+    // Run sprite faces opposite direction from the other sprites, so invert flip
+    if (anim === "monk_run") {
+      this.setFlipX(!this.flipX);
+    }
+
     // Only call play if animation changed (avoids restarting loops)
     if (this.currentAnim !== anim) {
       this.currentAnim = anim;
@@ -270,6 +278,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       } else if (this.body!.velocity.x < -moveSpeed) {
         this.setVelocityX(-moveSpeed);
       }
+    } else {
+      // Soft cap for ice platforms to prevent unbounded velocity
+      const ICE_SPEED_CAP = 800;
+      if (this.body!.velocity.x > ICE_SPEED_CAP) {
+        this.setVelocityX(ICE_SPEED_CAP);
+      } else if (this.body!.velocity.x < -ICE_SPEED_CAP) {
+        this.setVelocityX(-ICE_SPEED_CAP);
+      }
     }
   }
 
@@ -305,6 +321,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (wantsToJump && canJump) {
       this.setVelocityY(jumpForce);
       this.onSlope = false;
+      this.wasOnSlope = false;
       this.isJumping = true;
       this.jumpTimer = 0;
       this.coyoteTimer = 0;
@@ -340,7 +357,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     // Variable jump height (hold button)
-    if (this.isJumping && this.cursors.space?.isDown) {
+    if (this.isJumping && this.cursors.space?.isDown && !this.isWallSliding) {
       this.jumpTimer += delta;
       if (this.jumpTimer < PHYSICS.JUMP_HOLD_DURATION) {
         this.setVelocityY(this.body!.velocity.y + PHYSICS.JUMP_HOLD_FORCE);
@@ -551,6 +568,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
 
     if (this.health <= 0) {
+      EventBus.emit("player-died");
       this.scene.scene.restart();
     }
   }
@@ -610,7 +628,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   public detectPlatformType(platform: any): void {
     const type = platform?.getData?.("type");
-    if (type && Object.values(PlatformType).includes(type)) {
+    if (type && Player.VALID_PLATFORM_TYPES.has(type)) {
       this.currentPlatformType = type as PlatformType;
     } else {
       this.currentPlatformType = PlatformType.STANDARD;

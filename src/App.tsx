@@ -7,6 +7,7 @@ import { PauseMenu } from "./game/ui/PauseMenu";
 import { CLASSES } from "./game/config/ClassConfig";
 import type { ClassType } from "./game/config/ClassConfig";
 import type { ItemData } from "./game/config/ItemConfig";
+import { EventBus } from "./game/systems/EventBus";
 import "./App.css";
 
 type GameState = "CLASS_SELECT" | "PLAYING";
@@ -22,6 +23,7 @@ function App() {
   const [inventory, setInventory] = useState<ItemData[]>([]);
   const [styleMeter, setStyleMeter] = useState(0);
   const [styleTier, setStyleTier] = useState("D");
+  const [elapsedTime, setElapsedTime] = useState(0);
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
@@ -94,13 +96,50 @@ function App() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        togglePause();
+        setIsPaused((prev) => {
+          const next = !prev;
+          const scene = gameRef.current?.scene.getScene("MainScene");
+          if (scene) {
+            if (next) {
+              pausedAtRef.current = Date.now();
+              elapsedTimeRef.current = pausedAtRef.current - startTimeRef.current;
+              scene.scene.pause();
+            } else {
+              const pauseDuration = Date.now() - pausedAtRef.current;
+              startTimeRef.current += pauseDuration;
+              scene.scene.resume();
+            }
+          }
+          return next;
+        });
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [gameState, togglePause]);
+  }, [gameState]);
+
+  // Elapsed time tracking
+  useEffect(() => {
+    if (gameState !== "PLAYING" || isPaused) return;
+    const interval = setInterval(() => {
+      setElapsedTime(Date.now() - startTimeRef.current);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [gameState, isPaused]);
+
+  // Player died event handler
+  useEffect(() => {
+    const unsubscribe = EventBus.on("player-died", () => {
+      setHealth(3);
+      setMaxHealth(3);
+      setAltitude(0);
+      setInventory([]);
+      setStyleMeter(0);
+      setStyleTier("D");
+    });
+    return unsubscribe;
+  }, []);
 
   // Phaser game creation
   useEffect(() => {
@@ -211,7 +250,7 @@ function App() {
           {isPaused && (
             <PauseMenu
               altitude={altitude}
-              elapsedTime={elapsedTimeRef.current}
+              elapsedTime={elapsedTime}
               itemCount={inventory.length}
               onResume={handleResume}
               onRestart={handleRestart}
