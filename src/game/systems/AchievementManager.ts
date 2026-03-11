@@ -3,6 +3,8 @@
 // Self-contained types to avoid cross-dependency issues with PersistentStats
 // during parallel development.
 
+import { CosmeticManager } from "./CosmeticManager";
+
 const STORAGE_KEY = "ascension_achievements";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -243,6 +245,11 @@ export const AchievementManager = {
 
     if (newlyUnlocked.length > 0) {
       this.save();
+
+      // Trigger cosmetic unlocks for each newly unlocked achievement
+      for (const achievementId of newlyUnlocked) {
+        CosmeticManager.checkAchievementUnlocks(achievementId);
+      }
     }
 
     return newlyUnlocked;
@@ -299,6 +306,7 @@ export const AchievementManager = {
       if (!state.unlocked.includes("perfect_boss")) {
         state.unlocked.push("perfect_boss");
         this.save();
+        CosmeticManager.checkAchievementUnlocks("perfect_boss");
         return "perfect_boss";
       }
     }
