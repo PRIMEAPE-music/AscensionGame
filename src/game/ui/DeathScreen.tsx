@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { CosmeticManager } from "../systems/CosmeticManager";
+import { DailyChallenge } from "../systems/DailyChallenge";
+import { RUN_MODIFIERS } from "../config/RunModifiers";
 
 interface DeathScreenProps {
   altitude: number;
@@ -164,10 +166,27 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
   const [retryHover, setRetryHover] = useState(false);
   const [menuHover, setMenuHover] = useState(false);
 
+  // Capture daily challenge state at mount time (before cleanup)
+  const [isDailyChallenge] = useState(() => !!(window as any).__isDailyChallenge);
+  const [isNewBest] = useState(() => !!(window as any).__dailyChallengeNewBest);
+  const [challengeInfo] = useState(() => {
+    if (!(window as any).__isDailyChallenge) return null;
+    const challenge = DailyChallenge.getCurrentChallenge();
+    if (!challenge) return null;
+    const modNames = challenge.modifiers.map((id) => {
+      const mod = RUN_MODIFIERS.find((m) => m.id === id);
+      return mod ? mod.name : id;
+    });
+    return { seed: challenge.seed, modifiers: modNames };
+  });
+
   useEffect(() => {
     const titleTimer = setTimeout(() => setTitleVisible(true), 200);
     const buttonsTimer = setTimeout(() => setButtonsVisible(true), 1400);
+
+    // Clean up daily challenge flags
     return () => {
+      delete (window as any).__dailyChallengeNewBest;
       clearTimeout(titleTimer);
       clearTimeout(buttonsTimer);
     };
@@ -175,6 +194,58 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
 
   return (
     <div style={overlayStyle}>
+      {/* Daily Challenge Header */}
+      {isDailyChallenge && (
+        <div
+          style={{
+            opacity: titleVisible ? 1 : 0,
+            transition: "opacity 0.5s ease",
+            textAlign: "center",
+            marginBottom: "8px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "20px",
+              fontWeight: "bold",
+              color: "#f0a030",
+              letterSpacing: "6px",
+              textTransform: "uppercase",
+              textShadow: "0 0 20px rgba(240, 160, 48, 0.5)",
+            }}
+          >
+            Daily Challenge
+          </div>
+          {isNewBest && (
+            <div
+              style={{
+                fontSize: "16px",
+                fontWeight: "bold",
+                color: "#ffd700",
+                letterSpacing: "3px",
+                textTransform: "uppercase",
+                marginTop: "6px",
+                textShadow: "0 0 16px rgba(255, 215, 0, 0.6)",
+              }}
+            >
+              New Personal Best!
+            </div>
+          )}
+          {challengeInfo && (
+            <div
+              style={{
+                fontSize: "11px",
+                color: "rgba(240, 160, 48, 0.5)",
+                marginTop: "6px",
+                letterSpacing: "1px",
+              }}
+            >
+              Seed #{challengeInfo.seed} | {challengeInfo.modifiers.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Title */}
       <div
         style={{

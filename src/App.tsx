@@ -25,9 +25,11 @@ import { StatsScreen } from "./game/ui/StatsScreen";
 import { CollectionGallery } from "./game/ui/CollectionGallery";
 import { SettingsScreen } from "./game/ui/SettingsScreen";
 import { CosmeticScreen } from "./game/ui/CosmeticScreen";
+import { DailyChallengeScreen } from "./game/ui/DailyChallengeScreen";
 import { GameSettings } from "./game/systems/GameSettings";
 import { CosmeticManager } from "./game/systems/CosmeticManager";
 import { RunSaveManager } from "./game/systems/RunSaveManager";
+import { DailyChallenge } from "./game/systems/DailyChallenge";
 import "./App.css";
 
 type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
@@ -43,7 +45,7 @@ interface DeathStats {
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null);
   const [gameState, setGameState] = useState<GameState>("MAIN_MENU");
-  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics">("main");
+  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics" | "daily">("main");
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [health, setHealth] = useState(3);
@@ -94,6 +96,7 @@ function App() {
     AchievementManager.load();
     GameSettings.load();
     CosmeticManager.load();
+    DailyChallenge.load();
 
     // Check for saved run
     setHasSavedRun(RunSaveManager.hasSave());
@@ -159,6 +162,21 @@ function App() {
 
   const handleShowCosmetics = useCallback(() => {
     setMenuScreen("cosmetics");
+  }, []);
+
+  const handleDailyChallenge = useCallback(() => {
+    setMenuScreen("daily");
+  }, []);
+
+  const handleStartDailyChallenge = useCallback((challengeData: { class: string; modifiers: string[]; seed: number }) => {
+    setSelectedClass(challengeData.class as ClassType);
+    (window as any).__selectedClass = challengeData.class;
+    (window as any).__dailyChallengeSeed = challengeData.seed;
+    (window as any).__isDailyChallenge = true;
+    ActiveModifiers.setModifiers(challengeData.modifiers);
+    setGameState("PLAYING");
+    startTimeRef.current = Date.now();
+    elapsedTimeRef.current = 0;
   }, []);
 
   const handleBackToMenu = useCallback(() => {
@@ -238,6 +256,8 @@ function App() {
     setItemReplaceData(null);
     ActiveModifiers.clear();
     GoldItemCollection.clearEquipped();
+    delete (window as any).__isDailyChallenge;
+    delete (window as any).__dailyChallengeSeed;
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setHasSavedRun(false);
@@ -283,6 +303,8 @@ function App() {
     // Update saved run state for the menu
     setHasSavedRun(RunSaveManager.hasSave());
     setSavedRunInfo(RunSaveManager.getSaveInfo());
+    delete (window as any).__isDailyChallenge;
+    delete (window as any).__dailyChallengeSeed;
     setGameState("MAIN_MENU");
     setMenuScreen("main");
     setSelectedClass(null);
@@ -313,6 +335,8 @@ function App() {
     setItemReplaceData(null);
     ActiveModifiers.clear();
     GoldItemCollection.clearEquipped();
+    delete (window as any).__isDailyChallenge;
+    delete (window as any).__dailyChallengeSeed;
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("PLAYING"); // Triggers game recreation with same class
@@ -493,6 +517,17 @@ function App() {
       const stats = e.detail;
       setDeathStats(stats);
       setGameState("DEATH");
+
+      // Submit daily challenge run if applicable
+      if ((window as any).__isDailyChallenge) {
+        const isNewBest = DailyChallenge.submitRun(
+          stats.altitude,
+          stats.kills,
+          stats.bossesDefeated,
+          stats.timeMs
+        );
+        (window as any).__dailyChallengeNewBest = isNewBest;
+      }
 
       // Check achievements after run ends
       try {
@@ -679,6 +714,7 @@ function App() {
           onStatistics={handleShowStats}
           onSettings={handleShowSettings}
           onCosmetics={handleShowCosmetics}
+          onDailyChallenge={handleDailyChallenge}
         />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "stats" && (
@@ -692,6 +728,12 @@ function App() {
       )}
       {gameState === "MAIN_MENU" && menuScreen === "cosmetics" && (
         <CosmeticScreen onBack={handleBackToMenu} />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "daily" && (
+        <DailyChallengeScreen
+          onBack={handleBackToMenu}
+          onStartChallenge={handleStartDailyChallenge}
+        />
       )}
       {gameState === "CLASS_SELECT" && (
         <ClassSelect onSelect={handleClassSelect} />

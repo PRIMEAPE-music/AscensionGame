@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { PersistentStats } from "../systems/PersistentStats";
+import { DailyChallenge } from "../systems/DailyChallenge";
+import { RUN_MODIFIERS } from "../config/RunModifiers";
+import { CLASSES } from "../config/ClassConfig";
+import type { ClassType } from "../config/ClassConfig";
 
 interface MainMenuProps {
   onStartRun: () => void;
@@ -10,6 +14,7 @@ interface MainMenuProps {
   onStatistics: () => void;
   onSettings: () => void;
   onCosmetics: () => void;
+  onDailyChallenge: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -46,6 +51,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onStatistics,
   onSettings,
   onCosmetics,
+  onDailyChallenge,
 }) => {
   const [hoveredButton, setHoveredButton] = useState<string | null>(null);
   const [titleVisible, setTitleVisible] = useState(false);
@@ -83,6 +89,19 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     };
   }, []);
 
+  // Daily challenge preview info
+  const dailyChallenge = DailyChallenge.getCurrentChallenge();
+  const dailyPreview = dailyChallenge
+    ? (() => {
+        const cls = CLASSES[dailyChallenge.class as ClassType];
+        const className = cls ? cls.name : dailyChallenge.class;
+        const modName = dailyChallenge.modifiers.length > 0
+          ? (RUN_MODIFIERS.find((m) => m.id === dailyChallenge.modifiers[0])?.name ?? dailyChallenge.modifiers[0])
+          : "";
+        return `Today: ${className}${modName ? ` + ${modName}` : ""}`;
+      })()
+    : "";
+
   const getButtonStyle = (id: string): React.CSSProperties => {
     const isHovered = hoveredButton === id;
     if (id === "resume") {
@@ -115,6 +134,22 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           ? "0 0 30px rgba(224, 208, 160, 0.2), inset 0 0 20px rgba(224, 208, 160, 0.05)"
           : "none",
         color: isHovered ? "#ffd700" : "#e0d0a0",
+      };
+    }
+    if (id === "daily") {
+      return {
+        ...menuButtonStyle,
+        background: isHovered
+          ? "rgba(240, 160, 48, 0.2)"
+          : "rgba(240, 160, 48, 0.08)",
+        borderColor: isHovered
+          ? "rgba(240, 160, 48, 0.5)"
+          : "rgba(240, 160, 48, 0.25)",
+        transform: isHovered ? "scale(1.04)" : "scale(1)",
+        boxShadow: isHovered
+          ? "0 0 25px rgba(240, 160, 48, 0.2), inset 0 0 15px rgba(240, 160, 48, 0.05)"
+          : "0 0 8px rgba(240, 160, 48, 0.08)",
+        color: isHovered ? "#ffd080" : "#f0a030",
       };
     }
     return {
@@ -264,6 +299,27 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           onClick={onStartRun}
         >
           {hasSavedRun ? "New Run" : "Start Run"}
+        </button>
+        <button
+          style={getButtonStyle("daily")}
+          onMouseEnter={() => setHoveredButton("daily")}
+          onMouseLeave={() => setHoveredButton(null)}
+          onClick={onDailyChallenge}
+        >
+          <div>Daily Challenge</div>
+          {dailyPreview && (
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: "normal",
+                letterSpacing: "1px",
+                marginTop: "4px",
+                opacity: 0.7,
+              }}
+            >
+              {dailyPreview}
+            </div>
+          )}
         </button>
         <button
           style={getButtonStyle("collection")}
