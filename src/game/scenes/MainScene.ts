@@ -345,6 +345,40 @@ export class MainScene extends Phaser.Scene {
       this.sacredGroundListener,
     );
 
+    // Handle gambling results
+    EventBus.on("gambling-result", (data) => {
+      switch (data.rewardType) {
+        case "health":
+          if (this.player.health < this.player.maxHealth) {
+            this.player.health = Math.min(this.player.health + 1, this.player.maxHealth);
+            EventBus.emit("health-change", {
+              health: this.player.health,
+              maxHealth: this.player.maxHealth,
+            });
+          }
+          break;
+        case "item":
+          this.spawnManager.spawnRandomItem(this.player.x, this.player.y - 40);
+          break;
+        case "gold_item":
+          this.spawnManager.spawnRandomItem(this.player.x, this.player.y - 40);
+          // Spawn a second item for gold tier
+          this.spawnManager.spawnRandomItem(this.player.x + 60, this.player.y - 40);
+          break;
+      }
+      // Deduct essence
+      this.essenceTotal -= data.bet;
+      EventBus.emit("essence-change", {
+        essence: this.essenceTotal,
+        gained: -data.bet,
+      });
+    });
+
+    // Handle gambling close — resume scene
+    EventBus.on("gambling-close", () => {
+      this.scene.resume();
+    });
+
     // Handle player death — emit death screen event with run stats
     this.runStartTime = Date.now();
     EventBus.on("player-died", () => {
@@ -522,6 +556,17 @@ export class MainScene extends Phaser.Scene {
           { id: "damage_buff", name: "Demon Fury", description: "+20% damage for 2 min", cost: 75, icon: "\u2694" },
         ],
       });
+    }
+
+    // Gambling shrine detection
+    if (
+      platform.getData("type") === PlatformType.GAMBLING &&
+      _player.body?.touching?.down &&
+      !platform.getData("shrineVisited")
+    ) {
+      platform.setData("shrineVisited", true);
+      this.scene.pause();
+      EventBus.emit("gambling-open", { essence: this.essenceTotal });
     }
 
     // Bounce platforms auto-bounce on contact

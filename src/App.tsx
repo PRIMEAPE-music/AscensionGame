@@ -6,6 +6,7 @@ import { ClassSelect } from "./game/ui/ClassSelect";
 import { PauseMenu } from "./game/ui/PauseMenu";
 import { DeathScreen } from "./game/ui/DeathScreen";
 import { ShopUI } from "./game/ui/ShopUI";
+import { GamblingUI } from "./game/ui/GamblingUI";
 import { CLASSES } from "./game/config/ClassConfig";
 import type { ClassType } from "./game/config/ClassConfig";
 import type { ItemData } from "./game/config/ItemConfig";
@@ -48,6 +49,8 @@ function App() {
     remaining: number;
     total: number;
   }>({ remaining: 0, total: 15000 });
+  const [gamblingOpen, setGamblingOpen] = useState(false);
+  const [gamblingEssence, setGamblingEssence] = useState(0);
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
@@ -104,6 +107,8 @@ function App() {
     setFlowMaxFlow(100);
     setIsShieldGuarding(false);
     setSacredGroundCooldown({ remaining: 0, total: 15000 });
+    setGamblingOpen(false);
+    setGamblingEssence(0);
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("CLASS_SELECT");
@@ -130,6 +135,8 @@ function App() {
     setFlowMaxFlow(100);
     setIsShieldGuarding(false);
     setSacredGroundCooldown({ remaining: 0, total: 15000 });
+    setGamblingOpen(false);
+    setGamblingEssence(0);
     setGameState("CLASS_SELECT");
     setSelectedClass(null);
   }, []);
@@ -152,6 +159,8 @@ function App() {
     setFlowMaxFlow(100);
     setIsShieldGuarding(false);
     setSacredGroundCooldown({ remaining: 0, total: 15000 });
+    setGamblingOpen(false);
+    setGamblingEssence(0);
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("PLAYING"); // Triggers game recreation with same class
@@ -175,6 +184,11 @@ function App() {
     setShopOpen(false);
     const scene = gameRef.current?.scene.getScene("MainScene");
     if (scene) scene.scene.resume();
+  }, []);
+
+  // Gambling close handler
+  const handleGamblingClose = useCallback(() => {
+    setGamblingOpen(false);
   }, []);
 
   // Escape key handler
@@ -313,6 +327,11 @@ function App() {
       setShopOpen(true);
     };
 
+    const handleGamblingOpen = (e: CustomEvent) => {
+      setGamblingEssence(e.detail.essence);
+      setGamblingOpen(true);
+    };
+
     window.addEventListener(
       "combo-update",
       handleComboUpdate as EventListener,
@@ -328,6 +347,10 @@ function App() {
     window.addEventListener(
       "shop-open",
       handleShopOpen as EventListener,
+    );
+    window.addEventListener(
+      "gambling-open",
+      handleGamblingOpen as EventListener,
     );
 
     // Class mechanic event listeners
@@ -405,6 +428,10 @@ function App() {
         "sacred-ground-cooldown",
         handleSacredGroundCooldown as EventListener,
       );
+      window.removeEventListener(
+        "gambling-open",
+        handleGamblingOpen as EventListener,
+      );
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
@@ -460,6 +487,12 @@ function App() {
                   essence={essence}
                   onPurchase={handleShopPurchase}
                   onClose={handleShopClose}
+                />
+              )}
+              {gamblingOpen && (
+                <GamblingUI
+                  essence={essence}
+                  onClose={handleGamblingClose}
                 />
               )}
             </>

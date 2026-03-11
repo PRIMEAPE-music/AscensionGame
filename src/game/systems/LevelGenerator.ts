@@ -41,6 +41,10 @@ export class LevelGenerator {
   private lastPortalAltitude: number = 0;
   private nextPortalDist: number = 0;
 
+  // Gambling shrine spawning
+  private lastGamblingAltitude: number = 0;
+  private nextGamblingDist: number = 0;
+
   // Tower-climb state: alternates between side climbing and bridging
   private currentSide: "left" | "right" = "left";
   private phase: "side" | "bridge" = "side";
@@ -81,11 +85,17 @@ export class LevelGenerator {
     return Phaser.Math.Between(800, 1200);
   }
 
+  private nextGamblingInterval(): number {
+    return Phaser.Math.Between(500, 800);
+  }
+
   init() {
     this.lastShopAltitude = 0;
     this.nextShopDist = this.nextShopInterval();
     this.lastPortalAltitude = 0;
     this.nextPortalDist = this.nextPortalInterval();
+    this.lastGamblingAltitude = 0;
+    this.nextGamblingDist = this.nextGamblingInterval();
 
     // Wide starting platform
     this.createPlatform(960, WORLD.BASE_PLATFORM_Y, 10, PlatformType.STANDARD);
@@ -423,6 +433,20 @@ export class LevelGenerator {
       this.lastPlatformX = portalX;
       this.lastPortalAltitude = altitude;
       this.nextPortalDist = this.nextPortalInterval();
+    }
+
+    // Gambling shrine check — spawn a purple shrine platform at regular intervals
+    if (!isInBossArena && altitude >= 200 && altitude - this.lastGamblingAltitude >= this.nextGamblingDist) {
+      const shrineY = this.lastPlatformY - Phaser.Math.Between(params.minGap, params.maxGap);
+      const shrineX = Phaser.Math.Clamp(
+        this.lastPlatformX + Phaser.Math.Between(-200, 200),
+        300,
+        WORLD.WIDTH - 300,
+      );
+      this.lastPlatformY = this.createPlatform(shrineX, shrineY, 2.0, PlatformType.GAMBLING);
+      this.lastPlatformX = shrineX;
+      this.lastGamblingAltitude = altitude;
+      this.nextGamblingDist = this.nextGamblingInterval();
     }
   }
 

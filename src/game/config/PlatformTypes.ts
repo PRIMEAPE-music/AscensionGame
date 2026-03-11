@@ -9,6 +9,7 @@ export enum PlatformType {
   SLOPE_RIGHT = "slope_right",
   SHOP = "shop",
   PORTAL = "portal",
+  GAMBLING = "gambling",
 }
 
 export interface PlatformDef {
@@ -69,6 +70,10 @@ export const PLATFORM_DEFS: Record<PlatformType, PlatformDef> = {
   [PlatformType.PORTAL]: {
     type: PlatformType.PORTAL,
     color: 0x9933ff, // Purple
+  },
+  [PlatformType.GAMBLING]: {
+    type: PlatformType.GAMBLING,
+    color: 0x9933ff, // Purple/mystical
   },
 };
 
