@@ -13,7 +13,6 @@ export class TerrorMimic extends Enemy {
     private startY: number;
     private bobTimer: number = 0;
     private fsm: EnemyStateMachine<TerrorMimic>;
-    private defaultTint: number = 0xffdd00;
 
     private readonly DETECT_RANGE = 80;
     private readonly REVEAL_DURATION = 400;
@@ -31,9 +30,14 @@ export class TerrorMimic extends Enemy {
         super(scene, x, y, 'dude', player, 15, 2, 200);
         this.enemyType = 'terror_mimic';
         this.tier = 'elite';
+        this.defaultTint = 0xffdd00;
         this.setTint(this.defaultTint);
         this.setScale(0.5); // Same as ItemDrop
         this.startY = y;
+
+        // Elite-tier: desperate mode (attacks more aggressively when low)
+        this.desperateMode = true;
+        this.fleeThreshold = 0.2;
 
         // Set body smaller to match item size
         const body = this.body as Phaser.Physics.Arcade.Body;
@@ -49,8 +53,9 @@ export class TerrorMimic extends Enemy {
                     ctx.setTint(ctx.defaultTint);
                     ctx.setVelocityX(0);
                     ctx.setVelocityY(0);
+                    ctx.aiState = 'PATROL';
                 },
-                onUpdate: (ctx, time, delta) => {
+                onUpdate: (ctx, _time, delta) => {
                     // Bobbing animation like ItemDrop
                     ctx.bobTimer += delta;
                     const wave = Math.sin(ctx.bobTimer * ctx.BOB_SPEED);
@@ -82,6 +87,8 @@ export class TerrorMimic extends Enemy {
             .addState('REVEAL', {
                 onEnter: (ctx) => {
                     ctx.revealTimer = 0;
+                    ctx.aiState = 'ALERT';
+                    ctx.isInAttackStartup = true;
                     // Scale up and change tint
                     ctx.scene.tweens.add({
                         targets: ctx,
@@ -99,16 +106,21 @@ export class TerrorMimic extends Enemy {
                 onUpdate: (ctx, _time, delta) => {
                     ctx.revealTimer += delta;
                     if (ctx.revealTimer >= ctx.REVEAL_DURATION) {
+                        ctx.isInAttackStartup = false;
                         ctx.fsm.transition('ATTACK');
                     }
                 },
             })
             .addState('ATTACK', {
                 onEnter: (ctx) => {
+                    ctx.aiState = 'ATTACK';
                     // Lunge at player (similar to HellHound)
                     const dx = ctx.player.x - ctx.x;
                     const lungeDir = dx > 0 ? 1 : -1;
-                    ctx.setVelocityX(ctx.LUNGE_SPEED_X * lungeDir);
+
+                    // Desperate mode: stronger lunge
+                    const lungeMult = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold) ? 1.3 : 1.0;
+                    ctx.setVelocityX(ctx.LUNGE_SPEED_X * lungeDir * lungeMult);
                     ctx.setVelocityY(ctx.LUNGE_SPEED_Y);
                     ctx.setFlipX(lungeDir < 0);
                     ctx.facingDirection = lungeDir;
@@ -125,13 +137,17 @@ export class TerrorMimic extends Enemy {
             .addState('CHASE', {
                 onEnter: (ctx) => {
                     ctx.chaseTimer = 0;
+                    ctx.aiState = 'ALERT';
                     ctx.setTint(0xff2200);
                 },
                 onUpdate: (ctx, _time, delta) => {
                     // Chase player aggressively
                     const dx = ctx.player.x - ctx.x;
                     ctx.direction = dx > 0 ? 1 : -1;
-                    ctx.setVelocityX(ctx.speed * ctx.direction);
+
+                    // Desperate mode: faster chase
+                    const speedMult = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold) ? 1.4 : 1.0;
+                    ctx.setVelocityX(ctx.speed * ctx.direction * speedMult);
                     ctx.setFlipX(ctx.direction < 0);
                     ctx.facingDirection = ctx.direction;
 
@@ -149,22 +165,78 @@ export class TerrorMimic extends Enemy {
                 },
                 onUpdate: (ctx, _time, delta) => {
                     ctx.cooldownTimer += delta;
-                    if (ctx.cooldownTimer >= ctx.COOLDOWN_DURATION) {
-                        // If player nearby, chase again. Otherwise wander.
+
+                    // Desperate mode: shorter cooldown
+                    const coolDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.COOLDOWN_DURATION * 0.5
+                        : ctx.COOLDOWN_DURATION;
+
+                    if (ctx.cooldownTimer >= coolDur) {
+                        // If player nearby, chase again
                         const dist = Phaser.Math.Distance.Between(
                             ctx.x, ctx.y, ctx.player.x, ctx.player.y,
                         );
                         if (dist < ctx.CHASE_RANGE) {
                             ctx.fsm.transition('CHASE');
                         } else {
-                            // Wander - just chase at reduced speed
                             ctx.fsm.transition('CHASE');
+                        }
+                    }
+                },
+            })
+            .addState('STUN', {
+                onEnter: (ctx) => {
+                    ctx.isInAttackStartup = false;
+                    ctx.setVelocity(0, 0);
+                    ctx.setTint(0xffff00);
+                    ctx.aiState = 'STUN';
+                },
+                onUpdate: (ctx, _time, delta) => {
+                    ctx.stunTimer -= delta;
+                    if (ctx.stunTimer <= 0) {
+                        ctx.restoreTint();
+                        const dist = Phaser.Math.Distance.Between(
+                            ctx.x, ctx.y, ctx.player.x, ctx.player.y,
+                        );
+                        if (dist < ctx.CHASE_RANGE) {
+                            ctx.fsm.transition('CHASE');
+                        } else {
+                            ctx.fsm.transition('COOLDOWN');
                         }
                     }
                 },
             });
 
         this.fsm.start();
+    }
+
+    public takeDamage(amount: number) {
+        if (this.isDead) return;
+
+        // Apply stun damage multiplier
+        if (this.aiState === 'STUN') {
+            amount = Math.ceil(amount * this.stunDamageMultiplier);
+        }
+
+        // Check if hit during attack startup (reveal phase) — triggers stun
+        if (this.isInAttackStartup) {
+            this.stunTimer = 500 + amount * 100;
+            this.fsm.transition('STUN');
+        }
+
+        this.health -= amount;
+
+        // Flash red on hit
+        this.setTint(0xff0000);
+        this.scene.time.delayedCall(100, () => {
+            if (this.active && !this.isDead) {
+                this.restoreTint();
+            }
+        });
+
+        if (this.health <= 0) {
+            this.die();
+        }
     }
 
     update(time: number, delta: number) {

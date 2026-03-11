@@ -16,7 +16,6 @@ export class DemonGeneral extends Enemy {
     private hitboxGroup: Phaser.Physics.Arcade.Group;
     private hitboxCollider: Phaser.Physics.Arcade.Collider;
     private fsm: EnemyStateMachine<DemonGeneral>;
-    private defaultTint: number = 0xaa0000;
 
     private readonly COMMAND_MIN_DIST = 300;
     private readonly COMMAND_MAX_DIST = 400;
@@ -35,8 +34,13 @@ export class DemonGeneral extends Enemy {
         super(scene, x, y, 'dude', player, 30, 2, 100);
         this.enemyType = 'demon_general';
         this.tier = 'elite';
+        this.defaultTint = 0xaa0000;
         this.setTint(this.defaultTint);
         this.setScale(1.1);
+
+        // Elite-tier: desperate mode, never flees
+        this.desperateMode = true;
+        this.fleeThreshold = 0.2;
 
         // Hitbox group for combo attack overlap
         this.hitboxGroup = scene.physics.add.group({ allowGravity: false });
@@ -54,6 +58,8 @@ export class DemonGeneral extends Enemy {
             .addState('COMMAND', {
                 onEnter: (ctx) => {
                     ctx.timeSinceLastBuff = 0;
+                    ctx.aiState = 'PATROL';
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, _time, delta) => {
                     const dx = ctx.player.x - ctx.x;
@@ -96,10 +102,17 @@ export class DemonGeneral extends Enemy {
                 },
             })
             .addState('APPROACH', {
+                onEnter: (ctx) => {
+                    ctx.aiState = 'ALERT';
+                    ctx.restoreTint();
+                },
                 onUpdate: (ctx, _time, delta) => {
                     const dx = ctx.player.x - ctx.x;
                     ctx.direction = dx > 0 ? 1 : -1;
-                    ctx.setVelocityX(ctx.speed * ctx.direction);
+
+                    // Desperate mode: faster approach
+                    const speedMult = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold) ? 1.5 : 1.0;
+                    ctx.setVelocityX(ctx.speed * ctx.direction * speedMult);
                     ctx.setFlipX(ctx.direction < 0);
                     ctx.facingDirection = ctx.direction;
 
@@ -129,17 +142,25 @@ export class DemonGeneral extends Enemy {
                     ctx.comboCount = 0;
                     ctx.comboTimer = 0;
                     ctx.setVelocityX(0);
+                    ctx.aiState = 'ATTACK';
+                    ctx.isInAttackStartup = true;
                     ctx.executeComboHit();
                 },
                 onUpdate: (ctx, _time, delta) => {
                     ctx.comboTimer += delta;
 
-                    if (ctx.comboTimer >= ctx.COMBO_INTERVAL && ctx.comboCount < ctx.COMBO_HITS) {
+                    // Desperate mode: faster combo
+                    const comboInterval = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.COMBO_INTERVAL * 0.6
+                        : ctx.COMBO_INTERVAL;
+
+                    if (ctx.comboTimer >= comboInterval && ctx.comboCount < ctx.COMBO_HITS) {
                         ctx.executeComboHit();
                         ctx.comboTimer = 0;
                     }
 
                     if (ctx.comboCount >= ctx.COMBO_HITS) {
+                        ctx.isInAttackStartup = false;
                         ctx.fsm.transition('RECOVERY');
                     }
                 },
@@ -153,7 +174,7 @@ export class DemonGeneral extends Enemy {
                 onUpdate: (ctx, _time, delta) => {
                     ctx.buffTimer += delta;
                     if (ctx.buffTimer >= 500) {
-                        ctx.setTint(ctx.defaultTint);
+                        ctx.restoreTint();
                         ctx.fsm.transition('COMMAND');
                     }
                 },
@@ -162,11 +183,36 @@ export class DemonGeneral extends Enemy {
                 onEnter: (ctx) => {
                     ctx.recoveryTimer = 0;
                     ctx.setVelocityX(0);
-                    ctx.setTint(ctx.defaultTint);
+                    ctx.isInAttackStartup = false;
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, _time, delta) => {
                     ctx.recoveryTimer += delta;
-                    if (ctx.recoveryTimer >= ctx.RECOVERY_DURATION) {
+
+                    // Desperate mode: shorter recovery
+                    const recovDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.RECOVERY_DURATION * 0.5
+                        : ctx.RECOVERY_DURATION;
+
+                    if (ctx.recoveryTimer >= recovDur) {
+                        const dist = Phaser.Math.Distance.Between(
+                            ctx.x, ctx.y, ctx.player.x, ctx.player.y,
+                        );
+                        ctx.fsm.transition(dist < ctx.ATTACK_RANGE * 2 ? 'APPROACH' : 'COMMAND');
+                    }
+                },
+            })
+            .addState('STUN', {
+                onEnter: (ctx) => {
+                    ctx.isInAttackStartup = false;
+                    ctx.setVelocity(0, 0);
+                    ctx.setTint(0xffff00);
+                    ctx.aiState = 'STUN';
+                },
+                onUpdate: (ctx, _time, delta) => {
+                    ctx.stunTimer -= delta;
+                    if (ctx.stunTimer <= 0) {
+                        ctx.restoreTint();
                         const dist = Phaser.Math.Distance.Between(
                             ctx.x, ctx.y, ctx.player.x, ctx.player.y,
                         );
@@ -178,8 +224,41 @@ export class DemonGeneral extends Enemy {
         this.fsm.start();
     }
 
+    public takeDamage(amount: number) {
+        if (this.isDead) return;
+
+        // Apply stun damage multiplier
+        if (this.aiState === 'STUN') {
+            amount = Math.ceil(amount * this.stunDamageMultiplier);
+        }
+
+        // Check if hit during attack startup — triggers stun
+        if (this.isInAttackStartup) {
+            this.stunTimer = 500 + amount * 100;
+            this.fsm.transition('STUN');
+        }
+
+        this.health -= amount;
+
+        // Flash red on hit
+        this.setTint(0xff0000);
+        this.scene.time.delayedCall(100, () => {
+            if (this.active && !this.isDead) {
+                this.restoreTint();
+            }
+        });
+
+        if (this.health <= 0) {
+            this.die();
+        }
+    }
+
     private executeComboHit(): void {
         this.comboCount++;
+        // After first hit, no longer in startup
+        if (this.comboCount > 1) {
+            this.isInAttackStartup = false;
+        }
 
         // Create hitbox rectangle in front of the general
         const hitboxX = this.x + this.facingDirection * (this.HITBOX_WIDTH / 2 + 20);
@@ -201,7 +280,7 @@ export class DemonGeneral extends Enemy {
         this.setTint(0xff4400);
         this.scene.time.delayedCall(100, () => {
             if (this.active && !this.isDead) {
-                this.setTint(this.defaultTint);
+                this.restoreTint();
             }
         });
 
@@ -261,7 +340,7 @@ export class DemonGeneral extends Enemy {
         this.setTint(0xffdd00);
         this.scene.time.delayedCall(400, () => {
             if (this.active && !this.isDead) {
-                this.setTint(this.defaultTint);
+                this.restoreTint();
             }
         });
     }

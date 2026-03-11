@@ -2,14 +2,13 @@ import { Enemy } from "./Enemy";
 import { Player } from "./Player";
 import Phaser from "phaser";
 
-type HoundState = "PATROL" | "CHASE" | "LUNGE" | "RECOVERY";
-
 export class HellHound extends Enemy {
-  protected state: HoundState = "PATROL";
   private direction: number = 1;
   private patrolTimer: number = 0;
   private recoveryTimer: number = 0;
   private lungeTimer: number = 0;
+  private isLunging: boolean = false;
+  private isInRecovery: boolean = false;
 
   private readonly DETECT_RANGE = 350;
   private readonly LUNGE_RANGE = 120;
@@ -22,31 +21,19 @@ export class HellHound extends Enemy {
     super(scene, x, y, "dude", player, 4, 1, 250); // 4 HP, 1 Dmg, 250 Speed
     this.enemyType = 'hound';
     this.tier = 'basic';
+    this.defaultTint = 0xff4400;
     this.setTint(0xff4400); // Orange-red
     this.setScale(0.75);
+
+    // Use the base AI state machine
+    this.useBaseAI = true;
+    this.detectionRange = this.DETECT_RANGE;
+    this.attackRange = this.LUNGE_RANGE;
+    this.desperateMode = true; // Gets faster when low health, never flees
+    this.fleeThreshold = 0.2;
   }
 
-  update(time: number, delta: number) {
-    super.update(time, delta);
-    if (this.isDead) return;
-
-    switch (this.state) {
-      case "PATROL":
-        this.handlePatrol(delta);
-        break;
-      case "CHASE":
-        this.handleChase();
-        break;
-      case "LUNGE":
-        this.handleLunge(delta);
-        break;
-      case "RECOVERY":
-        this.handleRecovery(delta);
-        break;
-    }
-  }
-
-  private handlePatrol(delta: number) {
+  protected onPatrol(delta: number): void {
     this.setVelocityX(this.speed * 0.4 * this.direction);
 
     this.patrolTimer += delta;
@@ -55,77 +42,83 @@ export class HellHound extends Enemy {
       this.patrolTimer = 0;
     }
     this.setFlipX(this.direction < 0);
-
-    // Check if player is in detection range
-    const dist = Phaser.Math.Distance.Between(
-      this.x,
-      this.y,
-      this.player.x,
-      this.player.y,
-    );
-    if (dist < this.DETECT_RANGE) {
-      this.state = "CHASE";
-    }
+    this.facingDirection = this.direction;
   }
 
-  private handleChase() {
-    // Run toward player
-    const dx = this.player.x - this.x;
+  protected onAlert(_delta: number, player: Phaser.GameObjects.Sprite): void {
+    // Sprint toward player (existing chase behavior)
+    const dx = player.x - this.x;
     this.direction = dx > 0 ? 1 : -1;
-    this.setVelocityX(this.speed * this.direction);
+
+    // Desperate mode: run even faster
+    const speedMult = (this.desperateMode && this.health <= this.maxHealth * this.fleeThreshold) ? 1.3 : 1.0;
+    this.setVelocityX(this.speed * this.direction * speedMult);
     this.setFlipX(this.direction < 0);
+    this.facingDirection = this.direction;
+  }
 
-    const dist = Phaser.Math.Distance.Between(
-      this.x,
-      this.y,
-      this.player.x,
-      this.player.y,
-    );
-
-    // Lunge when close enough
-    if (dist < this.LUNGE_RANGE) {
-      this.startLunge();
+  protected onAttack(delta: number, player: Phaser.GameObjects.Sprite): void {
+    if (this.isInRecovery) {
+      this.handleRecovery(delta);
       return;
     }
 
-    // Lose interest if player gets too far
-    if (dist > this.DETECT_RANGE * 2) {
-      this.state = "PATROL";
-      this.patrolTimer = 0;
+    if (this.isLunging) {
+      this.handleLunge(delta);
+      return;
     }
+
+    // Start a new lunge attack
+    this.startLunge(player);
   }
 
-  private startLunge() {
-    this.state = "LUNGE";
+  private startLunge(player: Phaser.GameObjects.Sprite) {
+    this.isLunging = true;
     this.lungeTimer = 0;
 
-    // Brief telegraph flash
+    // Brief telegraph flash — this is the attack startup (vulnerable to stun)
+    this.isInAttackStartup = true;
     this.setTint(0xffaa00);
 
-    const lungeDir = this.player.x > this.x ? 1 : -1;
-    this.setVelocityX(this.LUNGE_SPEED_X * lungeDir);
-    this.setVelocityY(this.LUNGE_SPEED_Y);
+    // Desperate mode: shorter telegraph
+    const telegraphDuration = (this.desperateMode && this.health <= this.maxHealth * this.fleeThreshold) ? 100 : 200;
+
+    this.scene.time.delayedCall(telegraphDuration, () => {
+      if (this.isDead || this.aiState === 'STUN') {
+        this.isLunging = false;
+        this.isInAttackStartup = false;
+        return;
+      }
+      this.isInAttackStartup = false;
+
+      const lungeDir = player.x > this.x ? 1 : -1;
+      const lungeMult = (this.desperateMode && this.health <= this.maxHealth * this.fleeThreshold) ? 1.3 : 1.0;
+      this.setVelocityX(this.LUNGE_SPEED_X * lungeDir * lungeMult);
+      this.setVelocityY(this.LUNGE_SPEED_Y);
+    });
   }
 
   private handleLunge(delta: number) {
     // Wait until landing (on ground)
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (body.blocked.down) {
-      this.state = "RECOVERY";
+      this.isLunging = false;
+      this.isInRecovery = true;
       this.recoveryTimer = 0;
       this.setVelocityX(0);
-      this.setTint(0xff4400); // Reset tint
+      this.restoreTint();
       return;
     }
 
     // Safety timeout: force recovery if stuck in lunge for over 3 seconds
     this.lungeTimer += delta;
     if (this.lungeTimer >= 3000) {
-      this.state = "RECOVERY";
+      this.isLunging = false;
+      this.isInRecovery = true;
       this.recoveryTimer = 0;
       this.setVelocityX(0);
       this.setVelocityY(0);
-      this.setTint(0xff4400); // Reset tint
+      this.restoreTint();
     }
   }
 
@@ -133,16 +126,13 @@ export class HellHound extends Enemy {
     this.setVelocityX(0);
     this.recoveryTimer += delta;
 
-    if (this.recoveryTimer >= this.RECOVERY_DURATION) {
-      // After recovery, check if player is still nearby
-      const dist = Phaser.Math.Distance.Between(
-        this.x,
-        this.y,
-        this.player.x,
-        this.player.y,
-      );
-      this.state = dist < this.DETECT_RANGE ? "CHASE" : "PATROL";
-      this.patrolTimer = 0;
+    // Desperate mode: shorter recovery
+    const recovDuration = (this.desperateMode && this.health <= this.maxHealth * this.fleeThreshold)
+      ? this.RECOVERY_DURATION * 0.6
+      : this.RECOVERY_DURATION;
+
+    if (this.recoveryTimer >= recovDuration) {
+      this.isInRecovery = false;
     }
   }
 }

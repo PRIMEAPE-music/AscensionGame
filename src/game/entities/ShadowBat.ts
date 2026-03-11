@@ -1,3 +1,4 @@
+import Phaser from "phaser";
 import { Enemy } from "./Enemy";
 import { Player } from "./Player";
 
@@ -14,6 +15,7 @@ export class ShadowBat extends Enemy {
     super(scene, x, y, "dude", player, 2, 1, 100); // 2 HP, 1 Dmg, 100 Speed
     this.enemyType = 'bat';
     this.tier = 'basic';
+    this.defaultTint = 0x550055;
     this.setTint(0x550055); // Purple/Shadow tint
     this.setScale(0.7);
     this.startY = y;
@@ -21,24 +23,19 @@ export class ShadowBat extends Enemy {
 
     // Flying enemy - no gravity
     (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+
+    // Use the base AI state machine
+    this.useBaseAI = true;
+    this.detectionRange = 300;
+    this.attackRange = 100;
+    this.desperateMode = false; // Flees when low
+    this.fleeThreshold = 0.2;
   }
 
-  update(time: number, delta: number) {
-    super.update(time, delta);
-    if (this.isDead) return;
-
-    if (this.isRecovering) {
-      this.handleRecovery(delta);
-    } else if (this.isDiving) {
-      this.handleDive();
-    } else {
-      this.handleFlight(time);
-      this.checkForTarget();
-    }
-  }
-
-  private handleFlight(time: number) {
-    // Sine wave movement
+  protected onPatrol(_delta: number): void {
+    // Sine wave movement (uses scene time via stateTimer workaround)
+    // We access scene.time.now for the sine wave
+    const time = this.scene.time.now;
     const wave = Math.sin((time + this.timeOffset) * this.SINE_SPEED);
     this.y = this.startY + wave * this.SINE_AMPLITUDE;
 
@@ -48,17 +45,41 @@ export class ShadowBat extends Enemy {
     } else {
       this.setFlipX(false);
     }
+    this.facingDirection = this.player.x > this.x ? 1 : -1;
   }
 
-  private checkForTarget() {
-    // Check if player is below
-    const dx = Math.abs(this.x - this.player.x);
-    const dy = this.player.y - this.y;
-
-    // If player is roughly below (within 100px horizontal) and below us (positive dy)
-    if (dx < 100 && dy > 0 && dy < 400) {
-      this.startDive();
+  protected onAlert(_delta: number, player: Phaser.GameObjects.Sprite): void {
+    // Swoop toward player
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > 0) {
+      this.setVelocityX((dx / dist) * this.speed * 1.5);
+      this.setVelocityY((dy / dist) * this.speed * 1.5);
     }
+    this.setFlipX(player.x < this.x);
+    this.facingDirection = player.x > this.x ? 1 : -1;
+  }
+
+  protected onAttack(_delta: number, player: Phaser.GameObjects.Sprite): void {
+    // Dive bomb — same as existing dive behavior
+    if (!this.isDiving) {
+      this.startDive();
+    } else if (this.isRecovering) {
+      this.handleRecovery(_delta);
+    } else {
+      this.handleDive();
+    }
+  }
+
+  protected onFlee(_delta: number, _player: Phaser.GameObjects.Sprite): void {
+    // Fly upward and away from player
+    const dx = _player.x - this.x;
+    const dir = dx > 0 ? -1 : 1; // Move AWAY horizontally
+    this.setVelocityX(this.speed * 1.5 * dir);
+    this.setVelocityY(-this.speed * 1.5); // Fly upward
+    this.setFlipX(dir < 0);
+    this.facingDirection = dir;
   }
 
   private startDive() {
@@ -66,10 +87,16 @@ export class ShadowBat extends Enemy {
     this.setVelocityY(0);
 
     // Telegraph: Pause briefly then dive
+    this.isInAttackStartup = true;
     this.setTint(0xff00ff); // Flash brighter warning
 
     this.scene.time.delayedCall(500, () => {
-      if (this.isDead) return;
+      if (this.isDead || this.aiState === 'STUN') {
+        this.isDiving = false;
+        this.isInAttackStartup = false;
+        return;
+      }
+      this.isInAttackStartup = false;
       // Dive towards player's current position
       this.scene.physics.moveToObject(this, this.player, this.DIVE_SPEED);
     });
@@ -86,7 +113,7 @@ export class ShadowBat extends Enemy {
     this.isDiving = false;
     this.isRecovering = true;
     this.setVelocity(0, 0);
-    this.setTint(0x550055); // Reset tint
+    this.restoreTint();
 
     // Return to start height slowly
     this.scene.physics.moveTo(this, this.x, this.startY, 100);
@@ -96,6 +123,7 @@ export class ShadowBat extends Enemy {
     // Check if back at start height
     if (Math.abs(this.y - this.startY) < 10) {
       this.isRecovering = false;
+      this.isDiving = false;
       this.setVelocity(0, 0);
       this.y = this.startY; // Snap to grid
     }
