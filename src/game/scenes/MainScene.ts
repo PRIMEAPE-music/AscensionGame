@@ -29,6 +29,7 @@ import { GameSettings } from "../systems/GameSettings";
 import { AudioManager } from "../systems/AudioManager";
 import { RunSaveManager } from "../systems/RunSaveManager";
 import type { RunSaveData } from "../systems/RunSaveManager";
+import { GamepadManager } from "../systems/GamepadManager";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -507,6 +508,14 @@ export class MainScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number) {
+    // Poll gamepad once per frame before any input consumers read it
+    GamepadManager.update();
+
+    // Gamepad pause: simulate Escape keydown so App.tsx's existing handler catches it
+    if (GamepadManager.state.pauseJustPressed) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+    }
+
     // Carry player with moving platform
     if (this.ridingPlatform) {
       const plat = this.ridingPlatform as any;

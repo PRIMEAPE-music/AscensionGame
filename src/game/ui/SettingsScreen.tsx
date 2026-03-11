@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { GameSettings } from "../systems/GameSettings";
 import type { GameSettingsData } from "../systems/GameSettings";
 import { AudioManager } from "../systems/AudioManager";
+import { GamepadManager } from "../systems/GamepadManager";
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -33,6 +34,23 @@ const CONTROLS: { key: string; action: string }[] = [
   { key: "ESC", action: "Pause" },
 ];
 
+const GAMEPAD_CONTROLS: { key: string; action: string }[] = [
+  { key: "Left Stick / D-Pad", action: "Movement" },
+  { key: "A", action: "Jump" },
+  { key: "B", action: "Attack B" },
+  { key: "X", action: "Attack X" },
+  { key: "Y", action: "Attack Y" },
+  { key: "LB", action: "Dodge / Air Dash" },
+  { key: "RB", action: "Grappling Hook" },
+  { key: "LT", action: "Counter Slash / Charged Attack" },
+  { key: "RT", action: "Ground Slam / Projectile" },
+  { key: "LB + B", action: "Cataclysm" },
+  { key: "LB + X", action: "Temporal Rift" },
+  { key: "LB + Y", action: "Divine Intervention" },
+  { key: "LB + A", action: "Essence Burst" },
+  { key: "Start", action: "Pause" },
+];
+
 const PARTICLE_OPTIONS: GameSettingsData["particleEffects"][] = [
   "LOW",
   "MEDIUM",
@@ -53,12 +71,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     AudioManager.init();
     return { ...AudioManager.settings };
   });
+  const [gamepadConnected, setGamepadConnected] = useState(false);
 
   useEffect(() => {
     GameSettings.load();
     setSettings(GameSettings.get());
     AudioManager.init();
     setAudioSettings({ ...AudioManager.settings });
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      GamepadManager.update();
+      setGamepadConnected(GamepadManager.isConnected());
+    }, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleVolumeChange = useCallback((category: 'master' | 'music' | 'sfx' | 'ui', value: number) => {
@@ -676,7 +703,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
 
         {/* Controls Reference */}
         <div>
-          <div style={sectionTitleStyle}>Controls</div>
+          <div style={sectionTitleStyle}>Keyboard Controls</div>
           <div
             style={{
               display: "flex",
@@ -714,6 +741,95 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                     padding: "3px 12px",
                     background: "rgba(224, 208, 160, 0.08)",
                     border: "1px solid rgba(224, 208, 160, 0.15)",
+                    borderRadius: "4px",
+                    letterSpacing: "1px",
+                    minWidth: "80px",
+                    textAlign: "center",
+                  }}
+                >
+                  {key}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Gamepad Controls */}
+        <div>
+          <div style={sectionTitleStyle}>Gamepad Controls</div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "12px 20px",
+              marginBottom: "10px",
+              background: gamepadConnected
+                ? "rgba(80, 200, 80, 0.08)"
+                : "rgba(255, 255, 255, 0.02)",
+              borderRadius: "6px",
+              border: `1px solid ${gamepadConnected ? "rgba(80, 200, 80, 0.25)" : "rgba(255, 255, 255, 0.06)"}`,
+            }}
+          >
+            <span
+              style={{
+                width: "10px",
+                height: "10px",
+                borderRadius: "50%",
+                background: gamepadConnected ? "#50c850" : "rgba(200, 200, 220, 0.3)",
+                boxShadow: gamepadConnected ? "0 0 8px rgba(80, 200, 80, 0.5)" : "none",
+                display: "inline-block",
+                flexShrink: 0,
+              }}
+            />
+            <span
+              style={{
+                fontSize: "14px",
+                color: gamepadConnected ? "#50c850" : "rgba(200, 200, 220, 0.5)",
+                letterSpacing: "1px",
+                fontWeight: "bold",
+              }}
+            >
+              {gamepadConnected ? "Gamepad: Connected" : "Gamepad: Not Detected"}
+            </span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+            }}
+          >
+            {GAMEPAD_CONTROLS.map(({ key, action }) => (
+              <div
+                key={`gp-${key}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "10px 20px",
+                  background: "rgba(255, 255, 255, 0.02)",
+                  borderRadius: "4px",
+                  borderBottom: "1px solid rgba(255, 255, 255, 0.03)",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "13px",
+                    color: "rgba(200, 200, 220, 0.7)",
+                    letterSpacing: "1px",
+                  }}
+                >
+                  {action}
+                </span>
+                <span
+                  style={{
+                    fontSize: "13px",
+                    fontWeight: "bold",
+                    color: "#88bbee",
+                    padding: "3px 12px",
+                    background: "rgba(136, 187, 238, 0.08)",
+                    border: "1px solid rgba(136, 187, 238, 0.15)",
                     borderRadius: "4px",
                     letterSpacing: "1px",
                     minWidth: "80px",
