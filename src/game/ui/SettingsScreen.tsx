@@ -38,6 +38,12 @@ const PARTICLE_OPTIONS: GameSettingsData["particleEffects"][] = [
   "HIGH",
 ];
 
+const DAMAGE_NUMBER_SIZE_OPTIONS: GameSettingsData["damageNumberSize"][] = [
+  "SMALL",
+  "MEDIUM",
+  "LARGE",
+];
+
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   const [settings, setSettings] = useState<GameSettingsData>(GameSettings.get());
   const [backHover, setBackHover] = useState(false);
@@ -194,6 +200,171 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     );
   };
 
+  const renderToggleWithDescription = (
+    label: string,
+    description: string,
+    id: string,
+    value: boolean,
+    onChange: (val: boolean) => void,
+    disabled?: boolean,
+  ) => {
+    const isHovered = hoveredToggle === id && !disabled;
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 20px",
+          background: isHovered
+            ? "rgba(255, 255, 255, 0.06)"
+            : "rgba(255, 255, 255, 0.03)",
+          borderRadius: "8px",
+          border: `1px solid ${isHovered ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.06)"}`,
+          cursor: disabled ? "not-allowed" : "pointer",
+          transition: "all 0.2s ease",
+          opacity: disabled ? 0.4 : 1,
+        }}
+        onMouseEnter={() => !disabled && setHoveredToggle(id)}
+        onMouseLeave={() => setHoveredToggle(null)}
+        onClick={() => !disabled && onChange(!value)}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span
+            style={{
+              fontSize: "15px",
+              color: disabled ? "rgba(200, 200, 220, 0.4)" : "rgba(200, 200, 220, 0.85)",
+              letterSpacing: "1px",
+            }}
+          >
+            {label}
+          </span>
+          <span
+            style={{
+              fontSize: "11px",
+              color: disabled ? "rgba(200, 200, 220, 0.25)" : "rgba(200, 200, 220, 0.45)",
+              letterSpacing: "0.5px",
+            }}
+          >
+            {description}
+          </span>
+        </div>
+        <div
+          style={{
+            width: "52px",
+            height: "28px",
+            borderRadius: "14px",
+            background: value && !disabled
+              ? "rgba(68, 136, 204, 0.35)"
+              : "rgba(255, 255, 255, 0.08)",
+            border: `1px solid ${value && !disabled ? "rgba(68, 136, 204, 0.5)" : "rgba(255, 255, 255, 0.15)"}`,
+            position: "relative",
+            transition: "all 0.25s ease",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              width: "22px",
+              height: "22px",
+              borderRadius: "50%",
+              background: value && !disabled ? "#4488cc" : "rgba(200, 200, 220, 0.4)",
+              position: "absolute",
+              top: "2px",
+              left: value ? "27px" : "2px",
+              transition: "all 0.25s ease",
+              boxShadow: value && !disabled
+                ? "0 0 8px rgba(68, 136, 204, 0.4)"
+                : "none",
+            }}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderDamageNumberSizeSelector = () => {
+    const isHovered = hoveredToggle === "dmg-size-row";
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 20px",
+          background: isHovered
+            ? "rgba(255, 255, 255, 0.06)"
+            : "rgba(255, 255, 255, 0.03)",
+          borderRadius: "8px",
+          border: `1px solid ${isHovered ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.06)"}`,
+          transition: "all 0.2s ease",
+        }}
+        onMouseEnter={() => setHoveredToggle("dmg-size-row")}
+        onMouseLeave={() => setHoveredToggle(null)}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span
+            style={{
+              fontSize: "15px",
+              color: "rgba(200, 200, 220, 0.85)",
+              letterSpacing: "1px",
+            }}
+          >
+            Damage Number Size
+          </span>
+          <span
+            style={{
+              fontSize: "11px",
+              color: "rgba(200, 200, 220, 0.45)",
+              letterSpacing: "0.5px",
+            }}
+          >
+            Adjust the size of floating damage numbers
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: "6px" }}>
+          {DAMAGE_NUMBER_SIZE_OPTIONS.map((opt) => {
+            const isActive = settings.damageNumberSize === opt;
+            const isOptHovered = hoveredToggle === `dmg-size-${opt}`;
+            return (
+              <button
+                key={opt}
+                onMouseEnter={() => setHoveredToggle(`dmg-size-${opt}`)}
+                onMouseLeave={() => setHoveredToggle(null)}
+                onClick={() => updateSetting({ damageNumberSize: opt })}
+                style={{
+                  padding: "6px 16px",
+                  fontSize: "12px",
+                  fontFamily: "monospace",
+                  fontWeight: "bold",
+                  letterSpacing: "1px",
+                  textTransform: "uppercase",
+                  border: `1px solid ${isActive ? "rgba(68, 136, 204, 0.5)" : isOptHovered ? "rgba(255, 255, 255, 0.25)" : "rgba(255, 255, 255, 0.1)"}`,
+                  borderRadius: "4px",
+                  background: isActive
+                    ? "rgba(68, 136, 204, 0.2)"
+                    : isOptHovered
+                      ? "rgba(255, 255, 255, 0.08)"
+                      : "rgba(255, 255, 255, 0.03)",
+                  color: isActive
+                    ? "#4488cc"
+                    : isOptHovered
+                      ? "#fff"
+                      : "rgba(200, 200, 220, 0.5)",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  outline: "none",
+                }}
+              >
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div
       style={{
@@ -278,6 +449,122 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               (val) => updateSetting({ damageNumbers: val }),
             )}
             {renderParticleSelector()}
+          </div>
+        </div>
+
+        {/* Accessibility Settings */}
+        <div
+          style={{
+            background: "rgba(68, 136, 204, 0.04)",
+            border: "1px solid rgba(68, 136, 204, 0.15)",
+            borderRadius: "12px",
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              ...sectionTitleStyle,
+              color: "#4488cc",
+              borderBottom: "1px solid rgba(68, 136, 204, 0.15)",
+            }}
+          >
+            Accessibility
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+            }}
+          >
+            {/* Assist Mode master toggle */}
+            {renderToggleWithDescription(
+              "Assist Mode",
+              "Enable gameplay assists (does not affect achievements)",
+              "assistMode",
+              settings.assistMode,
+              (val) => updateSetting({ assistMode: val }),
+            )}
+
+            {/* Assist sub-options */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                paddingLeft: "16px",
+                borderLeft: `2px solid ${settings.assistMode ? "rgba(68, 136, 204, 0.3)" : "rgba(255, 255, 255, 0.06)"}`,
+                marginLeft: "4px",
+                transition: "border-color 0.2s ease",
+              }}
+            >
+              {renderToggleWithDescription(
+                "Extra I-Frames",
+                "Doubles invincibility duration after taking damage",
+                "extraIFrames",
+                settings.extraIFrames,
+                (val) => updateSetting({ extraIFrames: val }),
+                !settings.assistMode,
+              )}
+              {renderToggleWithDescription(
+                "Slower Enemies",
+                "Enemy attacks are 50% slower",
+                "slowerEnemies",
+                settings.slowerEnemies,
+                (val) => updateSetting({ slowerEnemies: val }),
+                !settings.assistMode,
+              )}
+              {renderToggleWithDescription(
+                "Extra Starting Health",
+                "Start with +2 max health",
+                "extraStartingHealth",
+                settings.extraStartingHealth,
+                (val) => updateSetting({ extraStartingHealth: val }),
+                !settings.assistMode,
+              )}
+              {renderToggleWithDescription(
+                "Auto-Dodge",
+                "Automatically triggers perfect dodge timing",
+                "autoDodge",
+                settings.autoDodge,
+                (val) => updateSetting({ autoDodge: val }),
+                !settings.assistMode,
+              )}
+              {renderToggleWithDescription(
+                "Easier Combos",
+                "More lenient combo timing windows",
+                "reducedComboTiming",
+                settings.reducedComboTiming,
+                (val) => updateSetting({ reducedComboTiming: val }),
+                !settings.assistMode,
+              )}
+            </div>
+
+            {/* Divider between assist and visual */}
+            <div
+              style={{
+                height: "1px",
+                background: "rgba(68, 136, 204, 0.1)",
+                margin: "6px 0",
+              }}
+            />
+
+            {/* Visual Accessibility (always available) */}
+            {renderToggleWithDescription(
+              "High Contrast",
+              "Brighter colors and entity outlines",
+              "highContrast",
+              settings.highContrast,
+              (val) => updateSetting({ highContrast: val }),
+            )}
+            {renderToggleWithDescription(
+              "Flash Reduction",
+              "Reduces screen flash intensity",
+              "flashReduction",
+              settings.flashReduction,
+              (val) => updateSetting({ flashReduction: val }),
+            )}
+            {renderDamageNumberSizeSelector()}
           </div>
         </div>
 

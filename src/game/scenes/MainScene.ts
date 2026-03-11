@@ -25,6 +25,7 @@ import { RisingDarkness } from "../systems/RisingDarkness";
 import { PersistentStats } from "../systems/PersistentStats";
 import { ActiveModifiers } from "../config/RunModifiers";
 import { ITEMS } from "../config/ItemDatabase";
+import { GameSettings } from "../systems/GameSettings";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -532,6 +533,29 @@ export class MainScene extends Phaser.Scene {
     }
     this.combatManager.update(delta);
 
+    // Accessibility: Slower Enemies — halve enemy attack speed by doubling their cooldowns
+    const accessSettings = GameSettings.get();
+    if (accessSettings.assistMode && accessSettings.slowerEnemies) {
+      this.enemies.children.each((enemy: any) => {
+        if (enemy.active) {
+          // Double attack cooldowns to make enemies attack 50% slower
+          if (enemy.attackCooldown !== undefined && !enemy._slowApplied) {
+            enemy.attackCooldown *= 2;
+            enemy._slowApplied = true;
+          }
+          // Also slow movement velocity during attack states
+          if (enemy.state === 'ATTACKING' || enemy.state === 'CHARGING') {
+            const body = enemy.body as Phaser.Physics.Arcade.Body | null;
+            if (body) {
+              body.velocity.x *= 0.5;
+              body.velocity.y *= 0.5;
+            }
+          }
+        }
+        return true;
+      });
+    }
+
     // Update Sacred Ground instances (Priest mechanic)
     this.sacredGrounds = this.sacredGrounds.filter((sg) => !sg.update(delta));
 
@@ -711,21 +735,22 @@ export class MainScene extends Phaser.Scene {
       // Camera shake wobble effect (2 seconds)
       this.cameras.main.shake(2000, 0.001);
 
-      // Purple flash effect
+      // Purple flash effect (reduced or skipped if flash reduction enabled)
+      const portalFlashReduction = GameSettings.get().flashReduction;
       const flash = this.add.rectangle(
         this.player.x,
         this.player.y,
         WORLD.WIDTH * 2,
         this.cameras.main.height * 2,
         0x9933ff,
-        0.4,
+        portalFlashReduction ? 0.1 : 0.4,
       );
       flash.setScrollFactor(0);
       flash.setDepth(200);
       this.tweens.add({
         targets: flash,
         alpha: 0,
-        duration: 500,
+        duration: portalFlashReduction ? 200 : 500,
         onComplete: () => flash.destroy(),
       });
 

@@ -15,6 +15,7 @@ import {
 } from "../systems/CombatTypes";
 import { SPRITE_CONFIG } from "../config/AnimationConfig";
 import { PersistentStats } from "../systems/PersistentStats";
+import { GameSettings } from "../systems/GameSettings";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
@@ -248,6 +249,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.classType = classType;
     this.classStats = CLASSES[classType];
     this.maxHealth = this.classStats.health;
+    // Accessibility: Extra Starting Health (+2 max health)
+    const accessSettings = GameSettings.get();
+    if (accessSettings.assistMode && accessSettings.extraStartingHealth) {
+      this.maxHealth += 2;
+    }
     this.health = this.maxHealth;
 
     // Set physics body to 32x48 centered within the larger sprite frame
@@ -1092,6 +1098,28 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Record when enemies attempt to deal damage (used for perfect dodge check)
     this.lastDamageAttemptTime = this.scene.time.now;
 
+    // Accessibility: Auto-Dodge — automatically trigger dodge when about to take damage
+    const autoSettings = GameSettings.get();
+    if (
+      autoSettings.assistMode &&
+      autoSettings.autoDodge &&
+      this.dodgeTimer <= 0 &&
+      this.dodgeCooldown <= 0 &&
+      !this.isDodging
+    ) {
+      // Trigger a dodge automatically
+      const dodgeDuration = this.abilities.has('dodge_mastery') ? this.DODGE_DURATION * 2 : this.DODGE_DURATION;
+      const dodgeCooldown = this.abilities.has('dodge_mastery') ? this.DODGE_COOLDOWN / 2 : this.DODGE_COOLDOWN;
+      this.isDodging = true;
+      this.dodgeTimer = dodgeDuration;
+      this.dodgeCooldown = dodgeCooldown;
+      this.dodgeStartTime = this.scene.time.now;
+      // Apply dodge velocity away from attacker
+      const dodgeDir = attackerX !== undefined ? (this.x > attackerX ? 1 : -1) : (this.flipX ? -1 : 1);
+      this.setVelocityX(this.DODGE_SPEED * dodgeDir);
+      this.setAlpha(0.5);
+    }
+
     // Dodge i-frames — skip damage but check for perfect dodge
     if (this.dodgeTimer > 0) {
       const timeSinceDodgeStart = this.scene.time.now - this.dodgeStartTime;
@@ -1100,11 +1128,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.perfectDodgeBuff = true;
         this.perfectDodgeBuffTimer = this.PERFECT_DODGE_BUFF_DURATION;
         PersistentStats.addPerfectDodge();
-        // Brief white flash to indicate perfect dodge
-        this.setTint(0xffffff);
-        this.scene.time.delayedCall(100, () => {
-          if (this.active) this.clearTint();
-        });
+        // Brief white flash to indicate perfect dodge (reduced if flash reduction enabled)
+        if (!GameSettings.get().flashReduction) {
+          this.setTint(0xffffff);
+          this.scene.time.delayedCall(100, () => {
+            if (this.active) this.clearTint();
+          });
+        }
       }
       return false;
     }
@@ -1247,10 +1277,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // Start invincibility
     if (this.invincibilityTimer <= 0) {
-      this.invincibilityTimer = COMBAT.INVINCIBILITY_DURATION;
+      let iFrameDuration = COMBAT.INVINCIBILITY_DURATION;
+      // Accessibility: Extra I-Frames — double invincibility duration
+      const iframeSettings = GameSettings.get();
+      if (iframeSettings.assistMode && iframeSettings.extraIFrames) {
+        iFrameDuration *= 2;
+      }
+      this.invincibilityTimer = iFrameDuration;
       this.flashTimer = 0;
     }
-    this.setTint(0xff0000);
+    // Flash Reduction: skip red tint flash if enabled
+    if (!GameSettings.get().flashReduction) {
+      this.setTint(0xff0000);
+    }
 
     EventBus.emit("health-change", {
       health: this.health,

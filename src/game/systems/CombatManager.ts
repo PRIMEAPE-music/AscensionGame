@@ -7,6 +7,7 @@ import { EventBus } from "./EventBus";
 import { COMBAT_CONFIG } from "./CombatTypes";
 import { DamageNumberManager } from "./DamageNumberManager";
 import { PersistentStats } from "./PersistentStats";
+import { GameSettings } from "./GameSettings";
 
 export class CombatManager {
   private scene: Phaser.Scene;
@@ -31,6 +32,14 @@ export class CombatManager {
 
   setDamageNumberManager(manager: DamageNumberManager): void {
     this.damageNumbers = manager;
+  }
+
+  private getComboTimeout(): number {
+    const settings = GameSettings.get();
+    if (settings.assistMode && settings.reducedComboTiming) {
+      return this.COMBO_TIMEOUT * 1.5; // 50% more lenient
+    }
+    return this.COMBO_TIMEOUT;
   }
 
   update(delta: number): void {
@@ -97,7 +106,7 @@ export class CombatManager {
 
     // Increment combo
     this.comboCount++;
-    this.comboTimer = this.COMBO_TIMEOUT;
+    this.comboTimer = this.getComboTimeout();
     const newComboMultiplier = 1.0 + Math.min(0.3, this.comboCount * 0.1);
     EventBus.emit("combo-update", {
       count: this.comboCount,
@@ -112,9 +121,10 @@ export class CombatManager {
     const isHeavy = (attackDef?.damageMultiplier ?? 1) >= 1.5;
     this.damageNumbers?.show(enemyX, enemyY, damage, isHeavy);
 
-    // Screen shake
-    const shakeIntensity = isHeavy ? 0.005 : 0.002;
-    const shakeDuration = isHeavy ? 80 : 50;
+    // Screen shake (reduced if flash reduction enabled)
+    const flashReduce = GameSettings.get().flashReduction;
+    const shakeIntensity = (isHeavy ? 0.005 : 0.002) * (flashReduce ? 0.3 : 1);
+    const shakeDuration = (isHeavy ? 80 : 50) * (flashReduce ? 0.5 : 1);
     this.scene.cameras.main.shake(shakeDuration, shakeIntensity);
 
     // Hit-stop (brief time scale dip)
