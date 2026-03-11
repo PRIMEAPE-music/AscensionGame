@@ -26,6 +26,7 @@ import { PersistentStats } from "../systems/PersistentStats";
 import { ActiveModifiers } from "../config/RunModifiers";
 import { ITEMS } from "../config/ItemDatabase";
 import { GameSettings } from "../systems/GameSettings";
+import { AudioManager } from "../systems/AudioManager";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -433,9 +434,35 @@ export class MainScene extends Phaser.Scene {
       }
     });
 
+    // Audio system — init and hook into game events
+    AudioManager.init();
+    AudioManager.resume();
+
+    EventBus.on("enemy-killed", () => AudioManager.playHitHeavy());
+    EventBus.on("boss-warning", () => AudioManager.playBossWarning());
+    EventBus.on("boss-defeated", () => AudioManager.playBossDefeat());
+    EventBus.on("parry-success", () => AudioManager.playParry());
+    EventBus.on("portal-teleport", () => AudioManager.playPortalTeleport());
+    EventBus.on("combo-update", () => AudioManager.playComboTick());
+    EventBus.on("essence-change", (data) => {
+      if (data.gained > 0) AudioManager.playEssencePickup();
+    });
+    EventBus.on("player-jump", () => AudioManager.playJump());
+    EventBus.on("player-attack", () => AudioManager.playAttackSwing());
+    EventBus.on("player-dodge", (data) => {
+      if (data.perfect) {
+        AudioManager.playPerfectDodge();
+      } else {
+        AudioManager.playDodge();
+      }
+    });
+    EventBus.on("player-land", () => AudioManager.playLand());
+    EventBus.on("item-pickup", () => AudioManager.playItemPickup());
+
     // Handle player death — emit death screen event with run stats
     this.runStartTime = Date.now();
     EventBus.on("player-died", () => {
+      AudioManager.playDeath();
       const altitude = Math.max(
         0,
         (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
@@ -694,6 +721,7 @@ export class MainScene extends Phaser.Scene {
           platform.y,
           platform.displayWidth,
         );
+        AudioManager.playBreakableCrumble();
 
         this.tweens.add({
           targets: platform,
