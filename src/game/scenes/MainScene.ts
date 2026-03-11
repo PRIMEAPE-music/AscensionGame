@@ -147,7 +147,7 @@ export class MainScene extends Phaser.Scene {
       this.player,
       this.staticPlatforms,
       this.handleStaticPlatformCollision,
-      undefined,
+      this.oneWayPlatformCheck,
       this,
     );
     this.physics.add.collider(
@@ -159,7 +159,7 @@ export class MainScene extends Phaser.Scene {
           this.player.detectPlatformType(platform);
         }
       },
-      undefined,
+      this.oneWayPlatformCheck,
       this,
     );
     this.physics.add.collider(this.enemies, this.staticPlatforms);
@@ -314,6 +314,15 @@ export class MainScene extends Phaser.Scene {
     this.atmosphereManager?.destroy?.();
     this.particleManager?.destroy();
     this.platformEffectsManager?.destroy?.();
+  }
+
+  private oneWayPlatformCheck(_player: any, platform: any): boolean {
+    const playerBody = _player.body as Phaser.Physics.Arcade.Body;
+    const platformBody = platform.body as Phaser.Physics.Arcade.StaticBody;
+    // Only collide if the player's feet were at or above the platform top last frame
+    const playerPrevBottom = playerBody.prev.y + playerBody.halfHeight;
+    const platformTop = platformBody.y;
+    return playerPrevBottom <= platformTop + 2;
   }
 
   private handleStaticPlatformCollision(_player: any, platform: any) {

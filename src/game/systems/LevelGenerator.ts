@@ -15,18 +15,11 @@ interface DifficultyParams {
   biomeKey: string;
 }
 
-// Fix 3: Pattern names for repeat tracking
-type PatternName =
-  | "standard"
-  | "zigzag"
-  | "wallJump"
-  | "slopeRun"
-  | "bounceChain"
-  | "halfpipe"
-  | "launch"
-  | "rollingHills"
-  | "diagonalAscent"
-  | "spiralClimb";
+// Side zones for tower-climb layout
+const SIDE_ZONES = {
+  left: { min: 120, max: 600 },
+  right: { min: 1320, max: 1800 },
+};
 
 export class LevelGenerator {
   private scene: Phaser.Scene;
@@ -38,11 +31,11 @@ export class LevelGenerator {
   private lastPlatformY: number;
   private lastPlatformX: number;
 
-  // Fix 3: Pattern repeat prevention
-  private recentPatterns: PatternName[] = [];
-
-  // Fix 5: Transition platforms between patterns
-  private pendingTransitions: number = 0;
+  // Tower-climb state: alternates between side climbing and bridging
+  private currentSide: "left" | "right" = "left";
+  private phase: "side" | "bridge" = "side";
+  private phaseProgress: number = 0;
+  private phaseTarget: number = 3;
 
   constructor(
     scene: Phaser.Scene,
@@ -67,14 +60,19 @@ export class LevelGenerator {
   }
 
   init() {
+    // Wide starting platform
     this.createPlatform(960, WORLD.BASE_PLATFORM_Y, 10, PlatformType.STANDARD);
-    this.createPlatform(600, 800, 2, PlatformType.STANDARD);
-    this.createPlatform(1400, 700, 2, PlatformType.MOVING);
-    this.createPlatform(200, 500, 2, PlatformType.STANDARD);
-    this.createPlatform(1000, 300, 2, PlatformType.BREAKABLE);
+    // Guide player toward left wall to start the climb
+    this.createPlatform(500, 830, 2, PlatformType.STANDARD);
+    this.createPlatform(300, 650, 1.8, PlatformType.STANDARD);
+    this.createPlatform(200, 470, 1.5, PlatformType.STANDARD);
 
-    this.lastPlatformY = 300;
-    this.lastPlatformX = 1000;
+    this.lastPlatformY = 470;
+    this.lastPlatformX = 200;
+    this.currentSide = "left";
+    this.phase = "side";
+    this.phaseProgress = 1;
+    this.phaseTarget = Phaser.Math.Between(2, 4);
   }
 
   update(playerY: number) {
@@ -213,41 +211,31 @@ export class LevelGenerator {
     }
   }
 
-  // Fix 3: Select pattern with repeat prevention (reroll up to 2x if recent)
-  private selectPattern(): PatternName {
-    const patterns: Array<{ name: PatternName; weight: number }> = [
-      { name: "zigzag", weight: 0.12 },
-      { name: "wallJump", weight: 0.10 },
-      { name: "slopeRun", weight: 0.08 },
-      { name: "bounceChain", weight: 0.08 },
-      { name: "halfpipe", weight: 0.12 },
-      { name: "launch", weight: 0.10 },
-      { name: "rollingHills", weight: 0.13 },
-      { name: "diagonalAscent", weight: 0.07 },
-      { name: "spiralClimb", weight: 0.07 },
-      { name: "standard", weight: 0.13 },
-    ];
+  // Run a special pattern for variety, then recover to the current side
+  private runSpecialPattern(params: DifficultyParams) {
+    const roll = Math.random();
+    if (roll < 0.2) this.generateBounceChain(params);
+    else if (roll < 0.4) this.generateSlopeRun(params);
+    else if (roll < 0.55) this.generateHalfpipeSection(params);
+    else if (roll < 0.7) this.generateLaunchSequence(params);
+    else if (roll < 0.85) this.generateRollingHills(params);
+    else this.generateWallJumpSection(params);
 
-    let chosen: PatternName = "standard";
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const roll = Math.random();
-      let cumulative = 0;
-      for (const p of patterns) {
-        cumulative += p.weight;
-        if (roll < cumulative) {
-          chosen = p.name;
-          break;
-        }
-      }
-      if (!this.recentPatterns.includes(chosen)) break;
+    // Place a recovery platform on the target side if we drifted away
+    const zone = SIDE_ZONES[this.currentSide];
+    if (this.lastPlatformX < zone.min || this.lastPlatformX > zone.max) {
+      const y =
+        this.lastPlatformY -
+        Phaser.Math.Between(params.minGap, params.maxGap);
+      const x = Phaser.Math.Between(zone.min, zone.max);
+      this.lastPlatformY = this.createPlatform(
+        x,
+        y,
+        1.5,
+        PlatformType.STANDARD,
+      );
+      this.lastPlatformX = x;
     }
-
-    this.recentPatterns.push(chosen);
-    if (this.recentPatterns.length > 3) {
-      this.recentPatterns.shift();
-    }
-
-    return chosen;
   }
 
   // Fix 8: Calculate where a player lands after launching off a slope
@@ -323,95 +311,91 @@ export class LevelGenerator {
   private generateNextChunk(altitude: number) {
     const params = this.getDifficultyParams(altitude);
 
-    // Fix 5: Insert transition (bridge) platforms before next pattern
-    if (this.pendingTransitions > 0) {
-      this.pendingTransitions--;
-      this.generateTransitionPlatform(params);
-      return;
-    }
+    if (this.phase === "side") {
+      this.generateSidePlatform(params);
+      this.phaseProgress++;
+      if (this.phaseProgress >= this.phaseTarget) {
+        // Start bridge phase — cross to the other side
+        this.phase = "bridge";
+        this.phaseProgress = 0;
+        this.phaseTarget = Phaser.Math.Between(1, 3);
+      }
+    } else {
+      this.generateBridgePlatform(params);
+      this.phaseProgress++;
+      if (this.phaseProgress >= this.phaseTarget) {
+        // Switch sides and start climbing again
+        this.currentSide = this.currentSide === "left" ? "right" : "left";
+        this.phase = "side";
+        this.phaseProgress = 0;
+        this.phaseTarget = Phaser.Math.Between(2, 5);
 
-    const pattern = this.selectPattern();
-
-    switch (pattern) {
-      case "zigzag":
-        this.generateZigZagPattern(params);
-        break;
-      case "wallJump":
-        this.generateWallJumpSection(params);
-        break;
-      case "slopeRun":
-        this.generateSlopeRun(params);
-        break;
-      case "bounceChain":
-        this.generateBounceChain(params);
-        break;
-      case "halfpipe":
-        this.generateHalfpipeSection(params);
-        break;
-      case "launch":
-        this.generateLaunchSequence(params);
-        break;
-      case "rollingHills":
-        this.generateRollingHills(params);
-        break;
-      case "diagonalAscent":
-        this.generateDiagonalAscent(params);
-        break;
-      case "spiralClimb":
-        this.generateSpiralClimb(params);
-        break;
-      default:
-        this.generateStandardPlatform(params);
-        break;
-    }
-
-    // Fix 5: Queue 1-2 transition platforms after multi-platform patterns
-    if (pattern !== "standard") {
-      this.pendingTransitions = Phaser.Math.Between(1, 2);
+        // 20% chance to run a special pattern for variety
+        if (Math.random() < 0.2) {
+          this.runSpecialPattern(params);
+        }
+      }
     }
   }
 
-  // Fix 5: Bridge platforms with moderate gaps, trending toward center
-  private generateTransitionPlatform(params: DifficultyParams) {
-    const yGap = Phaser.Math.Between(
-      params.minGap,
-      Math.round((params.minGap + params.maxGap) / 2),
-    );
-    const y = this.lastPlatformY - yGap;
-
-    const centerX = WORLD.WIDTH / 2;
-    const targetX = this.lastPlatformX + (centerX - this.lastPlatformX) * 0.4;
-    const x = Phaser.Math.Clamp(
-      targetX + Phaser.Math.Between(-100, 100),
-      100,
-      WORLD.WIDTH - 100,
-    );
-
-    this.lastPlatformY = this.createPlatform(x, y, 1.5, PlatformType.STANDARD);
-    this.lastPlatformX = x;
-  }
-
-  // Fix 1: Jump validation with retry on infeasible gaps
-  private generateStandardPlatform(params: DifficultyParams) {
+  // Place a platform on the current side (hugging left or right wall)
+  private generateSidePlatform(params: DifficultyParams) {
+    const zone = SIDE_ZONES[this.currentSide];
     const yGap = Phaser.Math.Between(params.minGap, params.maxGap);
     let y = this.lastPlatformY - yGap;
 
-    const minX = Math.max(100, this.lastPlatformX - 400);
-    const maxX = Math.min(1820, this.lastPlatformX + 400);
-    let x = Phaser.Math.Between(minX, maxX);
+    // Stay within the side zone with some horizontal variance
+    let x = Phaser.Math.Clamp(
+      this.lastPlatformX + Phaser.Math.Between(-150, 150),
+      zone.min,
+      zone.max,
+    );
 
     if (!this.isJumpFeasible(this.lastPlatformX, this.lastPlatformY, x, y)) {
-      y = this.lastPlatformY - Math.round(yGap / 2);
       x = Phaser.Math.Clamp(
-        this.lastPlatformX + Phaser.Math.Between(-200, 200),
-        100,
-        1820,
+        Math.round((this.lastPlatformX + x) / 2),
+        zone.min,
+        zone.max,
       );
+      y = this.lastPlatformY - Math.round(yGap * 0.6);
     }
 
-    const scale = Phaser.Math.FloatBetween(0.8, 2.0);
+    const scale = Phaser.Math.FloatBetween(1.0, 2.0);
     const type = this.rollPlatformType(params.biomeKey);
+    this.lastPlatformY = this.createPlatform(x, y, scale, type);
+    this.lastPlatformX = x;
+  }
 
+  // Bridge platforms that step across the middle toward the opposite side
+  private generateBridgePlatform(params: DifficultyParams) {
+    const yGap = Phaser.Math.Between(
+      params.minGap,
+      Math.round((params.minGap + params.maxGap) * 0.6),
+    );
+    const y = this.lastPlatformY - yGap;
+
+    // Lerp from current side edge toward opposite side edge
+    const progress =
+      this.phaseTarget <= 1
+        ? 0.5
+        : (this.phaseProgress + 1) / this.phaseTarget;
+    const fromX = this.currentSide === "left" ? 550 : 1370;
+    const toX = this.currentSide === "left" ? 1370 : 550;
+    let x = Math.round(fromX + progress * (toX - fromX));
+    x += Phaser.Math.Between(-80, 80);
+    x = Phaser.Math.Clamp(x, 200, 1720);
+
+    if (!this.isJumpFeasible(this.lastPlatformX, this.lastPlatformY, x, y)) {
+      const dir = this.currentSide === "left" ? 1 : -1;
+      x = Phaser.Math.Clamp(this.lastPlatformX + dir * 200, 200, 1720);
+    }
+
+    const scale = Phaser.Math.FloatBetween(0.8, 1.5);
+    // Bridges are more likely to be moving platforms
+    const type =
+      Math.random() < 0.3
+        ? PlatformType.MOVING
+        : this.rollPlatformType(params.biomeKey);
     this.lastPlatformY = this.createPlatform(x, y, scale, type);
     this.lastPlatformX = x;
   }
@@ -716,73 +700,6 @@ export class LevelGenerator {
       1.5,
       PlatformType.STANDARD,
     );
-  }
-
-  // Fix 7: Diagonal ascent — 4-6 platforms in a ~45° diagonal line
-  private generateDiagonalAscent(params: DifficultyParams) {
-    const steps = Phaser.Math.Between(4, 6);
-    const goingRight = Math.random() > 0.5;
-    const xStep = goingRight
-      ? Phaser.Math.Between(120, 200)
-      : Phaser.Math.Between(-200, -120);
-    const yStep = Phaser.Math.Between(
-      params.minGap,
-      Math.round((params.minGap + params.maxGap) / 2),
-    );
-
-    for (let i = 0; i < steps; i++) {
-      let x = Phaser.Math.Clamp(this.lastPlatformX + xStep, 100, 1820);
-      const y = this.lastPlatformY - yStep;
-
-      if (!this.isJumpFeasible(this.lastPlatformX, this.lastPlatformY, x, y)) {
-        x = Phaser.Math.Clamp(
-          this.lastPlatformX + Math.round(xStep / 2),
-          100,
-          1820,
-        );
-      }
-
-      const scale = this.getPatternScale(i, steps);
-      const type = this.rollPlatformType(params.biomeKey);
-      this.lastPlatformY = this.createPlatform(x, y, scale, type);
-      this.lastPlatformX = x;
-    }
-  }
-
-  // Fix 7: Spiral climb — platforms trace an upward arc, alternating sides
-  private generateSpiralClimb(params: DifficultyParams) {
-    const steps = Phaser.Math.Between(4, 6);
-    const centerX = WORLD.WIDTH / 2;
-    const radius = Phaser.Math.Between(250, 400);
-    const startAngle = Math.random() * Math.PI * 2;
-
-    for (let i = 0; i < steps; i++) {
-      const angle = startAngle + (i / steps) * Math.PI * 2;
-      let x = Phaser.Math.Clamp(
-        Math.round(centerX + Math.cos(angle) * radius),
-        100,
-        1820,
-      );
-      const yGap = Phaser.Math.Between(
-        params.minGap,
-        Math.round((params.minGap + params.maxGap) / 2),
-      );
-      let y = this.lastPlatformY - yGap;
-
-      if (!this.isJumpFeasible(this.lastPlatformX, this.lastPlatformY, x, y)) {
-        x = Phaser.Math.Clamp(
-          this.lastPlatformX + Phaser.Math.Between(-200, 200),
-          100,
-          1820,
-        );
-        y = this.lastPlatformY - Math.round(yGap / 2);
-      }
-
-      const scale = this.getPatternScale(i, steps);
-      const type = this.rollPlatformType(params.biomeKey);
-      this.lastPlatformY = this.createPlatform(x, y, scale, type);
-      this.lastPlatformX = x;
-    }
   }
 
   // Returns actual y used (may differ from input if shifted to avoid slope overlap)
