@@ -165,6 +165,15 @@ export class MainScene extends Phaser.Scene {
     PersistentStats.load();
     PersistentStats.startRun(selectedClass);
 
+    // Apply pre-equipped gold items from the equip screen
+    const equippedGoldItems: string[] = (window as any).__equippedGoldItems || [];
+    for (const itemId of equippedGoldItems) {
+      const itemData = ITEMS[itemId];
+      if (itemData && itemData.type === 'GOLD') {
+        this.player.collectItem(itemData);
+      }
+    }
+
     // Hazard manager (needs player and staticPlatforms)
     this.hazardManager = new HazardManager(this, this.player, this.staticPlatforms);
 

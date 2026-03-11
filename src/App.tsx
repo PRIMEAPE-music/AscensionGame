@@ -381,6 +381,10 @@ function App() {
     const handleComboUpdate = (e: CustomEvent) => {
       setComboCount(e.detail.count);
       setComboMultiplier(e.detail.multiplier);
+      // Track max combo this run for achievements
+      if (e.detail.count > maxComboRef.current) {
+        maxComboRef.current = e.detail.count;
+      }
     };
 
     const handleEssenceChange = (e: CustomEvent) => {
@@ -388,8 +392,46 @@ function App() {
     };
 
     const handleDeathScreen = (e: CustomEvent) => {
-      setDeathStats(e.detail);
+      const stats = e.detail;
+      setDeathStats(stats);
       setGameState("DEATH");
+
+      // Check achievements after run ends
+      try {
+        const lifetimeStats = PersistentStats.getLifetimeStats();
+        const goldItemCount = PersistentStats.getUnlockedGoldItems().length;
+        const newlyUnlocked = AchievementManager.checkAchievements({
+          lifetime: {
+            totalBossesDefeated: lifetimeStats.totalBossesDefeated,
+            totalDeaths: lifetimeStats.totalDeaths,
+            highestAltitude: lifetimeStats.highestAltitude,
+            totalRuns: lifetimeStats.totalRuns,
+          },
+          run: {
+            altitude: stats.altitude,
+            kills: stats.kills,
+            bossesDefeated: stats.bossesDefeated,
+            essenceEarned: stats.essenceEarned,
+          },
+          currentClass: (window as any).__selectedClass || "",
+          goldItemCount,
+          maxComboThisRun: maxComboRef.current,
+          totalKills: AchievementManager.getTotalKills(),
+        });
+
+        if (newlyUnlocked.length > 0) {
+          const popups = newlyUnlocked
+            .map((id) => AchievementManager.getById(id))
+            .filter(Boolean)
+            .map((a) => ({ name: a!.name, description: a!.description, icon: a!.icon }));
+          setAchievementQueue((prev) => [...prev, ...popups]);
+        }
+      } catch {
+        // PersistentStats may not be ready; skip achievement check
+      }
+
+      // Reset max combo for next run
+      maxComboRef.current = 0;
     };
 
     const handleShopOpen = (e: CustomEvent) => {
@@ -602,6 +644,10 @@ function App() {
           )}
         </>
       )}
+      <AchievementPopup
+        achievement={achievementPopup}
+        onDone={() => setAchievementPopup(null)}
+      />
     </div>
   );
 }

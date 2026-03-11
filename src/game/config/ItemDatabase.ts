@@ -57,5 +57,50 @@ export const ITEMS: Record<string, ItemData> = {
         rarity: 'LEGENDARY',
         abilityId: 'double_jump',
         iconColor: 0xffd700
+    },
+    'vampiric_fang': {
+        id: 'vampiric_fang',
+        name: 'Vampiric Fang',
+        description: 'Heal 1 HP on every 10th kill',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'vampirism',
+        iconColor: 0xff0044
+    },
+    'phoenix_plume': {
+        id: 'phoenix_plume',
+        name: 'Phoenix Plume',
+        description: 'Revive once per run with 1 HP',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'revive',
+        iconColor: 0xff6600
+    },
+    'shadow_cloak': {
+        id: 'shadow_cloak',
+        name: 'Shadow Cloak',
+        description: 'Dodge grants brief invisibility',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'shadow_dodge',
+        iconColor: 0x440066
+    },
+    'titans_grip': {
+        id: 'titans_grip',
+        name: "Titan's Grip",
+        description: 'Attacks have +50% knockback',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'mega_knockback',
+        iconColor: 0x884400
+    },
+    'essence_magnet': {
+        id: 'essence_magnet',
+        name: 'Essence Magnet',
+        description: '+25% essence from all sources',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'essence_boost',
+        iconColor: 0xcc44ff
     }
 };
