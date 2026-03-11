@@ -3,6 +3,7 @@ import { InventoryUI } from "./InventoryUI";
 import { BossHealthBar } from "./BossHealthBar";
 import { EventBus } from "../systems/EventBus";
 import type { ItemData } from "../config/ItemConfig";
+import type { SynergyBonus } from "../systems/ItemSynergy";
 
 interface GameHUDProps {
   health: number;
@@ -94,6 +95,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   // Boss distance indicator
   const [bossDistance, setBossDistance] = useState<number | null>(null);
 
+  // Synergy bonuses
+  const [synergies, setSynergies] = useState<SynergyBonus[]>([]);
+
   // Essence flash animation
   const [essenceFlash, setEssenceFlash] = useState(false);
   const prevEssenceRef = useRef(essence);
@@ -144,6 +148,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       showWarningFiredRef.current = false;
     });
 
+    const unsubSynergy = EventBus.on("synergy-change", (data) => {
+      setSynergies(data.synergies || []);
+    });
+
     const unsubWarning = EventBus.on("boss-warning", (data) => {
       // Update distance indicator continuously
       setBossDistance(Math.floor(data.distance));
@@ -170,6 +178,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       unsubDefeated();
       unsubDied();
       unsubWarning();
+      unsubSynergy();
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
       if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
     };
@@ -585,9 +594,38 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             ...glassStyle,
             padding: "8px 18px",
             pointerEvents: "auto",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "4px",
           }}
         >
           <InventoryUI items={inventory} />
+          {synergies.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                flexWrap: "wrap",
+                justifyContent: "center",
+              }}
+            >
+              {synergies.map((s, i) => (
+                <div
+                  key={i}
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: "bold",
+                    color: "#ffaa00",
+                    textShadow: "0 0 6px rgba(255, 170, 0, 0.4)",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  {s.count}x {s.rarity} +{Math.round(s.bonus * 100)}%
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

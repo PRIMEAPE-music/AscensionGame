@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import { ClassType, type ClassStats, CLASSES } from "../config/ClassConfig";
 import type { ItemData, StatType } from "../config/ItemConfig";
+import { QUALITY_MULTIPLIERS } from "../config/ItemConfig";
+import { getSynergyMultiplier, calculateSynergies } from "../systems/ItemSynergy";
 import { PHYSICS, COMBAT, PLATFORM_CONFIG } from "../config/GameConfig";
 import { PlatformType } from "../config/PlatformTypes";
 import type { SlopeCollisionResult } from "../systems/SlopeManager";
@@ -1529,23 +1531,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.inventory.push(item);
     PersistentStats.addItemCollected();
 
-    if (item.effects) {
-      item.effects.forEach((effect) => {
-        if (effect.targetStat === "health") {
-          this.maxHealth += effect.value;
-          this.health += effect.value;
-        } else {
-          const current = this.statModifiers.get(effect.targetStat) || 0;
-          this.statModifiers.set(effect.targetStat, current + effect.value);
-        }
-      });
-    }
-
     if (item.abilityId) {
       this.abilities.add(item.abilityId);
     }
 
-    const text = this.scene.add.text(this.x, this.y - 50, `+ ${item.name}`, {
+    // Recalculate all item stats (handles quality + synergy for all items)
+    this.recalculateItemStats();
+
+    const qualityLabel = item.quality && item.quality !== 'NORMAL'
+      ? ` [${item.quality[0] + item.quality.slice(1).toLowerCase()}]`
+      : '';
+    const text = this.scene.add.text(this.x, this.y - 50, `+ ${item.name}${qualityLabel}`, {
       fontSize: "16px",
       color: "#ffff00",
       stroke: "#000",
@@ -1560,29 +1556,82 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
 
     EventBus.emit("inventory-change", { inventory: this.inventory });
+    EventBus.emit("synergy-change", { synergies: calculateSynergies(this.inventory) });
   }
 
   public replaceItem(index: number, newItem: ItemData) {
     const oldItem = this.inventory[index];
-    // Remove old item effects
-    if (oldItem && oldItem.effects) {
-      oldItem.effects.forEach((effect) => {
-        if (effect.targetStat === "health") {
-          this.maxHealth -= effect.value;
-          this.health = Math.min(this.health, this.maxHealth);
-        } else {
-          const current = this.statModifiers.get(effect.targetStat) || 0;
-          this.statModifiers.set(effect.targetStat, current - effect.value);
-        }
-      });
-    }
     if (oldItem && oldItem.abilityId) {
       this.abilities.delete(oldItem.abilityId);
     }
     // Remove old item from inventory
     this.inventory.splice(index, 1);
-    // Apply new item
+    // Apply new item (recalculateItemStats is called inside applyItem)
     this.applyItem(newItem);
+  }
+
+  /**
+   * Recalculates all item-based stat modifiers from scratch,
+   * accounting for quality multipliers and synergy bonuses.
+   * Preserves flow-state modifiers (Monk class).
+   */
+  public recalculateItemStats(): void {
+    // Save flow modifiers so we can re-add them after clearing
+    const savedFlowMoveSpeed = this.flowMoveSpeedMod;
+    const savedFlowJumpHeight = this.flowJumpHeightMod;
+    const savedFlowAttackDamage = this.flowAttackDamageMod;
+
+    // Clear all stat modifiers
+    this.statModifiers.clear();
+
+    let bonusHealth = 0;
+
+    for (const item of this.inventory) {
+      if (item.type !== 'SILVER' || !item.effects) continue;
+      const qualityMult = QUALITY_MULTIPLIERS[item.quality ?? 'NORMAL'];
+      const synergyMult = getSynergyMultiplier(item, this.inventory);
+
+      for (const effect of item.effects) {
+        const scaledValue = effect.value * qualityMult * synergyMult;
+        if (effect.targetStat === 'health') {
+          bonusHealth += Math.round(scaledValue);
+        } else {
+          const current = this.statModifiers.get(effect.targetStat) || 0;
+          this.statModifiers.set(effect.targetStat, current + scaledValue);
+        }
+      }
+    }
+
+    // Apply health bonus (recalculate from base)
+    const baseHealth = this.classStats.health;
+    const newMaxHealth = baseHealth + bonusHealth;
+    const healthDiff = newMaxHealth - this.maxHealth;
+    this.maxHealth = newMaxHealth;
+    // If max health increased, grant the extra HP; if decreased, clamp
+    if (healthDiff > 0) {
+      this.health += healthDiff;
+    } else {
+      this.health = Math.min(this.health, this.maxHealth);
+    }
+
+    // Re-apply flow modifiers (Monk class mechanic)
+    if (savedFlowMoveSpeed !== 0) {
+      const current = this.statModifiers.get("moveSpeed") || 0;
+      this.statModifiers.set("moveSpeed", current + savedFlowMoveSpeed);
+    }
+    if (savedFlowJumpHeight !== 0) {
+      const current = this.statModifiers.get("jumpHeight") || 0;
+      this.statModifiers.set("jumpHeight", current + savedFlowJumpHeight);
+    }
+    if (savedFlowAttackDamage !== 0) {
+      const current = this.statModifiers.get("attackDamage") || 0;
+      this.statModifiers.set("attackDamage", current + savedFlowAttackDamage);
+    }
+
+    EventBus.emit("health-change", {
+      health: this.health,
+      maxHealth: this.maxHealth,
+    });
   }
 
   public handleReplaceDecision(replaceIndex: number) {
