@@ -22,6 +22,13 @@ interface GameHUDProps {
   sacredGroundCooldown: { remaining: number; total: number };
 }
 
+function getSpeedColor(speed: number, maxSpeed: number): string {
+  const ratio = speed / maxSpeed;
+  if (ratio < 0.3) return '#4488ff'; // Blue (slow)
+  if (ratio < 0.6) return '#ffcc00'; // Yellow (normal)
+  return '#ff4444'; // Red (fast)
+}
+
 const TIER_COLORS: Record<string, string> = {
   D: "#666",
   C: "#4488ff",
@@ -94,6 +101,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
   // Boss distance indicator
   const [bossDistance, setBossDistance] = useState<number | null>(null);
+
+  // Speed meter
+  const [speed, setSpeed] = useState(0);
+  const [maxSpeed, setMaxSpeed] = useState(600);
 
   // Synergy bonuses
   const [synergies, setSynergies] = useState<SynergyBonus[]>([]);
@@ -172,6 +183,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       }
     });
 
+    const unsubSpeed = EventBus.on("speed-change", (data) => {
+      setSpeed(data.speed);
+      setMaxSpeed(data.maxSpeed);
+    });
+
     return () => {
       unsubSpawn();
       unsubHealth();
@@ -179,6 +195,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       unsubDied();
       unsubWarning();
       unsubSynergy();
+      unsubSpeed();
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
       if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
     };
@@ -673,6 +690,46 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           </div>
         </div>
       )}
+
+      {/* Speed Meter */}
+      <div style={{
+        position: 'absolute',
+        bottom: '20px',
+        left: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '4px',
+        pointerEvents: 'none',
+        fontFamily: 'monospace',
+        zIndex: 10,
+      }}>
+        <div style={{ fontSize: '11px', color: '#888' }}>SPEED</div>
+        <div style={{
+          width: '60px',
+          height: '8px',
+          background: 'rgba(0,0,0,0.5)',
+          border: '1px solid rgba(255,255,255,0.2)',
+          borderRadius: '4px',
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            width: `${Math.min(100, (speed / maxSpeed) * 100)}%`,
+            height: '100%',
+            background: getSpeedColor(speed, maxSpeed),
+            transition: 'width 0.1s, background 0.1s',
+            borderRadius: '4px',
+          }} />
+        </div>
+        <div style={{
+          fontSize: '14px',
+          fontWeight: 'bold',
+          color: getSpeedColor(speed, maxSpeed),
+          textShadow: '0 0 4px rgba(0,0,0,0.8)',
+        }}>
+          {speed}
+        </div>
+      </div>
     </>
   );
 };

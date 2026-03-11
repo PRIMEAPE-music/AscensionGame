@@ -46,6 +46,7 @@ export interface GameEvents {
   "item-replace-prompt": { newItem: ItemData; currentItems: ItemData[] };
   "item-replace-decision": { action: "take" | "leave"; replaceIndex?: number };
   "parry-success": { reflectedDamage: number };
+  "speed-change": { speed: number; maxSpeed: number };
 }
 
 export const EventBus = {

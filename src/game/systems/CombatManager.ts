@@ -6,6 +6,7 @@ import { COMBAT } from "../config/GameConfig";
 import { EventBus } from "./EventBus";
 import { COMBAT_CONFIG } from "./CombatTypes";
 import { DamageNumberManager } from "./DamageNumberManager";
+import { ParticleManager } from "./ParticleManager";
 import { PersistentStats } from "./PersistentStats";
 
 export class CombatManager {
@@ -13,6 +14,7 @@ export class CombatManager {
   private player: Player;
   private enemies: Phaser.Physics.Arcade.Group;
   private damageNumbers: DamageNumberManager | null = null;
+  private particleManager: ParticleManager | null = null;
 
   // Combo tracking
   private comboCount: number = 0;
@@ -31,6 +33,10 @@ export class CombatManager {
 
   setDamageNumberManager(manager: DamageNumberManager): void {
     this.damageNumbers = manager;
+  }
+
+  setParticleManager(manager: ParticleManager): void {
+    this.particleManager = manager;
   }
 
   update(delta: number): void {
@@ -141,9 +147,36 @@ export class CombatManager {
     enemy.setVelocityX(kb.x * direction * kbMult);
     enemy.setVelocityY(kb.y * kbMult);
 
-    // Hit flash feedback
-    this.scene.time.delayedCall(COMBAT.HIT_FLASH_DURATION, () => {
-      if (enemy.active) enemy.clearTint();
+    // Hit flash feedback: white flash first, then red flash, then clear
+    enemy.setTint(0xffffff);
+    this.scene.time.delayedCall(50, () => {
+      if (enemy.active) {
+        enemy.setTint(0xff4444);
+        this.scene.time.delayedCall(100, () => {
+          if (enemy.active) {
+            enemy.clearTint();
+            // Re-apply elite tint if needed
+            if ((enemy as any).isElite) {
+              enemy.setTint(0xccccff);
+            }
+          }
+        });
+      }
+    });
+
+    // Hit impact particles
+    if (this.particleManager) {
+      this.particleManager.emitHitImpact(enemyX, enemyY, isHeavy);
+    }
+
+    // Knockback squash/stretch visual effect
+    this.scene.tweens.add({
+      targets: enemy,
+      scaleX: 1.2,
+      scaleY: 0.8,
+      duration: 80,
+      yoyo: true,
+      ease: 'Power2',
     });
   }
 

@@ -54,6 +54,7 @@ export class MainScene extends Phaser.Scene {
   private hazardManager!: HazardManager;
   private risingDarkness!: RisingDarkness;
   private bossWarningEmitted: boolean = false;
+  private lastSpeedEmitTime: number = 0;
   private leftWall!: Phaser.GameObjects.Rectangle;
   private rightWall!: Phaser.GameObjects.Rectangle;
   private highestY: number = WORLD.PLAYER_SPAWN.y;
@@ -199,6 +200,7 @@ export class MainScene extends Phaser.Scene {
     );
     this.combatManager = new CombatManager(this, this.player, this.enemies);
     this.combatManager.setDamageNumberManager(new DamageNumberManager(this));
+    this.combatManager.setParticleManager(this.particleManager);
 
     // Colliders
     this.physics.add.collider(
@@ -518,6 +520,13 @@ export class MainScene extends Phaser.Scene {
     const vy = this.player.body!.velocity.y;
     const speed = Math.sqrt(vx * vx + vy * vy);
     this.styleManager.update(delta, speed);
+
+    // Emit speed for HUD (throttled to every 100ms)
+    if (time - this.lastSpeedEmitTime >= 100) {
+      this.lastSpeedEmitTime = time;
+      const maxSpeed = 600;
+      EventBus.emit('speed-change', { speed: Math.round(speed), maxSpeed });
+    }
 
     // Biome visuals
     this.biomeRenderer.update(altitude, this.cameras.main.scrollY);
