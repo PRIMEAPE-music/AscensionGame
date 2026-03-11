@@ -201,5 +201,41 @@ export const ITEMS: Record<string, ItemData> = {
         rarity: 'LEGENDARY',
         abilityId: 'essence_burst',
         iconColor: 0xcc44ff
+    },
+    'counter_slash': {
+        id: 'counter_slash',
+        name: 'Counter Slash',
+        description: 'Press G to enter counter stance (0.5s). If hit: negate damage and counter-attack',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'counter_stance',
+        iconColor: 0xff8844
+    },
+    'ground_slam': {
+        id: 'ground_slam',
+        name: 'Ground Slam',
+        description: 'Press T to slam the ground, creating a damaging shockwave',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'ground_slam',
+        iconColor: 0x886633
+    },
+    'projectile_shot': {
+        id: 'projectile_shot',
+        name: 'Arcane Bolt',
+        description: 'Press Y to fire a piercing projectile',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'projectile_shot',
+        iconColor: 0x44aaff
+    },
+    'charged_devastation': {
+        id: 'charged_devastation',
+        name: 'Charged Devastation',
+        description: 'Hold H to charge, release for up to 3x damage',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'charged_attack',
+        iconColor: 0xff4400
     }
 };
