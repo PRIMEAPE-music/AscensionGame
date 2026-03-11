@@ -439,9 +439,10 @@ export class MainScene extends Phaser.Scene {
       }
     });
 
-    // Audio system — init and hook into game events
+    // Audio system — init, hook into game events, and start procedural music
     AudioManager.init();
     AudioManager.resume();
+    AudioManager.startMusic();
 
     EventBus.on("enemy-killed", () => AudioManager.playHitHeavy());
     EventBus.on("boss-warning", () => AudioManager.playBossWarning());
@@ -464,10 +465,22 @@ export class MainScene extends Phaser.Scene {
     EventBus.on("player-land", () => AudioManager.playLand());
     EventBus.on("item-pickup", () => AudioManager.playItemPickup());
 
+    // Music state: biome changes
+    EventBus.on("biome-change", (data) => AudioManager.setBiome(data.biome));
+
+    // Music state: boss fight
+    EventBus.on("boss-spawn", () => AudioManager.setBossState(true));
+    EventBus.on("boss-defeated", () => AudioManager.setBossState(false));
+
+    // Music state: low health
+    EventBus.on("health-change", (data) => AudioManager.setLowHealth(data.health <= 1));
+
     // Handle player death — emit death screen event with run stats
     this.runStartTime = Date.now();
     EventBus.on("player-died", () => {
+      AudioManager.stopMusic();
       AudioManager.playDeath();
+      AudioManager.playDeathMusic();
       const altitude = Math.max(
         0,
         (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
@@ -597,6 +610,16 @@ export class MainScene extends Phaser.Scene {
       this.spawnManager.update(altitude, delta);
     }
     this.combatManager.update(delta);
+
+    // Update music combat state based on nearby active enemies
+    let nearbyEnemyCount = 0;
+    this.enemies.children.each((e: any) => {
+      if (e.active && Phaser.Math.Distance.Between(e.x, e.y, this.player.x, this.player.y) < 500) {
+        nearbyEnemyCount++;
+      }
+      return true;
+    });
+    AudioManager.setCombatState(nearbyEnemyCount > 0);
 
     // Accessibility: Slower Enemies — halve enemy attack speed by doubling their cooldowns
     const accessSettings = GameSettings.get();
@@ -730,6 +753,7 @@ export class MainScene extends Phaser.Scene {
   }
 
   shutdown(): void {
+    AudioManager.stopMusic();
     this.tweens.killAll();
     this.time.removeAllEvents();
     this.backgroundRenderer?.destroy?.();
