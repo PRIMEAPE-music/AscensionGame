@@ -24,7 +24,9 @@ import { MainMenu } from "./game/ui/MainMenu";
 import { StatsScreen } from "./game/ui/StatsScreen";
 import { CollectionGallery } from "./game/ui/CollectionGallery";
 import { SettingsScreen } from "./game/ui/SettingsScreen";
+import { CosmeticScreen } from "./game/ui/CosmeticScreen";
 import { GameSettings } from "./game/systems/GameSettings";
+import { CosmeticManager } from "./game/systems/CosmeticManager";
 import "./App.css";
 
 type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
@@ -40,7 +42,7 @@ interface DeathStats {
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null);
   const [gameState, setGameState] = useState<GameState>("MAIN_MENU");
-  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings">("main");
+  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics">("main");
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [health, setHealth] = useState(3);
@@ -88,6 +90,7 @@ function App() {
     GoldItemCollection.load();
     AchievementManager.load();
     GameSettings.load();
+    CosmeticManager.load();
   }, []);
 
   // Process achievement popup queue — show next when current is dismissed
@@ -113,6 +116,10 @@ function App() {
 
   const handleShowSettings = useCallback(() => {
     setMenuScreen("settings");
+  }, []);
+
+  const handleShowCosmetics = useCallback(() => {
+    setMenuScreen("cosmetics");
   }, []);
 
   const handleBackToMenu = useCallback(() => {
@@ -608,6 +615,7 @@ function App() {
           onCollection={handleShowCollection}
           onStatistics={handleShowStats}
           onSettings={handleShowSettings}
+          onCosmetics={handleShowCosmetics}
         />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "stats" && (
@@ -618,6 +626,9 @@ function App() {
       )}
       {gameState === "MAIN_MENU" && menuScreen === "settings" && (
         <SettingsScreen onBack={handleBackToMenu} />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "cosmetics" && (
+        <CosmeticScreen onBack={handleBackToMenu} />
       )}
       {gameState === "CLASS_SELECT" && (
         <ClassSelect onSelect={handleClassSelect} />

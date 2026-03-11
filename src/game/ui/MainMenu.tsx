@@ -6,6 +6,7 @@ interface MainMenuProps {
   onCollection: () => void;
   onStatistics: () => void;
   onSettings: () => void;
+  onCosmetics: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -38,6 +39,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onCollection,
   onStatistics,
   onSettings,
+  onCosmetics,
 }) => {
   const [hoveredButton, setHoveredButton] = useState<string | null>(null);
   const [titleVisible, setTitleVisible] = useState(false);
@@ -225,6 +227,14 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           onClick={onCollection}
         >
           Collection
+        </button>
+        <button
+          style={getButtonStyle("cosmetics")}
+          onMouseEnter={() => setHoveredButton("cosmetics")}
+          onMouseLeave={() => setHoveredButton(null)}
+          onClick={onCosmetics}
+        >
+          Cosmetics
         </button>
         <button
           style={getButtonStyle("statistics")}
