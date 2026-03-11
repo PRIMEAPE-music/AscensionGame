@@ -55,10 +55,34 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private coyoteTimer: number = 0;
   private jumpBufferTimer: number = 0;
   private jumpJustPressed: boolean = false;
+  private dodgeJustPressed: boolean = false;
+  private grappleJustPressed: boolean = false;
 
   // Double Jump State
   private canDoubleJump: boolean = false;
   private hasDoubleJumped: boolean = false;
+
+  // Air Dash state
+  private airDashCooldown: number = 0;
+  private hasAirDashed: boolean = false;
+  private isAirDashing: boolean = false;
+  private airDashTimer: number = 0;
+  private readonly AIR_DASH_SPEED = 600;
+  private readonly AIR_DASH_DURATION = 150;
+  private readonly AIR_DASH_COOLDOWN = 1500;
+
+  // Wall Climb state
+  private wallClimbStamina: number = 5000; // ms
+  private readonly WALL_CLIMB_MAX_STAMINA = 5000;
+  private readonly WALL_CLIMB_SPEED = 150;
+  private isWallClimbing: boolean = false;
+
+  // Grappling Hook state
+  private grappleKey!: Phaser.Input.Keyboard.Key;
+  private grappleCooldown: number = 0;
+  private readonly GRAPPLE_RANGE = 500;
+  private readonly GRAPPLE_COOLDOWN = 3000;
+  private readonly GRAPPLE_PULL_SPEED = 800;
 
   // Drop-Through State
   private isDropping: boolean = false;
@@ -178,6 +202,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.dodgeKey = this.scene.input.keyboard!.addKey(
       Phaser.Input.Keyboard.KeyCodes.SHIFT,
     );
+    this.grappleKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.V,
+    );
   }
 
   private getStat(
@@ -192,6 +219,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   update(time: number, delta: number) {
     // Cache JustDown once per frame — Phaser consumes it on first read
     this.jumpJustPressed = Phaser.Input.Keyboard.JustDown(this.cursors.space!);
+    this.dodgeJustPressed = Phaser.Input.Keyboard.JustDown(this.dodgeKey);
+    this.grappleJustPressed = Phaser.Input.Keyboard.JustDown(this.grappleKey);
 
     this.updateTimers(delta);
     this.handleMovement();
@@ -200,6 +229,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.handleWallInteraction();
     this.handleCombat(delta);
     this.handleDodge(delta);
+    this.handleAirDash(delta);
+    this.handleGrapple(delta);
     this.updateInvincibility(delta);
     this.updateClassMechanics(delta);
     this.updateAnimation();
@@ -233,6 +264,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.isDropping = false;
       }
     }
+
+    // Air Dash timers
+    if (this.airDashCooldown > 0) this.airDashCooldown -= delta;
+    if (this.airDashTimer > 0) {
+      this.airDashTimer -= delta;
+      if (this.airDashTimer <= 0) {
+        this.isAirDashing = false;
+        (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(true);
+      }
+    }
+
+    // Grappling Hook cooldown
+    if (this.grappleCooldown > 0) this.grappleCooldown -= delta;
   }
 
   private updateInvincibility(delta: number) {
@@ -467,15 +511,46 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       body.touching.right;
     const onGround = body.touching.down || body.blocked.down;
 
+    // Recharge wall climb stamina on ground
+    if (onGround) {
+      this.wallClimbStamina = this.WALL_CLIMB_MAX_STAMINA;
+      this.isWallClimbing = false;
+    }
+
     if (onWall && !onGround) {
       this.isWallSliding = true;
 
-      if (this.body!.velocity.y > 0) {
-        this.setVelocityY(PHYSICS.WALL_SLIDE_SPEED);
+      // Wall Climb: if the player has the ability and is holding toward the wall
+      const onLeftWall = body.blocked.left || body.touching.left;
+      const onRightWall = body.blocked.right || body.touching.right;
+      const holdingTowardWall =
+        (onLeftWall && this.cursors.left.isDown) ||
+        (onRightWall && this.cursors.right.isDown);
+
+      if (
+        this.abilities.has("wall_climb") &&
+        holdingTowardWall &&
+        this.wallClimbStamina > 0
+      ) {
+        // Climb up the wall
+        this.setVelocityY(-this.WALL_CLIMB_SPEED);
+        this.wallClimbStamina -= this.scene.game.loop.delta;
+        this.isWallClimbing = true;
+
+        if (this.wallClimbStamina <= 0) {
+          this.wallClimbStamina = 0;
+          this.isWallClimbing = false;
+        }
+      } else {
+        this.isWallClimbing = false;
+        // Normal wall slide
+        if (this.body!.velocity.y > 0) {
+          this.setVelocityY(PHYSICS.WALL_SLIDE_SPEED);
+        }
       }
 
       if (this.jumpJustPressed) {
-        const jumpDir = body.blocked.left || body.touching.left ? 1 : -1;
+        const jumpDir = onLeftWall ? 1 : -1;
         const jumpForceY = this.getStat(
           "jumpHeight",
           PHYSICS.WALL_JUMP.y,
@@ -486,6 +561,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.setVelocityY(jumpForceY);
 
         this.isWallSliding = false;
+        this.isWallClimbing = false;
         this.isJumping = true;
         this.jumpTimer = 0;
         this.hasDoubleJumped = false;
@@ -493,6 +569,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     } else {
       this.isWallSliding = false;
+      this.isWallClimbing = false;
     }
   }
 
@@ -591,11 +668,18 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
-    // Initiate dodge
+    // Initiate dodge (skip if in midair with air_dash — air dash handles SHIFT in air)
     if (
-      Phaser.Input.Keyboard.JustDown(this.dodgeKey) &&
+      this.dodgeJustPressed &&
       this.dodgeCooldown <= 0 &&
-      this.dodgeTimer <= 0
+      this.dodgeTimer <= 0 &&
+      !(
+        !this.onGround &&
+        !this.isWallSliding &&
+        this.abilities.has("air_dash") &&
+        !this.hasAirDashed &&
+        this.airDashCooldown <= 0
+      )
     ) {
       this.isDodging = true;
       this.dodgeTimer = this.DODGE_DURATION;
@@ -620,6 +704,129 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       // Set invincibility for dodge duration
       this.invincibilityTimer = this.DODGE_DURATION;
       this.flashTimer = 0;
+    }
+  }
+
+  private handleAirDash(delta: number) {
+    // Reset air dash on landing
+    if (this.onGround) {
+      this.hasAirDashed = false;
+    }
+
+    // If currently air dashing, maintain the dash state
+    if (this.isAirDashing) {
+      return;
+    }
+
+    // Check if player can initiate air dash
+    if (
+      this.abilities.has("air_dash") &&
+      !this.onGround &&
+      !this.isWallSliding &&
+      !this.isAirDashing &&
+      !this.hasAirDashed &&
+      this.airDashCooldown <= 0 &&
+      this.dodgeJustPressed
+    ) {
+      this.isAirDashing = true;
+      this.hasAirDashed = true;
+      this.airDashTimer = this.AIR_DASH_DURATION;
+      this.airDashCooldown = this.AIR_DASH_COOLDOWN;
+
+      // Dash direction based on facing
+      const dashDir = this.flipX ? -1 : 1;
+      this.setVelocityX(this.AIR_DASH_SPEED * dashDir);
+      this.setVelocityY(0);
+
+      // Brief zero gravity during dash
+      (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
+
+      // Brief invincibility during air dash
+      this.invincibilityTimer = this.AIR_DASH_DURATION;
+      this.flashTimer = 0;
+
+      // Visual: tint flash for trail effect
+      this.setTint(0x88ccff);
+      this.scene.time.delayedCall(this.AIR_DASH_DURATION, () => {
+        if (this.active && !this.isInvincible) {
+          this.clearTint();
+        }
+      });
+
+      // Trail particle effect
+      const trail = this.scene.add.circle(
+        this.x,
+        this.y,
+        12,
+        0x88ccff,
+        0.6,
+      );
+      this.scene.tweens.add({
+        targets: trail,
+        scale: 2,
+        alpha: 0,
+        duration: 300,
+        onComplete: () => trail.destroy(),
+      });
+    }
+  }
+
+  private handleGrapple(delta: number) {
+    if (
+      !this.abilities.has("grappling_hook") ||
+      this.grappleCooldown > 0 ||
+      !this.grappleJustPressed
+    ) {
+      return;
+    }
+
+    // Find nearest platform above the player within range
+    const platforms = (this.scene as any).staticPlatforms;
+    if (!platforms) return;
+
+    let nearest: { x: number; y: number; dist: number } | null = null;
+    platforms.children.each((p: any) => {
+      if (p.y < this.y && p.y > this.y - this.GRAPPLE_RANGE) {
+        const dx = p.x - this.x;
+        const dy = p.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist <= this.GRAPPLE_RANGE && (!nearest || dist < nearest.dist)) {
+          nearest = { x: p.x, y: p.y, dist };
+        }
+      }
+      return true;
+    });
+
+    if (nearest) {
+      const target = nearest as { x: number; y: number; dist: number };
+      // Calculate direction toward the platform
+      const dx = target.x - this.x;
+      const dy = target.y - this.y;
+      const dist = target.dist;
+      const nx = dx / dist;
+      const ny = dy / dist;
+
+      // Set velocity toward the target platform
+      this.setVelocityX(nx * this.GRAPPLE_PULL_SPEED);
+      this.setVelocityY(ny * this.GRAPPLE_PULL_SPEED);
+
+      this.grappleCooldown = this.GRAPPLE_COOLDOWN;
+
+      // Visual: draw a brief line from player to target
+      const graphics = this.scene.add.graphics();
+      graphics.lineStyle(2, 0x886644, 1);
+      graphics.beginPath();
+      graphics.moveTo(this.x, this.y);
+      graphics.lineTo(target.x, target.y);
+      graphics.strokePath();
+
+      // Fade out the grapple line
+      this.scene.tweens.add({
+        targets: graphics,
+        alpha: 0,
+        duration: 300,
+        onComplete: () => graphics.destroy(),
+      });
     }
   }
 
