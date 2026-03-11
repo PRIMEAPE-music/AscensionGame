@@ -13,6 +13,7 @@ export interface ClassStats {
     attackDamage: number; // Multiplier
     attackSpeed: number; // Multiplier (lower is faster cooldown)
     color: number; // Hex color for tint
+    uniqueMechanic: string;
 }
 
 export const CLASSES: Record<ClassType, ClassStats> = {
@@ -23,7 +24,8 @@ export const CLASSES: Record<ClassType, ClassStats> = {
         jumpHeight: 0.9,
         attackDamage: 1.3,
         attackSpeed: 1.2, // Slower attacks
-        color: 0x3333ff // Blue
+        color: 0x3333ff, // Blue
+        uniqueMechanic: 'shield_guard'
     },
     [ClassType.MONK]: {
         name: 'Monk',
@@ -32,7 +34,8 @@ export const CLASSES: Record<ClassType, ClassStats> = {
         jumpHeight: 1.2,
         attackDamage: 0.7,
         attackSpeed: 0.6, // Faster attacks
-        color: 0xffaa00 // Orange
+        color: 0xffaa00, // Orange
+        uniqueMechanic: 'flow_state'
     },
     [ClassType.PRIEST]: {
         name: 'Priest',
@@ -41,6 +44,7 @@ export const CLASSES: Record<ClassType, ClassStats> = {
         jumpHeight: 1.0,
         attackDamage: 0.9,
         attackSpeed: 1.0,
-        color: 0xffffff // White
+        color: 0xffffff, // White
+        uniqueMechanic: 'sacred_ground'
     }
 };

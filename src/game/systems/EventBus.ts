@@ -37,6 +37,9 @@ export interface GameEvents {
   "combo-end": { finalCount: number };
   "hazard-warning": { type: string; x: number; y: number };
   "portal-teleport": { fromAltitude: number; toAltitude: number };
+  "flow-change": { flow: number; maxFlow: number };
+  "shield-guard-change": { active: boolean };
+  "sacred-ground-cooldown": { remaining: number; total: number };
 }
 
 export const EventBus = {

@@ -20,6 +20,7 @@ import { PlatformType } from "../config/PlatformTypes";
 import { SPRITE_CONFIG, ANIMATIONS } from "../config/AnimationConfig";
 import { ENEMY_REGISTRY } from "../config/EnemyConfig";
 import { DamageNumberManager } from "../systems/DamageNumberManager";
+import { SacredGround } from "../systems/SacredGround";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -58,6 +59,10 @@ export class MainScene extends Phaser.Scene {
   private bossesDefeated: number = 0;
   private essenceTotal: number = 0;
   private runStartTime: number = 0;
+
+  // Sacred Ground instances (Priest class mechanic)
+  private sacredGrounds: SacredGround[] = [];
+  private sacredGroundListener: ((e: Event) => void) | null = null;
 
   constructor() {
     super({ key: "MainScene" });
@@ -323,6 +328,23 @@ export class MainScene extends Phaser.Scene {
       });
     });
 
+    // Listen for Priest Sacred Ground creation
+    this.sacredGroundListener = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const sg = new SacredGround(
+        this,
+        this.player,
+        this.enemies,
+        detail.x,
+        detail.y,
+      );
+      this.sacredGrounds.push(sg);
+    };
+    window.addEventListener(
+      "priest-sacred-ground",
+      this.sacredGroundListener,
+    );
+
     // Handle player death — emit death screen event with run stats
     this.runStartTime = Date.now();
     EventBus.on("player-died", () => {
@@ -410,6 +432,9 @@ export class MainScene extends Phaser.Scene {
     }
     this.combatManager.update(delta);
 
+    // Update Sacred Ground instances (Priest mechanic)
+    this.sacredGrounds = this.sacredGrounds.filter((sg) => !sg.update(delta));
+
     // Death plane (relative to highest reached point)
     if (this.player.y > this.highestY + WORLD.DEATH_PLANE_OFFSET) {
       this.player.setPosition(this.player.x, this.highestY);
@@ -443,6 +468,17 @@ export class MainScene extends Phaser.Scene {
     this.particleManager?.destroy();
     this.platformEffectsManager?.destroy?.();
     this.hazardManager?.destroy?.();
+
+    // Clean up Sacred Ground instances and listener
+    this.sacredGrounds.forEach((sg) => sg.destroy());
+    this.sacredGrounds = [];
+    if (this.sacredGroundListener) {
+      window.removeEventListener(
+        "priest-sacred-ground",
+        this.sacredGroundListener,
+      );
+      this.sacredGroundListener = null;
+    }
   }
 
   private oneWayPlatformCheck(_player: any, platform: any): boolean {
