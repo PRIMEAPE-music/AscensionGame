@@ -7,6 +7,31 @@ interface AudioSettings {
     uiVolume: number;       // 0-1
 }
 
+// Biome music configuration
+interface BiomeMusicConfig {
+    baseNote: number;  // Root frequency in Hz
+    scale: number[];   // Scale intervals in semitones
+    mood: 'minor' | 'major' | 'diminished';
+    tempo: number;     // BPM
+}
+
+const BIOME_MUSIC: Record<string, BiomeMusicConfig> = {
+    'CAVERNS':  { baseNote: 110, scale: [0, 2, 3, 5, 7, 8, 10], mood: 'minor', tempo: 80 },
+    'TEMPLE':   { baseNote: 130, scale: [0, 2, 4, 5, 7, 9, 11], mood: 'major', tempo: 90 },
+    'SKY':      { baseNote: 165, scale: [0, 2, 3, 5, 7, 8, 11], mood: 'minor', tempo: 100 },
+    'VOID':     { baseNote: 82,  scale: [0, 1, 3, 4, 6, 7, 9, 10], mood: 'diminished', tempo: 70 },
+    'ABYSS':    { baseNote: 98,  scale: [0, 2, 3, 5, 7, 8, 10], mood: 'minor', tempo: 110 },
+};
+
+// Map game biome names to music config keys
+const BIOME_MAP: Record<string, string> = {
+    'HELLFIRE_CAVERNS': 'CAVERNS',
+    'CURSED_TEMPLE': 'TEMPLE',
+    'SKY_FRAGMENTS': 'SKY',
+    'VOID_DEPTHS': 'VOID',
+    'ABYSSAL_THRONE': 'ABYSS',
+};
+
 export const AudioManager = {
     ctx: null as AudioContext | null,
     settings: {
@@ -23,6 +48,18 @@ export const AudioManager = {
     // Throttle tracking for rapidly-repeating sounds
     _lastPlayTime: {} as Record<string, number>,
     _throttleMs: 80, // Minimum ms between same sound
+
+    // ============ MUSIC STATE ============
+    _musicPlaying: false,
+    _currentBiome: 'CAVERNS',
+    _inCombat: false,
+    _inBoss: false,
+    _lowHealth: false,
+    _musicLoopTimer: null as ReturnType<typeof setTimeout> | null,
+    // Sequence state for more musical note selection
+    _lastNoteIdx: 0,
+    _phraseStep: 0,
+    _phraseDirection: 1 as 1 | -1,
 
     init(): void {
         if (this.ctx) return;
@@ -236,6 +273,222 @@ export const AudioManager = {
         // Triumphant ascending
         [0, 0.12, 0.24, 0.36].forEach((delay, i) => {
             this.playTone({ freq: 400 + i * 100, endFreq: 500 + i * 100, duration: 0.2, type: 'triangle', gain: 0.2, category: 'ui', delay });
+        });
+    },
+
+    // ============ PROCEDURAL MUSIC ============
+
+    startMusic(): void {
+        if (this._musicPlaying || !this.ctx) return;
+        this._musicPlaying = true;
+        this._phraseStep = 0;
+        this._lastNoteIdx = 0;
+        this._phraseDirection = 1;
+        this._scheduleNextBar();
+    },
+
+    stopMusic(): void {
+        this._musicPlaying = false;
+        if (this._musicLoopTimer) {
+            clearTimeout(this._musicLoopTimer);
+            this._musicLoopTimer = null;
+        }
+    },
+
+    setBiome(biome: string): void {
+        this._currentBiome = BIOME_MAP[biome] || 'CAVERNS';
+    },
+
+    setCombatState(inCombat: boolean): void {
+        this._inCombat = inCombat;
+    },
+
+    setBossState(inBoss: boolean): void {
+        this._inBoss = inBoss;
+    },
+
+    setLowHealth(low: boolean): void {
+        this._lowHealth = low;
+    },
+
+    /** Pick the next note index in a musical way — stepwise motion with occasional leaps */
+    _pickNextNote(scale: number[]): number {
+        this._phraseStep++;
+        // Every 8 notes, possibly reverse direction for a natural phrase shape
+        if (this._phraseStep % 8 === 0) {
+            this._phraseDirection = (Math.random() > 0.5 ? 1 : -1) as 1 | -1;
+        }
+        // 70% stepwise motion, 20% small leap, 10% larger leap
+        const roll = Math.random();
+        let step: number;
+        if (roll < 0.7) {
+            step = this._phraseDirection; // move one scale degree
+        } else if (roll < 0.9) {
+            step = this._phraseDirection * 2; // skip one
+        } else {
+            step = this._phraseDirection * (Math.random() > 0.5 ? 3 : -2); // leap
+        }
+        this._lastNoteIdx = ((this._lastNoteIdx + step) % scale.length + scale.length) % scale.length;
+        return this._lastNoteIdx;
+    },
+
+    _scheduleNextBar(): void {
+        if (!this._musicPlaying || !this.ctx) return;
+
+        const biomeConfig = BIOME_MUSIC[this._currentBiome] || BIOME_MUSIC['CAVERNS'];
+        const bpm = biomeConfig.tempo;
+        const beatDuration = 60 / bpm; // seconds per beat
+        const barDuration = beatDuration * 4; // 4/4 time
+        const twoBarDuration = barDuration * 2;
+
+        // === BASE LAYER: Ambient drone/pad ===
+        this._playMusicDrone(biomeConfig.baseNote, twoBarDuration);
+
+        // Add a subtle fifth drone for richness
+        const fifthFreq = biomeConfig.baseNote * 1.5;
+        this._playMusicDrone(fifthFreq, twoBarDuration, 0.025);
+
+        // === MELODY LAYER: Sparse arpeggiated notes ===
+        const scale = biomeConfig.scale;
+        for (let beat = 0; beat < 8; beat++) {
+            const noteTime = beat * beatDuration;
+
+            // Sparse: only ~50% of beats get a note (more sparse = more ambient)
+            if (Math.random() > 0.5) continue;
+
+            const noteIdx = this._pickNextNote(scale);
+            const semitones = scale[noteIdx];
+            // One octave above the base note for the melody
+            const freq = biomeConfig.baseNote * Math.pow(2, (semitones + 12) / 12);
+
+            // Vary note duration and volume slightly for a human feel
+            const noteDur = beatDuration * (0.6 + Math.random() * 0.4);
+            const noteVol = 0.05 + Math.random() * 0.04;
+
+            this._playMusicNote(freq, noteTime, noteDur, noteVol);
+        }
+
+        // === COMBAT LAYER: Rhythmic percussion ===
+        if (this._inCombat || this._inBoss) {
+            for (let beat = 0; beat < 8; beat++) {
+                const noteTime = beat * beatDuration;
+                // Kick on beats 1 and 5
+                if (beat === 0 || beat === 4) {
+                    this._playMusicPercussion(60, noteTime, 0.15, 0.06);
+                }
+                // Hi-hat on every beat (soft)
+                this._playMusicPercussion(8000, noteTime, 0.03, 0.03);
+                // Snare on beats 3 and 7
+                if (beat === 2 || beat === 6) {
+                    this._playMusicPercussion(200, noteTime, 0.08, 0.05);
+                }
+            }
+        }
+
+        // === BOSS LAYER: Heavy bass notes on root and fifth ===
+        if (this._inBoss) {
+            // Sub-bass root for first bar
+            this._playMusicNote(biomeConfig.baseNote / 2, 0, barDuration, 0.10);
+            // Fifth for second bar
+            this._playMusicNote(biomeConfig.baseNote / 2 * 1.5, barDuration, barDuration, 0.08);
+            // Add syncopated low hits for intensity
+            for (let beat = 0; beat < 8; beat++) {
+                if (beat % 3 === 1) {
+                    this._playMusicPercussion(50, beat * beatDuration, 0.2, 0.05);
+                }
+            }
+        }
+
+        // === LOW HEALTH LAYER: Tense high-frequency pulse ===
+        if (this._lowHealth) {
+            for (let i = 0; i < 8; i++) {
+                if (i % 2 === 0) {
+                    this._playMusicNote(
+                        biomeConfig.baseNote * 4,
+                        i * beatDuration,
+                        beatDuration * 0.25,
+                        0.035,
+                    );
+                }
+            }
+        }
+
+        // Schedule the next 2-bar phrase
+        this._musicLoopTimer = setTimeout(() => {
+            this._scheduleNextBar();
+        }, twoBarDuration * 1000);
+    },
+
+    /** Sustained sine drone that fades in and out gently */
+    _playMusicDrone(freq: number, duration: number, volume: number = 0.05): void {
+        if (!this.ctx || !this.musicGain) return;
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+
+        // Gentle fade-in / fade-out envelope
+        const fadeTime = Math.min(0.8, duration * 0.25);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(volume, now + fadeTime);
+        gain.gain.setValueAtTime(volume, now + duration - fadeTime);
+        gain.gain.linearRampToValueAtTime(0.001, now + duration);
+
+        osc.connect(gain);
+        gain.connect(this.musicGain);
+
+        osc.start(now);
+        osc.stop(now + duration + 0.02);
+    },
+
+    /** Single melodic note with soft attack and exponential decay */
+    _playMusicNote(freq: number, delay: number, duration: number, volume: number): void {
+        if (!this.ctx || !this.musicGain) return;
+        const startTime = this.ctx.currentTime + delay;
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle'; // Soft, warm tone
+        osc.frequency.setValueAtTime(freq, startTime);
+
+        // Soft attack to avoid clicks
+        gain.gain.setValueAtTime(0.001, startTime);
+        gain.gain.linearRampToValueAtTime(volume, startTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+        osc.connect(gain);
+        gain.connect(this.musicGain);
+
+        osc.start(startTime);
+        osc.stop(startTime + duration + 0.02);
+    },
+
+    /** Percussion hit using playTone routed through the music gain */
+    _playMusicPercussion(freq: number, delay: number, duration: number, volume: number = 0.06): void {
+        this.playTone({
+            freq,
+            endFreq: Math.max(freq * 0.5, 1),
+            duration,
+            type: 'square',
+            gain: volume,
+            category: 'music',
+            delay,
+        });
+    },
+
+    /** Slow descending notes for death — plays once, does not loop */
+    playDeathMusic(): void {
+        if (!this.ctx || !this.musicGain) return;
+        // A4 descending to C4: sad, final
+        const notes = [440, 392, 349, 330, 294, 262];
+        notes.forEach((freq, i) => {
+            this._playMusicNote(freq, i * 0.6, 0.8, 0.08);
+            // Bass octave underneath
+            this._playMusicNote(freq * 0.5, i * 0.6, 1.0, 0.05);
         });
     },
 
