@@ -29,10 +29,15 @@ export class FloatingEye extends Enemy {
         super(scene, x, y, 'dude', player, 4, 1, 80);
         this.enemyType = 'floating_eye';
         this.tier = 'intermediate';
+        this.defaultTint = 0xffff00;
         this.setTint(0xffff00);
         this.setScale(0.65);
         this.startY = y;
         this.timeOffset = Math.random() * 1000;
+
+        // Flee config: floats away when low
+        this.desperateMode = false;
+        this.fleeThreshold = 0.2;
 
         // Flying enemy - no gravity
         (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
@@ -52,9 +57,16 @@ export class FloatingEye extends Enemy {
         this.fsm
             .addState('HOVER', {
                 onEnter: (ctx) => {
-                    ctx.setTint(0xffff00);
+                    ctx.restoreTint();
+                    ctx.aiState = 'PATROL';
                 },
                 onUpdate: (ctx, time, _delta) => {
+                    // Check flee condition
+                    if (!ctx.isElite && ctx.health <= ctx.maxHealth * ctx.fleeThreshold && ctx.health > 0) {
+                        ctx.fsm.transition('FLEE');
+                        return;
+                    }
+
                     // Sine wave movement
                     const wave = Math.sin((time + ctx.timeOffset) * ctx.SINE_SPEED);
                     ctx.y = ctx.startY + wave * ctx.SINE_AMPLITUDE;
@@ -75,8 +87,17 @@ export class FloatingEye extends Enemy {
                 onEnter: (ctx) => {
                     ctx.chargeTimer = 0;
                     ctx.setVelocity(0, 0);
+                    ctx.aiState = 'ATTACK';
+                    ctx.isInAttackStartup = true;
                 },
                 onUpdate: (ctx, _time, delta) => {
+                    // Check flee condition
+                    if (!ctx.isElite && ctx.health <= ctx.maxHealth * ctx.fleeThreshold && ctx.health > 0) {
+                        ctx.isInAttackStartup = false;
+                        ctx.fsm.transition('FLEE');
+                        return;
+                    }
+
                     ctx.chargeTimer += delta;
 
                     // Visual: tint shift from yellow to red during charge
@@ -90,6 +111,7 @@ export class FloatingEye extends Enemy {
                     ctx.setFlipX(ctx.player.x < ctx.x);
 
                     if (ctx.chargeTimer >= ctx.CHARGE_DURATION) {
+                        ctx.isInAttackStartup = false;
                         ctx.fsm.transition('SWEEP');
                     }
                 },
@@ -98,6 +120,7 @@ export class FloatingEye extends Enemy {
                 onEnter: (ctx) => {
                     ctx.sweepTimer = 0;
                     ctx.setTint(0xff0000);
+                    ctx.aiState = 'ATTACK';
 
                     // Create beam rectangle
                     const dirX = ctx.player.x > ctx.x ? 1 : -1;
@@ -142,9 +165,16 @@ export class FloatingEye extends Enemy {
             .addState('COOLDOWN', {
                 onEnter: (ctx) => {
                     ctx.cooldownTimer = 0;
-                    ctx.setTint(0xffff00);
+                    ctx.restoreTint();
+                    ctx.aiState = 'PATROL';
                 },
                 onUpdate: (ctx, time, delta) => {
+                    // Check flee condition
+                    if (!ctx.isElite && ctx.health <= ctx.maxHealth * ctx.fleeThreshold && ctx.health > 0) {
+                        ctx.fsm.transition('FLEE');
+                        return;
+                    }
+
                     ctx.cooldownTimer += delta;
 
                     // Gentle hover during cooldown
@@ -155,9 +185,77 @@ export class FloatingEye extends Enemy {
                         ctx.fsm.transition('HOVER');
                     }
                 },
+            })
+            .addState('FLEE', {
+                onEnter: (ctx) => {
+                    ctx.aiState = 'FLEE';
+                    ctx.startFleeBlink();
+                    ctx.destroyBeam();
+                    ctx.isInAttackStartup = false;
+                },
+                onUpdate: (ctx, _time, _delta) => {
+                    // Float away from player
+                    const dx = ctx.player.x - ctx.x;
+                    const dy = ctx.player.y - ctx.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > 0) {
+                        // Move AWAY from player
+                        ctx.setVelocityX((-dx / dist) * ctx.speed * 1.5);
+                        ctx.setVelocityY((-dy / dist) * ctx.speed * 1.5 - ctx.speed * 0.5); // Bias upward
+                    }
+                    ctx.setFlipX(ctx.player.x < ctx.x);
+                },
+                onExit: (ctx) => {
+                    ctx.stopFleeBlink();
+                },
+            })
+            .addState('STUN', {
+                onEnter: (ctx) => {
+                    ctx.isInAttackStartup = false;
+                    ctx.setVelocity(0, 0);
+                    ctx.setTint(0xffff00);
+                    ctx.aiState = 'STUN';
+                    ctx.destroyBeam();
+                },
+                onUpdate: (ctx, _time, delta) => {
+                    ctx.stunTimer -= delta;
+                    if (ctx.stunTimer <= 0) {
+                        ctx.restoreTint();
+                        ctx.fsm.transition('HOVER');
+                    }
+                },
             });
 
         this.fsm.start();
+    }
+
+    public takeDamage(amount: number) {
+        if (this.isDead) return;
+
+        // Apply stun damage multiplier
+        if (this.aiState === 'STUN') {
+            amount = Math.ceil(amount * this.stunDamageMultiplier);
+        }
+
+        // Check if hit during attack startup — triggers stun
+        if (this.isInAttackStartup) {
+            this.stunTimer = 500 + amount * 100;
+            this.fsm.transition('STUN');
+        }
+
+        this.health -= amount;
+
+        // Flash red on hit
+        this.setTint(0xff0000);
+        this.scene.time.delayedCall(100, () => {
+            if (this.active && !this.isDead) {
+                this.restoreTint();
+            }
+        });
+
+        if (this.health <= 0) {
+            this.die();
+        }
     }
 
     private destroyBeam(): void {

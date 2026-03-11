@@ -14,7 +14,6 @@ export class ChainDevil extends Enemy {
     private whipGroup: Phaser.Physics.Arcade.Group;
     private whipCollider: Phaser.Physics.Arcade.Collider;
     private fsm: EnemyStateMachine<ChainDevil>;
-    private defaultTint: number = 0xcc4400;
 
     private readonly SWING_AMPLITUDE = 150;
     private readonly SWING_SPEED = 0.002;
@@ -30,10 +29,15 @@ export class ChainDevil extends Enemy {
         super(scene, x, y, 'dude', player, 10, 2, 0);
         this.enemyType = 'chain_devil';
         this.tier = 'advanced';
+        this.defaultTint = 0xcc4400;
         this.setTint(this.defaultTint);
         this.setScale(0.9);
         this.spawnX = x;
         this.spawnY = y;
+
+        // Chain Devil config: desperate mode (attacks faster when low)
+        this.desperateMode = true;
+        this.fleeThreshold = 0.2;
 
         // No gravity - hangs from chain
         (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
@@ -54,6 +58,8 @@ export class ChainDevil extends Enemy {
             .addState('SWING', {
                 onEnter: (ctx) => {
                     ctx.swingTimer = 0;
+                    ctx.aiState = 'PATROL';
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, time, _delta) => {
                     // Pendulum motion on X axis
@@ -77,6 +83,8 @@ export class ChainDevil extends Enemy {
             .addState('WHIP_CHARGE', {
                 onEnter: (ctx) => {
                     ctx.chargeTimer = 0;
+                    ctx.aiState = 'ATTACK';
+                    ctx.isInAttackStartup = true;
                     // Telegraph with tint flash
                     ctx.setTint(0xff8800);
                 },
@@ -87,7 +95,13 @@ export class ChainDevil extends Enemy {
                     const flash = Math.sin(ctx.chargeTimer * 0.03) > 0;
                     ctx.setTint(flash ? 0xffaa00 : ctx.defaultTint);
 
-                    if (ctx.chargeTimer >= ctx.CHARGE_DURATION) {
+                    // Desperate mode: faster charge
+                    const chargeDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.CHARGE_DURATION * 0.5
+                        : ctx.CHARGE_DURATION;
+
+                    if (ctx.chargeTimer >= chargeDur) {
+                        ctx.isInAttackStartup = false;
                         ctx.fsm.transition('WHIP_ATTACK');
                     }
                 },
@@ -95,6 +109,7 @@ export class ChainDevil extends Enemy {
             .addState('WHIP_ATTACK', {
                 onEnter: (ctx) => {
                     ctx.setTint(0xff6600);
+                    ctx.aiState = 'ATTACK';
                     ctx.createWhip();
 
                     // Auto transition after whip duration
@@ -108,7 +123,8 @@ export class ChainDevil extends Enemy {
             .addState('RECOVERY', {
                 onEnter: (ctx) => {
                     ctx.recoveryTimer = 0;
-                    ctx.setTint(ctx.defaultTint);
+                    ctx.isInAttackStartup = false;
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, time, delta) => {
                     ctx.recoveryTimer += delta;
@@ -121,13 +137,62 @@ export class ChainDevil extends Enemy {
                     ctx.setFlipX(ctx.player.x < ctx.x);
                     ctx.facingDirection = ctx.player.x > ctx.x ? 1 : -1;
 
-                    if (ctx.recoveryTimer >= ctx.RECOVERY_DURATION) {
+                    // Desperate mode: shorter recovery
+                    const recovDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.RECOVERY_DURATION * 0.5
+                        : ctx.RECOVERY_DURATION;
+
+                    if (ctx.recoveryTimer >= recovDur) {
+                        ctx.fsm.transition('SWING');
+                    }
+                },
+            })
+            .addState('STUN', {
+                onEnter: (ctx) => {
+                    ctx.isInAttackStartup = false;
+                    ctx.setVelocity(0, 0);
+                    ctx.setTint(0xffff00);
+                    ctx.aiState = 'STUN';
+                },
+                onUpdate: (ctx, _time, delta) => {
+                    ctx.stunTimer -= delta;
+                    if (ctx.stunTimer <= 0) {
+                        ctx.restoreTint();
                         ctx.fsm.transition('SWING');
                     }
                 },
             });
 
         this.fsm.start();
+    }
+
+    public takeDamage(amount: number) {
+        if (this.isDead) return;
+
+        // Apply stun damage multiplier
+        if (this.aiState === 'STUN') {
+            amount = Math.ceil(amount * this.stunDamageMultiplier);
+        }
+
+        // Check if hit during attack startup — triggers stun
+        if (this.isInAttackStartup) {
+            this.stunTimer = 500 + amount * 100;
+            this.fsm.transition('STUN');
+        }
+
+        this.health -= amount;
+
+        // Flash red on hit
+        this.setTint(0xff0000);
+        this.scene.time.delayedCall(100, () => {
+            if (this.active && !this.isDead) {
+                this.restoreTint();
+            }
+        });
+
+        if (this.health <= 0) {
+            this.die();
+        }
     }
 
     private createWhip(): void {

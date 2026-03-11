@@ -13,7 +13,6 @@ export class ArmorColossus extends Enemy {
     private shockwaveGroup: Phaser.Physics.Arcade.Group;
     private shockwaveCollider: Phaser.Physics.Arcade.Collider;
     private fsm: EnemyStateMachine<ArmorColossus>;
-    private defaultTint: number = 0x888888;
 
     private readonly PATROL_TURN_INTERVAL = 4000;
     private readonly DETECT_RANGE = 500;
@@ -28,8 +27,13 @@ export class ArmorColossus extends Enemy {
         super(scene, x, y, 'dude', player, 25, 2, 40);
         this.enemyType = 'armor_colossus';
         this.tier = 'advanced';
+        this.defaultTint = 0x888888;
         this.setTint(this.defaultTint);
         this.setScale(1.3);
+
+        // Colossus config: desperate mode (attacks faster), never flees
+        this.desperateMode = true;
+        this.fleeThreshold = 0.2;
 
         // Large physics body
         const body = this.body as Phaser.Physics.Arcade.Body;
@@ -51,7 +55,8 @@ export class ArmorColossus extends Enemy {
             .addState('PATROL', {
                 onEnter: (ctx) => {
                     ctx.patrolTimer = 0;
-                    ctx.setTint(ctx.defaultTint);
+                    ctx.restoreTint();
+                    ctx.aiState = 'PATROL';
                 },
                 onUpdate: (ctx, _time, delta) => {
                     ctx.setVelocityX(ctx.speed * 0.5 * ctx.direction);
@@ -73,10 +78,17 @@ export class ArmorColossus extends Enemy {
                 },
             })
             .addState('APPROACH', {
+                onEnter: (ctx) => {
+                    ctx.aiState = 'ALERT';
+                    ctx.restoreTint();
+                },
                 onUpdate: (ctx, _time, _delta) => {
                     const dx = ctx.player.x - ctx.x;
                     ctx.direction = dx > 0 ? 1 : -1;
-                    ctx.setVelocityX(ctx.speed * ctx.direction);
+
+                    // Desperate mode: move faster
+                    const speedMult = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold) ? 1.5 : 1.0;
+                    ctx.setVelocityX(ctx.speed * ctx.direction * speedMult);
                     ctx.setFlipX(ctx.direction < 0);
                     ctx.facingDirection = ctx.direction;
 
@@ -98,6 +110,8 @@ export class ArmorColossus extends Enemy {
                 onEnter: (ctx) => {
                     ctx.telegraphTimer = 0;
                     ctx.setVelocityX(0);
+                    ctx.aiState = 'ATTACK';
+                    ctx.isInAttackStartup = true;
                     // Telegraph: flash white and slight rise
                     ctx.setTint(0xffffff);
                     ctx.setVelocityY(-50);
@@ -109,7 +123,13 @@ export class ArmorColossus extends Enemy {
                     const flash = Math.sin(ctx.telegraphTimer * 0.02) > 0;
                     ctx.setTint(flash ? 0xffffff : ctx.defaultTint);
 
-                    if (ctx.telegraphTimer >= ctx.TELEGRAPH_DURATION) {
+                    // Desperate mode: faster telegraph
+                    const telegraphDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.TELEGRAPH_DURATION * 0.6
+                        : ctx.TELEGRAPH_DURATION;
+
+                    if (ctx.telegraphTimer >= telegraphDur) {
+                        ctx.isInAttackStartup = false;
                         // Slam down
                         ctx.setVelocityY(400);
                         ctx.createShockwave();
@@ -120,13 +140,38 @@ export class ArmorColossus extends Enemy {
             .addState('RECOVERY', {
                 onEnter: (ctx) => {
                     ctx.recoveryTimer = 0;
-                    ctx.setTint(ctx.defaultTint);
+                    ctx.isInAttackStartup = false;
+                    ctx.restoreTint();
                     // Very slow during recovery
                     ctx.setVelocityX(0);
                 },
                 onUpdate: (ctx, _time, delta) => {
                     ctx.recoveryTimer += delta;
-                    if (ctx.recoveryTimer >= ctx.RECOVERY_DURATION) {
+
+                    // Desperate mode: shorter recovery
+                    const recovDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.RECOVERY_DURATION * 0.5
+                        : ctx.RECOVERY_DURATION;
+
+                    if (ctx.recoveryTimer >= recovDur) {
+                        const dist = Phaser.Math.Distance.Between(
+                            ctx.x, ctx.y, ctx.player.x, ctx.player.y,
+                        );
+                        ctx.fsm.transition(dist < ctx.DETECT_RANGE ? 'APPROACH' : 'PATROL');
+                    }
+                },
+            })
+            .addState('STUN', {
+                onEnter: (ctx) => {
+                    ctx.isInAttackStartup = false;
+                    ctx.setVelocity(0, 0);
+                    ctx.setTint(0xffff00);
+                    ctx.aiState = 'STUN';
+                },
+                onUpdate: (ctx, _time, delta) => {
+                    ctx.stunTimer -= delta;
+                    if (ctx.stunTimer <= 0) {
+                        ctx.restoreTint();
                         const dist = Phaser.Math.Distance.Between(
                             ctx.x, ctx.y, ctx.player.x, ctx.player.y,
                         );
@@ -136,6 +181,35 @@ export class ArmorColossus extends Enemy {
             });
 
         this.fsm.start();
+    }
+
+    public takeDamage(amount: number) {
+        if (this.isDead) return;
+
+        // Apply stun damage multiplier
+        if (this.aiState === 'STUN') {
+            amount = Math.ceil(amount * this.stunDamageMultiplier);
+        }
+
+        // Check if hit during attack startup — triggers stun
+        if (this.isInAttackStartup) {
+            this.stunTimer = 500 + amount * 100;
+            this.fsm.transition('STUN');
+        }
+
+        this.health -= amount;
+
+        // Flash red on hit
+        this.setTint(0xff0000);
+        this.scene.time.delayedCall(100, () => {
+            if (this.active && !this.isDead) {
+                this.restoreTint();
+            }
+        });
+
+        if (this.health <= 0) {
+            this.die();
+        }
     }
 
     private createShockwave(): void {

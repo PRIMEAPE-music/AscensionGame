@@ -12,7 +12,7 @@ export class VoidStalker extends Enemy {
     private fsm: EnemyStateMachine<VoidStalker>;
 
     private readonly DETECT_RANGE = 300;
-    private readonly TELEPORT_INTERVAL = 8000;
+    private baseTeleportInterval: number = 8000;
     private readonly TELEPORT_DELAY = 300;
     private readonly BACKSTAB_DURATION = 300;
     private readonly RECOVERY_DURATION = 500;
@@ -22,7 +22,12 @@ export class VoidStalker extends Enemy {
         super(scene, x, y, 'dude', player, 6, 1, 150);
         this.enemyType = 'void_stalker';
         this.tier = 'intermediate';
+        this.defaultTint = 0x6600aa;
         this.setTint(0x6600aa);
+
+        // Void Stalker: flees when low (phases away)
+        this.desperateMode = false;
+        this.fleeThreshold = 0.2;
 
         this.fsm = new EnemyStateMachine<VoidStalker>('PATROL', this);
         this.fsm
@@ -30,8 +35,16 @@ export class VoidStalker extends Enemy {
                 onEnter: (ctx) => {
                     ctx.patrolTimer = 0;
                     ctx.stalkTimer = 0;
+                    ctx.aiState = 'PATROL';
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, _time, delta) => {
+                    // Check flee condition
+                    if (!ctx.isElite && ctx.health <= ctx.maxHealth * ctx.fleeThreshold && ctx.health > 0) {
+                        ctx.fsm.transition('FLEE');
+                        return;
+                    }
+
                     ctx.setVelocityX(ctx.speed * 0.5 * ctx.direction);
                     ctx.setFlipX(ctx.direction < 0);
 
@@ -52,15 +65,23 @@ export class VoidStalker extends Enemy {
             .addState('STALK', {
                 onEnter: (ctx) => {
                     ctx.stalkTimer = 0;
+                    ctx.aiState = 'ALERT';
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, _time, delta) => {
+                    // Check flee condition
+                    if (!ctx.isElite && ctx.health <= ctx.maxHealth * ctx.fleeThreshold && ctx.health > 0) {
+                        ctx.fsm.transition('FLEE');
+                        return;
+                    }
+
                     const dx = ctx.player.x - ctx.x;
                     ctx.direction = dx > 0 ? 1 : -1;
                     ctx.setVelocityX(ctx.speed * ctx.direction);
                     ctx.setFlipX(ctx.direction < 0);
 
                     ctx.stalkTimer += delta;
-                    if (ctx.stalkTimer >= ctx.TELEPORT_INTERVAL) {
+                    if (ctx.stalkTimer >= ctx.baseTeleportInterval) {
                         ctx.fsm.transition('TELEPORT');
                         return;
                     }
@@ -75,6 +96,9 @@ export class VoidStalker extends Enemy {
             })
             .addState('TELEPORT', {
                 onEnter: (ctx) => {
+                    ctx.aiState = 'ATTACK';
+                    ctx.isInAttackStartup = true;
+
                     // Disappear
                     ctx.setAlpha(0);
                     const body = ctx.body as Phaser.Physics.Arcade.Body;
@@ -104,6 +128,7 @@ export class VoidStalker extends Enemy {
                         body.enable = true;
                         ctx.direction = playerFacingRight ? -1 : 1;
                         ctx.setFlipX(ctx.direction < 0);
+                        ctx.isInAttackStartup = false;
                         ctx.fsm.transition('BACKSTAB');
                     });
                 },
@@ -111,6 +136,7 @@ export class VoidStalker extends Enemy {
             .addState('BACKSTAB', {
                 onEnter: (ctx) => {
                     ctx.backstabTimer = 0;
+                    ctx.aiState = 'ATTACK';
                     // Quick lunge toward player
                     const dx = ctx.player.x - ctx.x;
                     const lungeDir = dx > 0 ? 1 : -1;
@@ -128,6 +154,7 @@ export class VoidStalker extends Enemy {
                 onEnter: (ctx) => {
                     ctx.recoveryTimer = 0;
                     ctx.setVelocityX(0);
+                    ctx.isInAttackStartup = false;
                 },
                 onUpdate: (ctx, _time, delta) => {
                     ctx.recoveryTimer += delta;
@@ -138,9 +165,77 @@ export class VoidStalker extends Enemy {
                         ctx.fsm.transition(dist < ctx.DETECT_RANGE ? 'STALK' : 'PATROL');
                     }
                 },
+            })
+            .addState('FLEE', {
+                onEnter: (ctx) => {
+                    ctx.aiState = 'FLEE';
+                    ctx.startFleeBlink();
+                },
+                onUpdate: (ctx, _time, _delta) => {
+                    // Move away from player quickly
+                    const dx = ctx.player.x - ctx.x;
+                    ctx.direction = dx > 0 ? -1 : 1; // Move AWAY
+                    ctx.setVelocityX(ctx.speed * 1.5 * ctx.direction);
+                    ctx.setFlipX(ctx.direction < 0);
+                    ctx.facingDirection = ctx.direction;
+                },
+                onExit: (ctx) => {
+                    ctx.stopFleeBlink();
+                },
+            })
+            .addState('STUN', {
+                onEnter: (ctx) => {
+                    ctx.isInAttackStartup = false;
+                    ctx.setVelocity(0, 0);
+                    ctx.setAlpha(1);
+                    ctx.setTint(0xffff00);
+                    ctx.aiState = 'STUN';
+                    // Re-enable body in case stunned during teleport
+                    const body = ctx.body as Phaser.Physics.Arcade.Body;
+                    body.enable = true;
+                },
+                onUpdate: (ctx, _time, delta) => {
+                    ctx.stunTimer -= delta;
+                    if (ctx.stunTimer <= 0) {
+                        ctx.restoreTint();
+                        const dist = Phaser.Math.Distance.Between(
+                            ctx.x, ctx.y, ctx.player.x, ctx.player.y,
+                        );
+                        ctx.fsm.transition(dist < ctx.DETECT_RANGE ? 'STALK' : 'PATROL');
+                    }
+                },
             });
 
         this.fsm.start();
+    }
+
+    public takeDamage(amount: number) {
+        if (this.isDead) return;
+
+        // Apply stun damage multiplier
+        if (this.aiState === 'STUN') {
+            amount = Math.ceil(amount * this.stunDamageMultiplier);
+        }
+
+        // Check if hit during attack startup (teleport phase) — triggers stun
+        if (this.isInAttackStartup) {
+            this.stunTimer = 500 + amount * 100;
+            this.fsm.transition('STUN');
+        }
+
+        this.health -= amount;
+
+        // Flash red on hit
+        this.setTint(0xff0000);
+        this.scene.time.delayedCall(100, () => {
+            if (this.active && !this.isDead) {
+                this.restoreTint();
+            }
+        });
+
+        if (this.health <= 0) {
+            this.die();
+        }
     }
 
     update(time: number, delta: number) {

@@ -10,7 +10,6 @@ export class CursedKnight extends Enemy {
     private attackTelegraphTimer: number = 0;
     private isTelegraphing: boolean = false;
     private fsm: EnemyStateMachine<CursedKnight>;
-    private defaultTint: number = 0x4444aa;
 
     private readonly DETECT_RANGE = 400;
     private readonly ATTACK_RANGE = 80;
@@ -22,8 +21,13 @@ export class CursedKnight extends Enemy {
         super(scene, x, y, 'dude', player, 10, 2, 60);
         this.enemyType = 'cursed_knight';
         this.tier = 'intermediate';
+        this.defaultTint = 0x4444aa;
         this.setTint(this.defaultTint);
         this.setScale(1.0);
+
+        // Knight config: desperate mode (faster attacks when low HP, never flees)
+        this.desperateMode = true;
+        this.fleeThreshold = 0.2;
 
         this.fsm = new EnemyStateMachine<CursedKnight>('PATROL', this);
         this.fsm
@@ -31,6 +35,7 @@ export class CursedKnight extends Enemy {
                 onEnter: (ctx) => {
                     ctx.patrolTimer = 0;
                     ctx.isBlocking = false;
+                    ctx.aiState = 'PATROL';
                 },
                 onUpdate: (ctx, _time, delta) => {
                     ctx.setVelocityX(ctx.speed * ctx.direction);
@@ -54,6 +59,8 @@ export class CursedKnight extends Enemy {
             .addState('APPROACH', {
                 onEnter: (ctx) => {
                     ctx.isBlocking = false;
+                    ctx.aiState = 'ALERT';
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, _time, _delta) => {
                     const dx = ctx.player.x - ctx.x;
@@ -86,6 +93,7 @@ export class CursedKnight extends Enemy {
                 onEnter: (ctx) => {
                     ctx.isBlocking = true;
                     ctx.setVelocityX(0);
+                    ctx.aiState = 'ALERT';
                 },
                 onUpdate: (ctx, _time, _delta) => {
                     // Face the player
@@ -112,27 +120,37 @@ export class CursedKnight extends Enemy {
                     ctx.isTelegraphing = true;
                     ctx.attackTelegraphTimer = 0;
                     ctx.setVelocityX(0);
+                    ctx.aiState = 'ATTACK';
+                    ctx.isInAttackStartup = true;
                     // Telegraph flash - shift to white for windup
                     ctx.setTint(0xffffff);
                 },
                 onUpdate: (ctx, _time, delta) => {
                     if (ctx.isTelegraphing) {
                         ctx.attackTelegraphTimer += delta;
-                        if (ctx.attackTelegraphTimer >= ctx.TELEGRAPH_DURATION) {
+
+                        // Desperate mode: faster telegraph
+                        const telegraphDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                            ? ctx.TELEGRAPH_DURATION * 0.6
+                            : ctx.TELEGRAPH_DURATION;
+
+                        if (ctx.attackTelegraphTimer >= telegraphDur) {
                             ctx.isTelegraphing = false;
+                            ctx.isInAttackStartup = false;
                             // Execute overhead strike - tint red during strike
                             ctx.setTint(0xff0000);
 
                             // Brief lunge forward for the strike
                             const dx = ctx.player.x - ctx.x;
                             const strikeDir = dx > 0 ? 1 : -1;
-                            ctx.setVelocityX(ctx.speed * 3 * strikeDir);
+                            const strikeMult = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold) ? 4 : 3;
+                            ctx.setVelocityX(ctx.speed * strikeMult * strikeDir);
 
                             // After a short window, go to recovery
                             ctx.scene.time.delayedCall(200, () => {
                                 if (ctx.isDead) return;
                                 ctx.setVelocityX(0);
-                                ctx.setTint(ctx.defaultTint);
+                                ctx.restoreTint();
                                 ctx.fsm.transition('RECOVERY');
                             });
                         }
@@ -143,11 +161,38 @@ export class CursedKnight extends Enemy {
                 onEnter: (ctx) => {
                     ctx.recoveryTimer = 0;
                     ctx.isBlocking = false;
+                    ctx.isInAttackStartup = false;
                     ctx.setVelocityX(0);
                 },
                 onUpdate: (ctx, _time, delta) => {
                     ctx.recoveryTimer += delta;
-                    if (ctx.recoveryTimer >= ctx.RECOVERY_DURATION) {
+
+                    // Desperate mode: shorter recovery
+                    const recovDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.RECOVERY_DURATION * 0.5
+                        : ctx.RECOVERY_DURATION;
+
+                    if (ctx.recoveryTimer >= recovDur) {
+                        const dist = Phaser.Math.Distance.Between(
+                            ctx.x, ctx.y, ctx.player.x, ctx.player.y,
+                        );
+                        ctx.fsm.transition(dist < ctx.DETECT_RANGE ? 'APPROACH' : 'PATROL');
+                    }
+                },
+            })
+            .addState('STUN', {
+                onEnter: (ctx) => {
+                    ctx.isBlocking = false;
+                    ctx.isTelegraphing = false;
+                    ctx.isInAttackStartup = false;
+                    ctx.setVelocity(0, 0);
+                    ctx.setTint(0xffff00);
+                    ctx.aiState = 'STUN';
+                },
+                onUpdate: (ctx, _time, delta) => {
+                    ctx.stunTimer -= delta;
+                    if (ctx.stunTimer <= 0) {
+                        ctx.restoreTint();
                         const dist = Phaser.Math.Distance.Between(
                             ctx.x, ctx.y, ctx.player.x, ctx.player.y,
                         );
@@ -157,6 +202,35 @@ export class CursedKnight extends Enemy {
             });
 
         this.fsm.start();
+    }
+
+    public takeDamage(amount: number) {
+        if (this.isDead) return;
+
+        // Apply stun damage multiplier
+        if (this.aiState === 'STUN') {
+            amount = Math.ceil(amount * this.stunDamageMultiplier);
+        }
+
+        // Check if hit during attack startup — triggers stun
+        if (this.isInAttackStartup) {
+            this.stunTimer = 500 + amount * 100;
+            this.fsm.transition('STUN');
+        }
+
+        this.health -= amount;
+
+        // Flash red on hit
+        this.setTint(0xff0000);
+        this.scene.time.delayedCall(100, () => {
+            if (this.active && !this.isDead) {
+                this.restoreTint();
+            }
+        });
+
+        if (this.health <= 0) {
+            this.die();
+        }
     }
 
     update(time: number, delta: number) {

@@ -17,7 +17,7 @@ export class RiftWeaver extends Enemy {
 
     private readonly SINE_AMPLITUDE = 20;
     private readonly SINE_SPEED = 0.003;
-    private readonly TELEPORT_INTERVAL = 6000;
+    private baseTeleportInterval: number = 6000;
     private readonly COOLDOWN_DURATION = 4000;
     private readonly PORTAL_SIZE = 60;
     private readonly PORTAL_LIFETIME = 3000;
@@ -28,10 +28,15 @@ export class RiftWeaver extends Enemy {
         super(scene, x, y, 'dude', player, 12, 1, 120);
         this.enemyType = 'rift_weaver';
         this.tier = 'advanced';
+        this.defaultTint = 0x00cccc;
         this.setTint(0x00cccc);
         this.setScale(0.8);
         this.startY = y;
         this.timeOffset = Math.random() * 1000;
+
+        // Rift Weaver: desperate mode (teleports and creates portals faster)
+        this.desperateMode = true;
+        this.fleeThreshold = 0.2;
 
         // Flying enemy - no gravity
         (this.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
@@ -52,6 +57,8 @@ export class RiftWeaver extends Enemy {
             .addState('FLOAT', {
                 onEnter: (ctx) => {
                     ctx.floatTimer = 0;
+                    ctx.aiState = 'PATROL';
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, time, delta) => {
                     // Sine wave hover
@@ -62,14 +69,22 @@ export class RiftWeaver extends Enemy {
                     ctx.setFlipX(ctx.player.x < ctx.x);
                     ctx.facingDirection = ctx.player.x > ctx.x ? 1 : -1;
 
+                    // Desperate mode: teleport more frequently
+                    const teleInterval = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.baseTeleportInterval * 0.5
+                        : ctx.baseTeleportInterval;
+
                     ctx.floatTimer += delta;
-                    if (ctx.floatTimer >= ctx.TELEPORT_INTERVAL) {
+                    if (ctx.floatTimer >= teleInterval) {
                         ctx.fsm.transition('TELEPORT');
                     }
                 },
             })
             .addState('TELEPORT', {
                 onEnter: (ctx) => {
+                    ctx.aiState = 'ATTACK';
+                    ctx.isInAttackStartup = true;
+
                     // Disappear
                     ctx.setAlpha(0);
                     const body = ctx.body as Phaser.Physics.Arcade.Body;
@@ -95,6 +110,7 @@ export class RiftWeaver extends Enemy {
                         ctx.startY = destY;
                         ctx.setAlpha(1);
                         body.enable = true;
+                        ctx.isInAttackStartup = false;
 
                         // Flash at new position
                         const arrivalFlash = ctx.scene.add.rectangle(destX, destY, 40, 40, 0x00ffff, 0.6);
@@ -115,6 +131,9 @@ export class RiftWeaver extends Enemy {
             .addState('COOLDOWN', {
                 onEnter: (ctx) => {
                     ctx.cooldownTimer = 0;
+                    ctx.isInAttackStartup = false;
+                    ctx.aiState = 'PATROL';
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, time, delta) => {
                     // Gentle hover during cooldown
@@ -125,14 +144,67 @@ export class RiftWeaver extends Enemy {
                     ctx.setFlipX(ctx.player.x < ctx.x);
                     ctx.facingDirection = ctx.player.x > ctx.x ? 1 : -1;
 
+                    // Desperate mode: shorter cooldown
+                    const coolDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.COOLDOWN_DURATION * 0.5
+                        : ctx.COOLDOWN_DURATION;
+
                     ctx.cooldownTimer += delta;
-                    if (ctx.cooldownTimer >= ctx.COOLDOWN_DURATION) {
+                    if (ctx.cooldownTimer >= coolDur) {
+                        ctx.fsm.transition('FLOAT');
+                    }
+                },
+            })
+            .addState('STUN', {
+                onEnter: (ctx) => {
+                    ctx.isInAttackStartup = false;
+                    ctx.setVelocity(0, 0);
+                    ctx.setTint(0xffff00);
+                    ctx.setAlpha(1);
+                    ctx.aiState = 'STUN';
+                    // Re-enable body in case stunned during teleport
+                    const body = ctx.body as Phaser.Physics.Arcade.Body;
+                    body.enable = true;
+                },
+                onUpdate: (ctx, _time, delta) => {
+                    ctx.stunTimer -= delta;
+                    if (ctx.stunTimer <= 0) {
+                        ctx.restoreTint();
                         ctx.fsm.transition('FLOAT');
                     }
                 },
             });
 
         this.fsm.start();
+    }
+
+    public takeDamage(amount: number) {
+        if (this.isDead) return;
+
+        // Apply stun damage multiplier
+        if (this.aiState === 'STUN') {
+            amount = Math.ceil(amount * this.stunDamageMultiplier);
+        }
+
+        // Check if hit during attack startup — triggers stun
+        if (this.isInAttackStartup) {
+            this.stunTimer = 500 + amount * 100;
+            this.fsm.transition('STUN');
+        }
+
+        this.health -= amount;
+
+        // Flash red on hit
+        this.setTint(0xff0000);
+        this.scene.time.delayedCall(100, () => {
+            if (this.active && !this.isDead) {
+                this.restoreTint();
+            }
+        });
+
+        if (this.health <= 0) {
+            this.die();
+        }
     }
 
     private createPortal(): void {

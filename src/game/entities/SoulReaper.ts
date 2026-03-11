@@ -15,7 +15,6 @@ export class SoulReaper extends Enemy {
     private drainCollider: Phaser.Physics.Arcade.Collider;
     private pulseTimer: number = 0;
     private fsm: EnemyStateMachine<SoulReaper>;
-    private defaultTint: number = 0x220044;
 
     private readonly DETECT_RANGE = 150;
     private readonly DRAIN_DURATION = 5000;
@@ -29,8 +28,13 @@ export class SoulReaper extends Enemy {
         super(scene, x, y, 'dude', player, 20, 1, 100);
         this.enemyType = 'soul_reaper';
         this.tier = 'elite';
+        this.defaultTint = 0x220044;
         this.setTint(this.defaultTint);
         this.setScale(1.0);
+
+        // Elite-tier: desperate mode (drains faster/more aggressively), never flees
+        this.desperateMode = true;
+        this.fleeThreshold = 0.2;
 
         // No gravity, can pass through platforms
         const body = this.body as Phaser.Physics.Arcade.Body;
@@ -57,13 +61,18 @@ export class SoulReaper extends Enemy {
                 onEnter: (ctx) => {
                     ctx.isDraining = false;
                     ctx.destroyAura();
+                    ctx.aiState = 'ALERT';
+                    ctx.restoreTint();
                 },
                 onUpdate: (ctx, _time, _delta) => {
                     // Glide smoothly toward player (lerp)
                     const dx = ctx.player.x - ctx.x;
                     const dy = ctx.player.y - ctx.y;
-                    ctx.x += dx * ctx.LERP_FACTOR;
-                    ctx.y += dy * ctx.LERP_FACTOR;
+
+                    // Desperate mode: faster pursuit
+                    const lerpMult = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold) ? 1.5 : 1.0;
+                    ctx.x += dx * ctx.LERP_FACTOR * lerpMult;
+                    ctx.y += dy * ctx.LERP_FACTOR * lerpMult;
 
                     ctx.setFlipX(ctx.player.x < ctx.x);
                     ctx.facingDirection = ctx.player.x > ctx.x ? 1 : -1;
@@ -83,7 +92,16 @@ export class SoulReaper extends Enemy {
                     ctx.drainDamageTimer = 0;
                     ctx.isDraining = true;
                     ctx.pulseTimer = 0;
+                    ctx.aiState = 'ATTACK';
+                    ctx.isInAttackStartup = true;
                     ctx.createAura();
+
+                    // End startup after brief window
+                    ctx.scene.time.delayedCall(300, () => {
+                        if (ctx.active && !ctx.isDead) {
+                            ctx.isInAttackStartup = false;
+                        }
+                    });
                 },
                 onUpdate: (ctx, _time, delta) => {
                     ctx.drainTimer += delta;
@@ -105,7 +123,12 @@ export class SoulReaper extends Enemy {
                     ctx.setFlipX(ctx.player.x < ctx.x);
                     ctx.facingDirection = ctx.player.x > ctx.x ? 1 : -1;
 
-                    if (ctx.drainTimer >= ctx.DRAIN_DURATION) {
+                    // Desperate mode: drain for longer
+                    const drainDur = (ctx.desperateMode && ctx.health <= ctx.maxHealth * ctx.fleeThreshold)
+                        ? ctx.DRAIN_DURATION * 1.5
+                        : ctx.DRAIN_DURATION;
+
+                    if (ctx.drainTimer >= drainDur) {
                         ctx.fsm.transition('REPOSITION');
                     }
                 },
@@ -114,6 +137,7 @@ export class SoulReaper extends Enemy {
                 onEnter: (ctx) => {
                     ctx.repositionTimer = 0;
                     ctx.isDraining = false;
+                    ctx.isInAttackStartup = false;
                     ctx.destroyAura();
 
                     // Move to a new position offset from player
@@ -134,6 +158,23 @@ export class SoulReaper extends Enemy {
                     ctx.repositionTimer += delta;
                     if (ctx.repositionTimer >= ctx.REPOSITION_DURATION) {
                         ctx.setVelocity(0, 0);
+                        ctx.fsm.transition('PURSUE');
+                    }
+                },
+            })
+            .addState('STUN', {
+                onEnter: (ctx) => {
+                    ctx.isInAttackStartup = false;
+                    ctx.isDraining = false;
+                    ctx.destroyAura();
+                    ctx.setVelocity(0, 0);
+                    ctx.setTint(0xffff00);
+                    ctx.aiState = 'STUN';
+                },
+                onUpdate: (ctx, _time, delta) => {
+                    ctx.stunTimer -= delta;
+                    if (ctx.stunTimer <= 0) {
+                        ctx.restoreTint();
                         ctx.fsm.transition('PURSUE');
                     }
                 },
@@ -187,9 +228,34 @@ export class SoulReaper extends Enemy {
 
     public takeDamage(amount: number) {
         if (this.isDead) return;
-        // Take double damage while draining
+
+        // Apply stun damage multiplier
+        if (this.aiState === 'STUN') {
+            amount = Math.ceil(amount * this.stunDamageMultiplier);
+        }
+
+        // Take double damage while draining (existing mechanic)
         const finalAmount = this.isDraining ? amount * 2 : amount;
-        super.takeDamage(finalAmount);
+
+        // Check if hit during attack startup — triggers stun
+        if (this.isInAttackStartup) {
+            this.stunTimer = 500 + finalAmount * 100;
+            this.fsm.transition('STUN');
+        }
+
+        this.health -= finalAmount;
+
+        // Flash red on hit
+        this.setTint(0xff0000);
+        this.scene.time.delayedCall(100, () => {
+            if (this.active && !this.isDead) {
+                this.restoreTint();
+            }
+        });
+
+        if (this.health <= 0) {
+            this.die();
+        }
     }
 
     update(time: number, delta: number) {
