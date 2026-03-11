@@ -33,6 +33,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private divineKey!: Phaser.Input.Keyboard.Key;
   private essenceBurstKey!: Phaser.Input.Keyboard.Key;
 
+  // Gold Attack Ability Keys
+  private counterKey!: Phaser.Input.Keyboard.Key;
+  private groundSlamKey!: Phaser.Input.Keyboard.Key;
+  private projectileKey!: Phaser.Input.Keyboard.Key;
+  private chargeKey!: Phaser.Input.Keyboard.Key;
+
   // Combat State
   public isAttacking: boolean = false;
   public currentAttackId: string | null = null;
@@ -183,6 +189,34 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Essence Burst
   private essenceBurstActive: boolean = false;
 
+  // === Gold Attack Ability State ===
+  // Counter Slash
+  private counterStanceActive: boolean = false;
+  private counterStanceTimer: number = 0;
+  private counterCooldown: number = 0;
+  private readonly COUNTER_STANCE_DURATION = 500; // ms
+  private readonly COUNTER_COOLDOWN = 4000; // ms
+
+  // Ground Slam
+  private groundSlamCooldown: number = 0;
+  private readonly GROUND_SLAM_COOLDOWN = 5000;
+  private readonly GROUND_SLAM_RADIUS = 150;
+  private readonly GROUND_SLAM_DAMAGE_MULT = 1.2;
+  private isGroundSlamming: boolean = false;
+
+  // Projectile
+  private projectileCooldown: number = 0;
+  private readonly PROJECTILE_COOLDOWN = 2000;
+  private readonly PROJECTILE_SPEED = 600;
+  private readonly PROJECTILE_RANGE = 500;
+  private readonly PROJECTILE_DAMAGE_MULT = 1.0;
+
+  // Charged Attack
+  private isCharging: boolean = false;
+  private chargeTime: number = 0;
+  private readonly MAX_CHARGE_TIME = 3000; // 3 seconds
+  private chargeGlow: Phaser.GameObjects.Graphics | null = null;
+
   get isInvincible(): boolean {
     return this.invincibilityTimer > 0 || this.parryInvincibilityTimer > 0;
   }
@@ -264,6 +298,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.essenceBurstKey = this.scene.input.keyboard!.addKey(
       Phaser.Input.Keyboard.KeyCodes.F,
     );
+
+    // Gold Attack Ability Keys
+    this.counterKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.G,
+    );
+    this.groundSlamKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.T,
+    );
+    this.projectileKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.Y,
+    );
+    this.chargeKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.H,
+    );
   }
 
   private getStat(
@@ -294,6 +342,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.handleTemporalRift();
     this.handleDivineIntervention();
     this.handleEssenceBurst();
+    this.handleCounterSlash();
+    this.handleGroundSlam();
+    this.handleProjectile();
+    this.handleChargedAttack(delta);
     this.updateInvincibility(delta);
     this.updateClassMechanics(delta);
     this.updateAnimation();
@@ -351,6 +403,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.parryInvincibilityTimer -= delta;
       if (this.parryInvincibilityTimer <= 0) {
         this.parryInvincibilityTimer = 0;
+      }
+    }
+
+    // Gold Attack Ability cooldowns
+    if (this.counterCooldown > 0) this.counterCooldown -= delta;
+    if (this.groundSlamCooldown > 0) this.groundSlamCooldown -= delta;
+    if (this.projectileCooldown > 0) this.projectileCooldown -= delta;
+    if (this.counterStanceTimer > 0) {
+      this.counterStanceTimer -= delta;
+      if (this.counterStanceTimer <= 0) {
+        this.counterStanceActive = false;
+        // Remove orange tint when stance expires
+        if (this.active) this.clearTint();
       }
     }
 
@@ -1055,6 +1120,60 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this.isInvincible) return false;
 
+    // Counter Slash: negate damage and counter-attack
+    if (this.counterStanceActive) {
+      this.counterStanceActive = false;
+      this.counterStanceTimer = 0;
+      this.counterCooldown = this.COUNTER_COOLDOWN;
+
+      // Counter-attack: find nearest enemy and deal 1.5x base damage
+      const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+      if (enemies) {
+        const counterDamage = Math.round(COMBAT.BASE_DAMAGE * 1.5 * this.classStats.attackDamage);
+        let nearestEnemy: any = null;
+        let nearestDist = Infinity;
+
+        enemies.children.each((enemy: any) => {
+          if (!enemy.active) return true;
+          const dx = enemy.x - this.x;
+          const dy = enemy.y - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < nearestDist && dist <= 200) {
+            nearestDist = dist;
+            nearestEnemy = enemy;
+          }
+          return true;
+        });
+
+        if (nearestEnemy) {
+          nearestEnemy.takeDamage(counterDamage);
+        }
+      }
+
+      // Visual feedback: golden flash + screen shake
+      this.setTint(0xffd700);
+      this.scene.cameras.main.shake(200, 0.005);
+      this.scene.time.delayedCall(300, () => {
+        if (this.active) this.clearTint();
+      });
+
+      // Brief invincibility after counter
+      this.invincibilityTimer = 500;
+      this.flashTimer = 0;
+      return false; // Negate the damage
+    }
+
+    // Cancel charged attack if hit while charging
+    if (this.isCharging) {
+      this.isCharging = false;
+      this.chargeTime = 0;
+      if (this.chargeGlow) {
+        this.chargeGlow.destroy();
+        this.chargeGlow = null;
+      }
+      this.clearTint();
+    }
+
     // Reset out-of-combat timer (Health Regen ability)
     this.outOfCombatTimer = 0;
     this.healthRegenTimer = 0;
@@ -1381,6 +1500,315 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.essenceBurstActive = false;
       this.clearTint();
     });
+  }
+
+  // ─── Gold Attack Abilities ─────────────────────────────────────────
+
+  private handleCounterSlash(): void {
+    if (!this.abilities.has('counter_stance')) return;
+    if (this.counterCooldown > 0) return;
+    if (this.counterStanceActive) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.counterKey)) return;
+
+    // Activate counter stance
+    this.counterStanceActive = true;
+    this.counterStanceTimer = this.COUNTER_STANCE_DURATION;
+
+    // Visual: orange tint while in stance
+    this.setTint(0xff8844);
+  }
+
+  private handleGroundSlam(): void {
+    if (!this.abilities.has('ground_slam')) return;
+    if (this.groundSlamCooldown > 0) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.groundSlamKey)) return;
+
+    if (!this.onGround) {
+      // Airborne: slam downward quickly
+      this.isGroundSlamming = true;
+      this.setVelocityY(800);
+      this.setVelocityX(0);
+
+      // Wait for landing then create shockwave
+      const checkLanding = this.scene.time.addEvent({
+        delay: 16,
+        loop: true,
+        callback: () => {
+          if (this.onGround) {
+            checkLanding.destroy();
+            this.isGroundSlamming = false;
+            this.createGroundSlamShockwave();
+            this.groundSlamCooldown = this.GROUND_SLAM_COOLDOWN;
+          }
+        },
+      });
+
+      // Safety: destroy timer after 2s even if we never land
+      this.scene.time.delayedCall(2000, () => {
+        if (checkLanding.getRemaining() > 0) {
+          checkLanding.destroy();
+          this.isGroundSlamming = false;
+        }
+      });
+    } else {
+      // Grounded: immediate shockwave
+      this.createGroundSlamShockwave();
+      this.groundSlamCooldown = this.GROUND_SLAM_COOLDOWN;
+    }
+  }
+
+  private createGroundSlamShockwave(): void {
+    const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+    if (!enemies) return;
+
+    const damage = Math.round(
+      COMBAT.BASE_DAMAGE * this.GROUND_SLAM_DAMAGE_MULT * this.classStats.attackDamage,
+    );
+
+    enemies.children.each((enemy: any) => {
+      if (!enemy.active) return true;
+      const dx = enemy.x - this.x;
+      const dy = enemy.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= this.GROUND_SLAM_RADIUS) {
+        enemy.takeDamage(damage);
+        // Knockback upward for juggle
+        if (enemy.body) {
+          enemy.body.velocity.y = -400;
+          enemy.body.velocity.x = dx > 0 ? 200 : -200;
+        }
+      }
+      return true;
+    });
+
+    // Visual: expanding shockwave circle
+    const circle = this.scene.add.circle(this.x, this.y + 20, 10, 0x886633, 0.5);
+    circle.setDepth(100);
+    this.scene.tweens.add({
+      targets: circle,
+      radius: this.GROUND_SLAM_RADIUS,
+      alpha: 0,
+      duration: 400,
+      onUpdate: () => {
+        circle.setRadius(circle.radius);
+      },
+      onComplete: () => circle.destroy(),
+    });
+
+    // Screen shake
+    this.scene.cameras.main.shake(300, 0.008);
+  }
+
+  private handleProjectile(): void {
+    if (!this.abilities.has('projectile_shot')) return;
+    if (this.projectileCooldown > 0) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.projectileKey)) return;
+
+    this.projectileCooldown = this.PROJECTILE_COOLDOWN;
+
+    const facingRight = !this.flipX;
+    const dirX = facingRight ? 1 : -1;
+    const startX = this.x + dirX * 20;
+    const startY = this.y;
+
+    // Create projectile sprite
+    const projectile = this.scene.add.rectangle(startX, startY, 16, 8, 0x44aaff, 0.9);
+    projectile.setDepth(50);
+    this.scene.physics.add.existing(projectile);
+    const projBody = projectile.body as Phaser.Physics.Arcade.Body;
+    projBody.setAllowGravity(false);
+    projBody.setVelocityX(this.PROJECTILE_SPEED * dirX);
+
+    const damage = Math.round(
+      COMBAT.BASE_DAMAGE * this.PROJECTILE_DAMAGE_MULT * this.classStats.attackDamage,
+    );
+
+    let pierceCount = 0;
+    const maxPierce = 1; // Pierce one enemy then continue, destroy after second hit
+    const hitSet = new Set<any>();
+    const originX = startX;
+
+    // Check for enemy collision each frame
+    const updateEvent = this.scene.time.addEvent({
+      delay: 16,
+      loop: true,
+      callback: () => {
+        if (!projectile.active) {
+          updateEvent.destroy();
+          return;
+        }
+
+        // Check distance traveled
+        const traveled = Math.abs(projectile.x - originX);
+        if (traveled >= this.PROJECTILE_RANGE) {
+          projectile.destroy();
+          updateEvent.destroy();
+          return;
+        }
+
+        // Check enemy collisions
+        const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+        if (!enemies) return;
+
+        enemies.children.each((enemy: any) => {
+          if (!enemy.active || hitSet.has(enemy)) return true;
+          const dx = enemy.x - projectile.x;
+          const dy = enemy.y - projectile.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist <= 30) {
+            enemy.takeDamage(damage);
+            hitSet.add(enemy);
+            pierceCount++;
+            if (pierceCount > maxPierce) {
+              projectile.destroy();
+              updateEvent.destroy();
+            }
+          }
+          return true;
+        });
+      },
+    });
+
+    // Safety: destroy after 1 second
+    this.scene.time.delayedCall(1000, () => {
+      if (projectile.active) {
+        projectile.destroy();
+      }
+      updateEvent.destroy();
+    });
+
+    // Add glow trail effect
+    const trail = this.scene.add.rectangle(startX, startY, 12, 6, 0xaaddff, 0.6);
+    trail.setDepth(49);
+    this.scene.tweens.add({
+      targets: trail,
+      x: startX + dirX * 40,
+      alpha: 0,
+      duration: 200,
+      onComplete: () => trail.destroy(),
+    });
+  }
+
+  private handleChargedAttack(delta: number): void {
+    if (!this.abilities.has('charged_attack')) return;
+
+    if (this.chargeKey.isDown) {
+      if (!this.isCharging) {
+        // Start charging
+        this.isCharging = true;
+        this.chargeTime = 0;
+      }
+
+      // Accumulate charge
+      this.chargeTime = Math.min(this.chargeTime + delta, this.MAX_CHARGE_TIME);
+
+      // Slow player to 30% speed while charging
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      body.velocity.x *= 0.3;
+
+      // Visual: progressive glow tint based on charge percentage
+      const chargePercent = this.chargeTime / this.MAX_CHARGE_TIME;
+      const r = Math.floor(255);
+      const g = Math.floor(255 * chargePercent);
+      const b = Math.floor(100 * chargePercent);
+      this.setTint(Phaser.Display.Color.GetColor(r, g, b));
+
+      // Create/update glow circle around player
+      if (this.chargeGlow) {
+        this.chargeGlow.destroy();
+      }
+      this.chargeGlow = this.scene.add.graphics();
+      this.chargeGlow.setDepth(90);
+      const glowRadius = 20 + chargePercent * 30;
+      const glowAlpha = 0.1 + chargePercent * 0.3;
+      this.chargeGlow.fillStyle(0xffaa00, glowAlpha);
+      this.chargeGlow.fillCircle(this.x, this.y, glowRadius);
+    } else if (this.isCharging) {
+      // Release: execute charged attack
+      const chargePercent = this.chargeTime / this.MAX_CHARGE_TIME;
+      const multiplier = 1.0 + chargePercent * 2.0; // 1x to 3x damage
+
+      const facingRight = !this.flipX;
+      const hitboxOffsetX = facingRight ? 50 : -50;
+      const hitboxWidth = 100;
+      const hitboxHeight = 80;
+      const isFullyCharged = this.chargeTime >= this.MAX_CHARGE_TIME * 0.93; // ~2.8s
+
+      // If fully charged, use larger hitbox
+      const effectiveWidth = isFullyCharged ? hitboxWidth * 1.5 : hitboxWidth;
+      const effectiveHeight = isFullyCharged ? hitboxHeight * 1.5 : hitboxHeight;
+
+      const damage = Math.round(
+        COMBAT.BASE_DAMAGE * multiplier * this.classStats.attackDamage,
+      );
+
+      // Hit all enemies in the hitbox area
+      const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+      if (enemies) {
+        const hitX = this.x + hitboxOffsetX;
+        const hitY = this.y;
+
+        enemies.children.each((enemy: any) => {
+          if (!enemy.active) return true;
+          const dx = Math.abs(enemy.x - hitX);
+          const dy = Math.abs(enemy.y - hitY);
+          if (dx <= effectiveWidth / 2 && dy <= effectiveHeight / 2) {
+            enemy.takeDamage(damage);
+            // Knockback
+            if (enemy.body) {
+              enemy.body.velocity.x = facingRight ? 400 : -400;
+              enemy.body.velocity.y = -200;
+            }
+          }
+          return true;
+        });
+      }
+
+      // Visual: attack slash effect
+      const slashColor = isFullyCharged ? 0xff4400 : 0xffaa00;
+      const slash = this.scene.add.rectangle(
+        this.x + hitboxOffsetX,
+        this.y,
+        effectiveWidth,
+        effectiveHeight,
+        slashColor,
+        0.5,
+      );
+      slash.setDepth(100);
+      this.scene.tweens.add({
+        targets: slash,
+        alpha: 0,
+        scaleX: 1.5,
+        scaleY: 1.5,
+        duration: 300,
+        onComplete: () => slash.destroy(),
+      });
+
+      // Full charge: screen shake + explosion
+      if (isFullyCharged) {
+        this.scene.cameras.main.shake(400, 0.012);
+        this.scene.cameras.main.flash(200, 255, 100, 0);
+      }
+
+      // Reset charging state
+      this.isCharging = false;
+      this.chargeTime = 0;
+      if (this.chargeGlow) {
+        this.chargeGlow.destroy();
+        this.chargeGlow = null;
+      }
+      this.clearTint();
+    }
+
+    // Update glow position if it exists
+    if (this.chargeGlow && this.isCharging) {
+      this.chargeGlow.clear();
+      const chargePercent = this.chargeTime / this.MAX_CHARGE_TIME;
+      const glowRadius = 20 + chargePercent * 30;
+      const glowAlpha = 0.1 + chargePercent * 0.3;
+      this.chargeGlow.fillStyle(0xffaa00, glowAlpha);
+      this.chargeGlow.fillCircle(this.x, this.y, glowRadius);
+    }
   }
 
   // ─── Class-Specific Mechanics ────────────────────────────────────────
