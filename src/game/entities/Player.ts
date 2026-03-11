@@ -142,6 +142,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private pendingItem: ItemData | null = null;
   private readonly MAX_SILVER_ITEMS = 3;
 
+  // Armor (Defense Items)
+  private armorHits: number = 0;
+  private armorItems: Map<string, number> = new Map(); // itemId -> remaining hits
+
   // === Gold Ability State ===
   private healthRegenTimer: number = 0;
   private outOfCombatTimer: number = 0;
@@ -1227,6 +1231,35 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.restoreDefaultTint();
     }
 
+    // Armor absorb: check armor AFTER dodge/parry/invincibility/counter but BEFORE damage
+    if (this.armorHits > 0) {
+      // Find which armor item to decrement
+      for (const [itemId, hits] of this.armorItems.entries()) {
+        if (hits > 0) {
+          const newHits = hits - 1;
+          this.armorItems.set(itemId, newHits);
+          this.armorHits--;
+          if (newHits <= 0) {
+            // Armor broken! Remove the item from inventory
+            this.removeArmorItem(itemId);
+          }
+          break;
+        }
+      }
+      // Visual feedback: blue flash for armor absorb
+      if (!GameSettings.get().flashReduction) {
+        this.setTint(0x4488ff);
+        this.scene.time.delayedCall(200, () => {
+          if (this.active) this.restoreDefaultTint();
+        });
+      }
+      // Brief screen shake
+      this.scene.cameras.main.shake(50, 0.003);
+      // Update HUD
+      EventBus.emit('health-change', { health: this.health, maxHealth: this.maxHealth });
+      return false; // Damage absorbed
+    }
+
     // Reset out-of-combat timer (Health Regen ability)
     this.outOfCombatTimer = 0;
     this.healthRegenTimer = 0;
@@ -2157,6 +2190,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.abilities.add(item.abilityId);
     }
 
+    // Armor items: track hits for absorption
+    if (item.armorHits) {
+      this.armorItems.set(item.id, item.armorHits);
+      this.recalculateArmor();
+    }
+
     // Recalculate all item stats (handles quality + synergy for all items)
     this.recalculateItemStats();
 
@@ -2181,10 +2220,34 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     EventBus.emit("synergy-change", { synergies: calculateSynergies(this.inventory) });
   }
 
+  private removeArmorItem(itemId: string): void {
+    this.armorItems.delete(itemId);
+    // Remove from inventory array
+    const idx = this.inventory.findIndex(item => item.id === itemId);
+    if (idx !== -1) {
+      this.inventory.splice(idx, 1);
+      EventBus.emit('inventory-change', { inventory: [...this.inventory] });
+      EventBus.emit('synergy-change', { synergies: calculateSynergies(this.inventory) });
+    }
+    this.recalculateArmor();
+  }
+
+  private recalculateArmor(): void {
+    this.armorHits = 0;
+    for (const hits of this.armorItems.values()) {
+      this.armorHits += hits;
+    }
+  }
+
   public replaceItem(index: number, newItem: ItemData) {
     const oldItem = this.inventory[index];
     if (oldItem && oldItem.abilityId) {
       this.abilities.delete(oldItem.abilityId);
+    }
+    // Clean up armor tracking if old item was an armor item
+    if (oldItem && oldItem.armorHits) {
+      this.armorItems.delete(oldItem.id);
+      this.recalculateArmor();
     }
     // Remove old item from inventory
     this.inventory.splice(index, 1);
@@ -2214,6 +2277,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       const synergyMult = getSynergyMultiplier(item, this.inventory);
 
       for (const effect of item.effects) {
+        // Armor is handled separately via armorItems tracking
+        if (effect.targetStat === 'armor') continue;
         const scaledValue = effect.value * qualityMult * synergyMult;
         if (effect.targetStat === 'health') {
           bonusHealth += Math.round(scaledValue);

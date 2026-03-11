@@ -1,6 +1,6 @@
 export type ItemType = 'SILVER' | 'GOLD';
 export type ItemRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'LEGENDARY';
-export type StatType = 'health' | 'moveSpeed' | 'jumpHeight' | 'attackDamage' | 'attackSpeed';
+export type StatType = 'health' | 'moveSpeed' | 'jumpHeight' | 'attackDamage' | 'attackSpeed' | 'armor';
 export type EffectOperation = 'ADD' | 'MULTIPLY';
 export type ItemQuality = 'DAMAGED' | 'NORMAL' | 'PRISTINE';
 
@@ -38,4 +38,5 @@ export interface ItemData {
     abilityId?: string;     // Gold items unlock abilities
     iconColor: number;      // Placeholder for icon
     quality?: ItemQuality;  // Quality tier for silver items (defaults to NORMAL)
+    armorHits?: number;     // For defense items: number of hits absorbed before breaking
 }

@@ -1,51 +1,185 @@
 import type { ItemData } from './ItemConfig';
 
 export const ITEMS: Record<string, ItemData> = {
-    // SILVER ITEMS (Stat Boosts)
+    // ==========================================
+    // SILVER ITEMS (Stat Boosts) — Organized by Category & Tier
+    // ==========================================
+
+    // --- ATTACK BOOST (3 tiers) ---
     'iron_weight': {
         id: 'iron_weight',
         name: 'Iron Weight',
-        description: 'Increases Attack Damage by 20%',
+        description: 'Increases Attack Damage by 10%',
         type: 'SILVER',
         rarity: 'COMMON',
-        effects: [{ targetStat: 'attackDamage', value: 0.12, operation: 'ADD' }], // Additive multiplier (e.g. +12% base)
+        effects: [{ targetStat: 'attackDamage', value: 0.10, operation: 'ADD' }],
         iconColor: 0xaaaaaa
     },
+    'battle_gauntlet': {
+        id: 'battle_gauntlet',
+        name: 'Battle Gauntlet',
+        description: 'Increases Attack Damage by 25%',
+        type: 'SILVER',
+        rarity: 'UNCOMMON',
+        effects: [{ targetStat: 'attackDamage', value: 0.25, operation: 'ADD' }],
+        iconColor: 0xcc6600
+    },
+    'berserker_mark': {
+        id: 'berserker_mark',
+        name: "Berserker's Mark",
+        description: 'Increases Attack Damage by 50%',
+        type: 'SILVER',
+        rarity: 'RARE',
+        effects: [{ targetStat: 'attackDamage', value: 0.50, operation: 'ADD' }],
+        iconColor: 0xff2200
+    },
+
+    // --- DEFENSE ARMOR (3 tiers) — NEW MECHANIC ---
+    'wooden_shield': {
+        id: 'wooden_shield',
+        name: 'Wooden Shield',
+        description: 'Absorbs 1 hit before breaking',
+        type: 'SILVER',
+        rarity: 'COMMON',
+        effects: [{ targetStat: 'armor', value: 1, operation: 'ADD' }],
+        armorHits: 1,
+        iconColor: 0x885522
+    },
+    'iron_shield': {
+        id: 'iron_shield',
+        name: 'Iron Shield',
+        description: 'Absorbs 2 hits before breaking',
+        type: 'SILVER',
+        rarity: 'UNCOMMON',
+        effects: [{ targetStat: 'armor', value: 2, operation: 'ADD' }],
+        armorHits: 2,
+        iconColor: 0x888888
+    },
+    'diamond_shield': {
+        id: 'diamond_shield',
+        name: 'Diamond Shield',
+        description: 'Absorbs 3 hits before breaking',
+        type: 'SILVER',
+        rarity: 'RARE',
+        effects: [{ targetStat: 'armor', value: 3, operation: 'ADD' }],
+        armorHits: 3,
+        iconColor: 0x44ddff
+    },
+
+    // --- MOVEMENT SPEED (3 tiers) ---
     'winged_boots': {
         id: 'winged_boots',
         name: 'Winged Boots',
-        description: 'Increases Move Speed by 15%',
+        description: 'Increases Move Speed and Attack Speed by 15%',
+        type: 'SILVER',
+        rarity: 'COMMON',
+        effects: [
+            { targetStat: 'moveSpeed', value: 0.15, operation: 'ADD' },
+            { targetStat: 'attackSpeed', value: -0.15, operation: 'ADD' }
+        ],
+        iconColor: 0x00ffff
+    },
+    'mercury_sandals': {
+        id: 'mercury_sandals',
+        name: 'Mercury Sandals',
+        description: 'Increases Move Speed and Attack Speed by 30%',
         type: 'SILVER',
         rarity: 'UNCOMMON',
-        effects: [{ targetStat: 'moveSpeed', value: 0.15, operation: 'ADD' }],
-        iconColor: 0x00ffff
+        effects: [
+            { targetStat: 'moveSpeed', value: 0.30, operation: 'ADD' },
+            { targetStat: 'attackSpeed', value: -0.30, operation: 'ADD' }
+        ],
+        iconColor: 0x00ddff
+    },
+    'tempest_boots': {
+        id: 'tempest_boots',
+        name: 'Tempest Boots',
+        description: 'Increases Move Speed and Attack Speed by 50%',
+        type: 'SILVER',
+        rarity: 'RARE',
+        effects: [
+            { targetStat: 'moveSpeed', value: 0.50, operation: 'ADD' },
+            { targetStat: 'attackSpeed', value: -0.50, operation: 'ADD' }
+        ],
+        iconColor: 0x0088ff
+    },
+
+    // --- HEALTH UPGRADE (3 tiers) ---
+    'heart_shard': {
+        id: 'heart_shard',
+        name: 'Heart Shard',
+        description: 'Increases Max Health by 1',
+        type: 'SILVER',
+        rarity: 'COMMON',
+        effects: [{ targetStat: 'health', value: 1, operation: 'ADD' }],
+        iconColor: 0xff4444
     },
     'heart_container': {
         id: 'heart_container',
         name: 'Heart Container',
-        description: 'Increases Max Health by 1',
-        type: 'SILVER',
-        rarity: 'RARE',
-        effects: [{ targetStat: 'health', value: 3, operation: 'ADD' }], // Flat addition
-        iconColor: 0xff0000
-    },
-    'swift_blade': {
-        id: 'swift_blade',
-        name: 'Swift Blade',
-        description: 'Increases Attack Speed by 15%',
+        description: 'Increases Max Health by 2',
         type: 'SILVER',
         rarity: 'UNCOMMON',
-        effects: [{ targetStat: 'attackSpeed', value: -0.15, operation: 'ADD' }], // Lower is faster
-        iconColor: 0x0000ff
+        effects: [{ targetStat: 'health', value: 2, operation: 'ADD' }],
+        iconColor: 0xff0000
+    },
+    'heart_crystal': {
+        id: 'heart_crystal',
+        name: 'Heart Crystal',
+        description: 'Increases Max Health by 3',
+        type: 'SILVER',
+        rarity: 'RARE',
+        effects: [{ targetStat: 'health', value: 3, operation: 'ADD' }],
+        iconColor: 0xff0000
+    },
+
+    // --- JUMP HEIGHT (3 tiers) ---
+    'feather_anklet': {
+        id: 'feather_anklet',
+        name: 'Feather Anklet',
+        description: 'Increases Jump Height by 10%',
+        type: 'SILVER',
+        rarity: 'COMMON',
+        effects: [{ targetStat: 'jumpHeight', value: 0.10, operation: 'ADD' }],
+        iconColor: 0xcccc00
     },
     'moon_stone': {
         id: 'moon_stone',
         name: 'Moon Stone',
         description: 'Increases Jump Height by 15%',
         type: 'SILVER',
-        rarity: 'RARE',
+        rarity: 'UNCOMMON',
         effects: [{ targetStat: 'jumpHeight', value: 0.15, operation: 'ADD' }],
         iconColor: 0xaaaa00
+    },
+    'sky_crystal': {
+        id: 'sky_crystal',
+        name: 'Sky Crystal',
+        description: 'Increases Jump Height by 25%',
+        type: 'SILVER',
+        rarity: 'RARE',
+        effects: [{ targetStat: 'jumpHeight', value: 0.25, operation: 'ADD' }],
+        iconColor: 0xffff00
+    },
+
+    // --- ATTACK SPEED (2 tiers) ---
+    'swift_blade': {
+        id: 'swift_blade',
+        name: 'Swift Blade',
+        description: 'Increases Attack Speed by 15%',
+        type: 'SILVER',
+        rarity: 'COMMON',
+        effects: [{ targetStat: 'attackSpeed', value: -0.15, operation: 'ADD' }], // Lower is faster
+        iconColor: 0x0000ff
+    },
+    'chronos_edge': {
+        id: 'chronos_edge',
+        name: "Chrono's Edge",
+        description: 'Increases Attack Speed by 30%',
+        type: 'SILVER',
+        rarity: 'RARE',
+        effects: [{ targetStat: 'attackSpeed', value: -0.30, operation: 'ADD' }],
+        iconColor: 0x2244ff
     },
 
     // GOLD ITEMS (Abilities)
