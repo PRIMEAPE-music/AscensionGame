@@ -33,6 +33,9 @@ export interface GameEvents {
   "shop-open": { offerings: ShopOffering[] };
   "shop-close": {};
   "shop-purchase": { offeringId: string; cost: number };
+  "gambling-open": { essence: number };
+  "gambling-close": {};
+  "gambling-result": { bet: number; reward: string; rewardType: "nothing" | "item" | "health" | "gold_item" };
 }
 
 export const EventBus = {

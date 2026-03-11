@@ -8,6 +8,7 @@ export enum PlatformType {
   SLOPE_LEFT = "slope_left",
   SLOPE_RIGHT = "slope_right",
   SHOP = "shop",
+  GAMBLING = "gambling",
 }
 
 export interface PlatformDef {
@@ -64,6 +65,10 @@ export const PLATFORM_DEFS: Record<PlatformType, PlatformDef> = {
   [PlatformType.SHOP]: {
     type: PlatformType.SHOP,
     color: 0xffcc00, // Golden
+  },
+  [PlatformType.GAMBLING]: {
+    type: PlatformType.GAMBLING,
+    color: 0x9933ff, // Purple/mystical
   },
 };
 
