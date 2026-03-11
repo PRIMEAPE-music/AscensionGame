@@ -45,6 +45,7 @@ export interface GameEvents {
   "gambling-result": { bet: number; reward: string; rewardType: "nothing" | "item" | "health" | "gold_item" };
   "item-replace-prompt": { newItem: ItemData; currentItems: ItemData[] };
   "item-replace-decision": { action: "take" | "leave"; replaceIndex?: number };
+  "parry-success": { reflectedDamage: number };
 }
 
 export const EventBus = {
