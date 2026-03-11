@@ -47,6 +47,11 @@ export interface GameEvents {
   "item-replace-decision": { action: "take" | "leave"; replaceIndex?: number };
   "parry-success": { reflectedDamage: number };
   "speed-change": { speed: number; maxSpeed: number };
+  "player-jump": {};
+  "player-attack": {};
+  "player-dodge": { perfect: boolean };
+  "player-land": {};
+  "item-pickup": {};
 }
 
 export const EventBus = {

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { GameSettings } from "../systems/GameSettings";
 import type { GameSettingsData } from "../systems/GameSettings";
+import { AudioManager } from "../systems/AudioManager";
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -48,10 +49,29 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   const [settings, setSettings] = useState<GameSettingsData>(GameSettings.get());
   const [backHover, setBackHover] = useState(false);
   const [hoveredToggle, setHoveredToggle] = useState<string | null>(null);
+  const [audioSettings, setAudioSettings] = useState(() => {
+    AudioManager.init();
+    return { ...AudioManager.settings };
+  });
 
   useEffect(() => {
     GameSettings.load();
     setSettings(GameSettings.get());
+    AudioManager.init();
+    setAudioSettings({ ...AudioManager.settings });
+  }, []);
+
+  const handleVolumeChange = useCallback((category: 'master' | 'music' | 'sfx' | 'ui', value: number) => {
+    AudioManager.init();
+    AudioManager.resume();
+    AudioManager.setVolume(category, value);
+    setAudioSettings({ ...AudioManager.settings });
+    // Play a test sound so the user can hear the current volume
+    if (category === 'ui') {
+      AudioManager.playMenuClick();
+    } else if (category === 'sfx') {
+      AudioManager.playMenuClick();
+    }
   }, []);
 
   const updateSetting = (partial: Partial<GameSettingsData>) => {
@@ -283,6 +303,75 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     );
   };
 
+  const renderVolumeSlider = (
+    label: string,
+    id: string,
+    category: 'master' | 'music' | 'sfx' | 'ui',
+    value: number,
+  ) => {
+    const isHovered = hoveredToggle === id;
+    const pct = Math.round(value * 100);
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 20px",
+          background: isHovered
+            ? "rgba(255, 255, 255, 0.06)"
+            : "rgba(255, 255, 255, 0.03)",
+          borderRadius: "8px",
+          border: `1px solid ${isHovered ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.06)"}`,
+          transition: "all 0.2s ease",
+        }}
+        onMouseEnter={() => setHoveredToggle(id)}
+        onMouseLeave={() => setHoveredToggle(null)}
+      >
+        <span
+          style={{
+            fontSize: "15px",
+            color: "rgba(200, 200, 220, 0.85)",
+            letterSpacing: "1px",
+            minWidth: "120px",
+          }}
+        >
+          {label}
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, justifyContent: "flex-end" }}>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={pct}
+            onChange={(e) => handleVolumeChange(category, parseInt(e.target.value) / 100)}
+            style={{
+              width: "180px",
+              height: "6px",
+              cursor: "pointer",
+              accentColor: "#e0d0a0",
+              background: "rgba(255, 255, 255, 0.08)",
+              borderRadius: "3px",
+              outline: "none",
+            }}
+          />
+          <span
+            style={{
+              fontSize: "13px",
+              fontWeight: "bold",
+              color: "#e0d0a0",
+              minWidth: "40px",
+              textAlign: "right",
+              letterSpacing: "1px",
+            }}
+          >
+            {pct}%
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   const renderDamageNumberSizeSelector = () => {
     const isHovered = hoveredToggle === "dmg-size-row";
     return (
@@ -429,6 +518,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
           gap: "36px",
         }}
       >
+        {/* Audio Settings */}
+        <div>
+          <div style={sectionTitleStyle}>Audio</div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+            }}
+          >
+            {renderVolumeSlider("Master Volume", "vol-master", "master", audioSettings.masterVolume)}
+            {renderVolumeSlider("Music Volume", "vol-music", "music", audioSettings.musicVolume)}
+            {renderVolumeSlider("SFX Volume", "vol-sfx", "sfx", audioSettings.sfxVolume)}
+            {renderVolumeSlider("UI Sounds", "vol-ui", "ui", audioSettings.uiVolume)}
+          </div>
+        </div>
+
         {/* Display Settings */}
         <div>
           <div style={sectionTitleStyle}>Display</div>
