@@ -12,6 +12,7 @@ import { PlatformEffectsManager } from "../systems/PlatformEffectsManager";
 import { ParticleManager } from "../systems/ParticleManager";
 import { AtmosphereManager } from "../systems/AtmosphereManager";
 import { BossArenaManager } from "../systems/BossArenaManager";
+import { HazardManager } from "../systems/HazardManager";
 import { EventBus } from "../systems/EventBus";
 import { ClassType } from "../config/ClassConfig";
 import { WORLD } from "../config/GameConfig";
@@ -45,6 +46,7 @@ export class MainScene extends Phaser.Scene {
   private particleManager!: ParticleManager;
   private atmosphereManager!: AtmosphereManager;
   private bossArenaManager!: BossArenaManager;
+  private hazardManager!: HazardManager;
   private bossWarningEmitted: boolean = false;
   private leftWall!: Phaser.GameObjects.Rectangle;
   private rightWall!: Phaser.GameObjects.Rectangle;
@@ -141,7 +143,7 @@ export class MainScene extends Phaser.Scene {
 
     this.levelGenerator.init();
 
-    // Player
+    // Player (created early so HazardManager can reference it)
     const selectedClass: ClassType =
       (window as any).__selectedClass || ClassType.MONK;
     this.player = new Player(
@@ -151,6 +153,9 @@ export class MainScene extends Phaser.Scene {
       selectedClass,
     );
     this.highestY = WORLD.PLAYER_SPAWN.y;
+
+    // Hazard manager (needs player and staticPlatforms)
+    this.hazardManager = new HazardManager(this, this.player, this.staticPlatforms);
 
     // Particle effects (needs player for state tracking)
     this.particleManager = new ParticleManager(this);
@@ -205,6 +210,15 @@ export class MainScene extends Phaser.Scene {
       this.player,
       this.items,
       (p, i) => this.combatManager.handleItemCollision(p, i),
+      undefined,
+      this,
+    );
+
+    // Stalactite-player overlap (hazard system)
+    this.physics.add.overlap(
+      this.player,
+      this.hazardManager.getStalactites(),
+      (_p, s) => this.hazardManager.handleStalactitePlayerOverlap(_p, s),
       undefined,
       this,
     );
@@ -374,6 +388,9 @@ export class MainScene extends Phaser.Scene {
     // Boss arena system
     this.bossArenaManager.update(altitude, this.player.y);
 
+    // Hazard system (stalactites, wind, portal effects)
+    this.hazardManager.update(time, delta, altitude, this.cameras.main.scrollY);
+
     // Style tracking
     const vx = this.player.body!.velocity.x;
     const vy = this.player.body!.velocity.y;
@@ -425,6 +442,7 @@ export class MainScene extends Phaser.Scene {
     this.atmosphereManager?.destroy?.();
     this.particleManager?.destroy();
     this.platformEffectsManager?.destroy?.();
+    this.hazardManager?.destroy?.();
   }
 
   private oneWayPlatformCheck(_player: any, platform: any): boolean {
@@ -513,6 +531,63 @@ export class MainScene extends Phaser.Scene {
           },
         });
       }
+    }
+
+    // Portal platform — teleport player upward on landing
+    if (
+      platform.getData("type") === PlatformType.PORTAL &&
+      _player.body?.touching?.down &&
+      !platform.getData("portalUsed")
+    ) {
+      platform.setData("portalUsed", true);
+
+      const currentAltitude = Math.max(
+        0,
+        (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
+      );
+      // Teleport 50-100m upward (in altitude units)
+      const teleportAltitude = Phaser.Math.Between(50, 100);
+      const teleportPixels = teleportAltitude * WORLD.ALTITUDE_SCALE;
+
+      const toAltitude = currentAltitude + teleportAltitude;
+
+      // Teleport player upward
+      this.player.setPosition(this.player.x, this.player.y - teleportPixels);
+      this.player.setVelocity(0, 0);
+
+      // Update highest Y tracker so death plane doesn't punish the teleport
+      if (this.player.y < this.highestY) {
+        this.highestY = this.player.y;
+      }
+
+      // Camera shake wobble effect (2 seconds)
+      this.cameras.main.shake(2000, 0.001);
+
+      // Purple flash effect
+      const flash = this.add.rectangle(
+        this.player.x,
+        this.player.y,
+        WORLD.WIDTH * 2,
+        this.cameras.main.height * 2,
+        0x9933ff,
+        0.4,
+      );
+      flash.setScrollFactor(0);
+      flash.setDepth(200);
+      this.tweens.add({
+        targets: flash,
+        alpha: 0,
+        duration: 500,
+        onComplete: () => flash.destroy(),
+      });
+
+      // Dim portal platform to show it's used
+      platform.setAlpha(0.4);
+
+      EventBus.emit("portal-teleport", {
+        fromAltitude: currentAltitude,
+        toAltitude,
+      });
     }
   }
 }

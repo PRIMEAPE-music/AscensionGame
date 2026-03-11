@@ -35,6 +35,8 @@ export interface GameEvents {
   "shop-purchase": { offeringId: string; cost: number };
   "combo-update": { count: number; multiplier: number; timer: number };
   "combo-end": { finalCount: number };
+  "hazard-warning": { type: string; x: number; y: number };
+  "portal-teleport": { fromAltitude: number; toAltitude: number };
 }
 
 export const EventBus = {

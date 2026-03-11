@@ -37,6 +37,10 @@ export class LevelGenerator {
   private lastShopAltitude: number = 0;
   private nextShopDist: number = 0;
 
+  // Portal platform spawning
+  private lastPortalAltitude: number = 0;
+  private nextPortalDist: number = 0;
+
   // Tower-climb state: alternates between side climbing and bridging
   private currentSide: "left" | "right" = "left";
   private phase: "side" | "bridge" = "side";
@@ -73,9 +77,15 @@ export class LevelGenerator {
     return Phaser.Math.Between(300, 500);
   }
 
+  private nextPortalInterval(): number {
+    return Phaser.Math.Between(800, 1200);
+  }
+
   init() {
     this.lastShopAltitude = 0;
     this.nextShopDist = this.nextShopInterval();
+    this.lastPortalAltitude = 0;
+    this.nextPortalDist = this.nextPortalInterval();
 
     // Wide starting platform
     this.createPlatform(960, WORLD.BASE_PLATFORM_Y, 10, PlatformType.STANDARD);
@@ -388,6 +398,31 @@ export class LevelGenerator {
       this.lastPlatformX = shopX;
       this.lastShopAltitude = altitude;
       this.nextShopDist = this.nextShopInterval();
+    }
+
+    // Portal platform check — spawn a purple portal platform at regular intervals (6000m+)
+    if (
+      !isInBossArena &&
+      altitude >= 6000 &&
+      altitude - this.lastPortalAltitude >= this.nextPortalDist
+    ) {
+      const portalY =
+        this.lastPlatformY - Phaser.Math.Between(params.minGap, params.maxGap);
+      const portalX = Phaser.Math.Clamp(
+        this.lastPlatformX + Phaser.Math.Between(-200, 200),
+        300,
+        WORLD.WIDTH - 300,
+      );
+      const portalScale = Phaser.Math.FloatBetween(2.0, 2.5);
+      this.lastPlatformY = this.createPlatform(
+        portalX,
+        portalY,
+        portalScale,
+        PlatformType.PORTAL,
+      );
+      this.lastPlatformX = portalX;
+      this.lastPortalAltitude = altitude;
+      this.nextPortalDist = this.nextPortalInterval();
     }
   }
 
