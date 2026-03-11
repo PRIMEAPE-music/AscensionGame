@@ -59,6 +59,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private canDoubleJump: boolean = false;
   private hasDoubleJumped: boolean = false;
 
+  // Drop-Through State
+  private isDropping: boolean = false;
+  private dropTimer: number = 0;
+  private readonly DROP_DURATION = 500; // 0.5s
+
   // Animation State
   private currentAnim: string = "";
   private wasAirborne: boolean = false;
@@ -90,6 +95,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   get isDodgeActive(): boolean {
     return this.dodgeTimer > 0;
+  }
+
+  get isDroppingSelf(): boolean {
+    return this.isDropping;
   }
 
   private get onGround(): boolean {
@@ -161,6 +170,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.updateTimers(delta);
     this.handleMovement();
+    this.handleDropThrough();
     this.handleJumping(delta);
     this.handleWallInteraction();
     this.handleCombat(delta);
@@ -186,6 +196,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.comboTimer -= delta;
       if (this.comboTimer <= 0) {
         this.currentAttackId = null;
+      }
+    }
+
+    // Drop-through timer
+    if (this.dropTimer > 0) {
+      this.dropTimer -= delta;
+      if (this.dropTimer <= 0) {
+        this.dropTimer = 0;
+        this.isDropping = false;
       }
     }
   }
@@ -310,6 +329,23 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       } else if (this.body!.velocity.x < -ICE_SPEED_CAP) {
         this.setVelocityX(-ICE_SPEED_CAP);
       }
+    }
+  }
+
+  private handleDropThrough() {
+    // Drop through platforms: Down + Space while on ground
+    if (
+      this.cursors.down.isDown &&
+      this.jumpJustPressed &&
+      (this.onGround || this.onSlope) &&
+      !this.isDropping
+    ) {
+      this.isDropping = true;
+      this.dropTimer = this.DROP_DURATION;
+      this.setVelocityY(100); // Tiny downward push to start falling
+
+      // Consume the jump input so it doesn't trigger a normal jump
+      this.jumpBufferTimer = 0;
     }
   }
 
