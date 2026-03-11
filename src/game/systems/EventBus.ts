@@ -33,6 +33,8 @@ export interface GameEvents {
   "shop-open": { offerings: ShopOffering[] };
   "shop-close": {};
   "shop-purchase": { offeringId: string; cost: number };
+  "hazard-warning": { type: string; x: number; y: number };
+  "portal-teleport": { fromAltitude: number; toAltitude: number };
 }
 
 export const EventBus = {
