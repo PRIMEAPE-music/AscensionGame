@@ -16,7 +16,8 @@ export interface ModifierEffect {
     | "enemy_elite"
     | "one_hit"
     | "essence_mult"
-    | "item_quality";
+    | "item_quality"
+    | "rising_darkness";
   value: number | string | boolean;
 }
 
@@ -70,6 +71,15 @@ export const RUN_MODIFIERS: RunModifier[] = [
     effects: [{ type: "enemy_elite", value: true }],
     reward: "Guaranteed gold item every boss",
   },
+  {
+    id: "rising_darkness",
+    name: "Rising Darkness",
+    description:
+      "Darkness rises from below. Stay above it or take damage.",
+    icon: "\u{1F311}",
+    effects: [{ type: "rising_darkness", value: true }],
+    reward: "1.5x essence gain",
+  },
 ];
 
 // Active modifiers for current run (stored globally)
@@ -105,6 +115,7 @@ export const ActiveModifiers = {
     let mult = 1;
     if (this.isActive("glass_cannon")) mult *= 2;
     if (this.isActive("one_shot")) mult *= 3;
+    if (this.isActive("rising_darkness")) mult *= 1.5;
     return mult;
   },
 };

@@ -11,6 +11,7 @@ import {
   selectWeightedEnemy,
   type EnemyTier,
 } from "../config/EnemyConfig";
+import { EventBus } from "./EventBus";
 
 export class SpawnManager {
   private scene: Phaser.Scene;
@@ -90,7 +91,7 @@ export class SpawnManager {
     };
   }
 
-  private selectEnemyType(altitude: number): string {
+  private selectEnemyType(altitude: number): { type: string; isElite: boolean } {
     const comp = this.getComposition(altitude);
     const roll = Math.random();
 
@@ -106,6 +107,8 @@ export class SpawnManager {
       tier = "elite";
     }
 
+    const isElite = tier === "elite";
+
     // Get eligible enemies for this tier and altitude
     const eligible = getEnemiesForAltitude(tier, altitude);
 
@@ -113,11 +116,11 @@ export class SpawnManager {
     if (eligible.length === 0) {
       const fallback = getEnemiesForAltitude("basic", altitude);
       const picked = selectWeightedEnemy(fallback);
-      return picked?.id ?? "crawler";
+      return { type: picked?.id ?? "crawler", isElite };
     }
 
     const picked = selectWeightedEnemy(eligible);
-    return picked?.id ?? "crawler";
+    return { type: picked?.id ?? "crawler", isElite };
   }
 
   private spawnEnemyNearPlayer(altitude: number): void {
@@ -161,8 +164,67 @@ export class SpawnManager {
       spawnY = camY + Phaser.Math.Between(100, 400);
     }
 
-    const type = this.selectEnemyType(altitude);
-    this.spawnEnemy(spawnX, spawnY, type);
+    const { type, isElite } = this.selectEnemyType(altitude);
+    if (isElite) {
+      this.spawnEliteWithWarning(type, spawnX, spawnY);
+    } else {
+      this.spawnEnemy(spawnX, spawnY, type);
+    }
+  }
+
+  private spawnEliteWithWarning(enemyType: string, x: number, y: number): void {
+    // Emit hazard-warning event for UI systems
+    EventBus.emit('hazard-warning', { type: 'elite', x, y });
+
+    // Create warning "!" indicator at the spawn location
+    const warning = this.scene.add.text(x, y - 30, '!', {
+      fontSize: '32px',
+      color: '#ff4444',
+      fontFamily: 'monospace',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    warning.setDepth(100);
+
+    // Silver/red pulsing circle behind the "!"
+    const circle = this.scene.add.graphics();
+    circle.setDepth(99);
+    const drawCircle = (scale: number, alpha: number) => {
+      circle.clear();
+      circle.lineStyle(2, 0xccccff, alpha);
+      circle.strokeCircle(x, y - 30, 24 * scale);
+      circle.lineStyle(1, 0xff4444, alpha * 0.6);
+      circle.strokeCircle(x, y - 30, 28 * scale);
+    };
+    drawCircle(1, 0.8);
+
+    // Pulsing tween on the warning text
+    this.scene.tweens.add({
+      targets: warning,
+      scaleX: 1.3,
+      scaleY: 1.3,
+      duration: 200,
+      yoyo: true,
+      repeat: 4,
+    });
+
+    // Pulsing circle animation via tween on a dummy object
+    const pulseObj = { scale: 1, alpha: 0.8 };
+    this.scene.tweens.add({
+      targets: pulseObj,
+      scale: 1.3,
+      alpha: 0.4,
+      duration: 200,
+      yoyo: true,
+      repeat: 4,
+      onUpdate: () => drawCircle(pulseObj.scale, pulseObj.alpha),
+    });
+
+    // Spawn the actual elite enemy after a 1-second delay
+    this.scene.time.delayedCall(1000, () => {
+      warning.destroy();
+      circle.destroy();
+      this.spawnEnemy(x, y, enemyType, true);
+    });
   }
 
   spawnEnemy(x: number, y: number, type: string = "crawler", elite: boolean = false): Enemy {
