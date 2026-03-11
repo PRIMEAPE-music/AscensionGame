@@ -207,6 +207,37 @@ export class ParticleManager {
     this.bounceEmitter.explode(count, x, y);
   }
 
+  /**
+   * Burst of small particles at an attack impact point.
+   * Heavy attacks produce more particles with a warm orange colour.
+   */
+  emitHitImpact(x: number, y: number, isHeavy: boolean): void {
+    const count = isHeavy ? 12 : 6;
+    const speed = isHeavy ? 200 : 120;
+    const color = isHeavy ? 0xffaa00 : 0xffffff;
+
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;
+      const vel = speed * (0.5 + Math.random() * 0.5);
+
+      const particle = this.scene.add.rectangle(x, y, 4, 4, color);
+      particle.setAlpha(0.9);
+      particle.setDepth(3);
+
+      this.scene.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * vel * 0.3,
+        y: y + Math.sin(angle) * vel * 0.3,
+        alpha: 0,
+        scaleX: 0.2,
+        scaleY: 0.2,
+        duration: 300 + Math.random() * 200,
+        ease: 'Power2',
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Per-frame update
   // ---------------------------------------------------------------------------
