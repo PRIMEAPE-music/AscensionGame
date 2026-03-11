@@ -7,14 +7,20 @@ import { PauseMenu } from "./game/ui/PauseMenu";
 import { DeathScreen } from "./game/ui/DeathScreen";
 import { ShopUI } from "./game/ui/ShopUI";
 import { GamblingUI } from "./game/ui/GamblingUI";
+import { ItemReplaceUI } from "./game/ui/ItemReplaceUI";
 import { CLASSES } from "./game/config/ClassConfig";
 import type { ClassType } from "./game/config/ClassConfig";
 import type { ItemData } from "./game/config/ItemConfig";
+import { ActiveModifiers } from "./game/config/RunModifiers";
 import { EventBus } from "./game/systems/EventBus";
 import type { ShopOffering } from "./game/systems/EventBus";
+import { RunModifierSelect } from "./game/ui/RunModifierSelect";
+import { AchievementManager } from "./game/systems/AchievementManager";
+import { AchievementPopup } from "./game/ui/AchievementPopup";
+import { PersistentStats } from "./game/systems/PersistentStats";
 import "./App.css";
 
-type GameState = "CLASS_SELECT" | "PLAYING" | "DEATH";
+type GameState = "CLASS_SELECT" | "MODIFIERS" | "PLAYING" | "DEATH";
 
 interface DeathStats {
   altitude: number;
@@ -51,13 +57,41 @@ function App() {
   }>({ remaining: 0, total: 15000 });
   const [gamblingOpen, setGamblingOpen] = useState(false);
   const [gamblingEssence, setGamblingEssence] = useState(0);
+  const [achievementPopup, setAchievementPopup] = useState<{
+    name: string;
+    description: string;
+    icon: string;
+  } | null>(null);
+  const [achievementQueue, setAchievementQueue] = useState<
+    { name: string; description: string; icon: string }[]
+  >([]);
+  const maxComboRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
 
+  // Load achievement data on mount
+  useEffect(() => {
+    AchievementManager.load();
+  }, []);
+
+  // Process achievement popup queue — show next when current is dismissed
+  useEffect(() => {
+    if (achievementPopup === null && achievementQueue.length > 0) {
+      const [next, ...rest] = achievementQueue;
+      setAchievementPopup(next);
+      setAchievementQueue(rest);
+    }
+  }, [achievementPopup, achievementQueue]);
+
   const handleClassSelect = useCallback((classType: ClassType) => {
     setSelectedClass(classType);
     (window as any).__selectedClass = classType;
+    setGameState("MODIFIERS");
+  }, []);
+
+  const handleModifiersConfirm = useCallback((modifierIds: string[]) => {
+    ActiveModifiers.setModifiers(modifierIds);
     setGameState("PLAYING");
     startTimeRef.current = Date.now();
     elapsedTimeRef.current = 0;
@@ -109,6 +143,7 @@ function App() {
     setSacredGroundCooldown({ remaining: 0, total: 15000 });
     setGamblingOpen(false);
     setGamblingEssence(0);
+    ActiveModifiers.clear();
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("CLASS_SELECT");
@@ -137,6 +172,7 @@ function App() {
     setSacredGroundCooldown({ remaining: 0, total: 15000 });
     setGamblingOpen(false);
     setGamblingEssence(0);
+    ActiveModifiers.clear();
     setGameState("CLASS_SELECT");
     setSelectedClass(null);
   }, []);
@@ -161,6 +197,7 @@ function App() {
     setSacredGroundCooldown({ remaining: 0, total: 15000 });
     setGamblingOpen(false);
     setGamblingEssence(0);
+    ActiveModifiers.clear();
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("PLAYING"); // Triggers game recreation with same class
@@ -449,6 +486,9 @@ function App() {
     >
       {gameState === "CLASS_SELECT" && (
         <ClassSelect onSelect={handleClassSelect} />
+      )}
+      {gameState === "MODIFIERS" && (
+        <RunModifierSelect onConfirm={handleModifiersConfirm} />
       )}
       {(gameState === "PLAYING" || gameState === "DEATH") && (
         <>
