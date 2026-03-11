@@ -17,6 +17,7 @@ import { SPRITE_CONFIG } from "../config/AnimationConfig";
 import { PersistentStats } from "../systems/PersistentStats";
 import { GameSettings } from "../systems/GameSettings";
 import { CosmeticManager } from "../systems/CosmeticManager";
+import { GamepadManager } from "../systems/GamepadManager";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
@@ -357,10 +358,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   update(time: number, delta: number) {
+    // Gamepad state is polled once per frame in MainScene.update() before this call
+    const gp = GamepadManager.state;
+
     // Cache JustDown once per frame — Phaser consumes it on first read
-    this.jumpJustPressed = Phaser.Input.Keyboard.JustDown(this.cursors.space!);
-    this.dodgeJustPressed = Phaser.Input.Keyboard.JustDown(this.dodgeKey);
-    this.grappleJustPressed = Phaser.Input.Keyboard.JustDown(this.grappleKey);
+    // OR with gamepad inputs so both keyboard and controller work simultaneously
+    this.jumpJustPressed = Phaser.Input.Keyboard.JustDown(this.cursors.space!) || gp.jumpJustPressed;
+    this.dodgeJustPressed = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed;
+    this.grappleJustPressed = Phaser.Input.Keyboard.JustDown(this.grappleKey) || gp.grappleJustPressed;
 
     this.updateTimers(delta);
     this.handleMovement();
@@ -536,6 +541,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     const { left, right } = this.cursors;
+    const gpState = GamepadManager.state;
+    const moveLeft = left.isDown || gpState.moveX < -0.2;
+    const moveRight = right.isDown || gpState.moveX > 0.2;
     const onGround = this.onGround || this.onSlope;
     const platType = this.currentPlatformType;
 
@@ -563,10 +571,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       accel *= PLATFORM_CONFIG.ICE_ACCEL_MULT;
     }
 
-    if (left.isDown) {
+    if (moveLeft) {
       this.setAccelerationX(-accel);
       this.setFlipX(true);
-    } else if (right.isDown) {
+    } else if (moveRight) {
       this.setAccelerationX(accel);
       this.setFlipX(false);
     } else {
@@ -593,8 +601,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   private handleDropThrough() {
     // Drop through platforms: Down + Space while on ground
+    const gpState = GamepadManager.state;
+    const downHeld = this.cursors.down.isDown || gpState.moveY > 0.5;
     if (
-      this.cursors.down.isDown &&
+      downHeld &&
       this.jumpJustPressed &&
       (this.onGround || this.onSlope) &&
       !this.isDropping
@@ -682,7 +692,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     // Variable jump height (hold button): apply additional upward force while held
-    if (this.isJumping && this.cursors.space?.isDown && !this.isWallSliding) {
+    const jumpHeld = this.cursors.space?.isDown || GamepadManager.state.jump;
+    if (this.isJumping && jumpHeld && !this.isWallSliding) {
       this.jumpTimer += delta;
       if (this.jumpTimer < PHYSICS.JUMP_HOLD_DURATION) {
         this.setVelocityY(this.body!.velocity.y + PHYSICS.JUMP_HOLD_FORCE);
@@ -690,7 +701,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     // Cut jump short on early release: halve upward velocity for a "short hop" feel
-    if (this.isJumping && !this.cursors.space?.isDown) {
+    if (this.isJumping && !jumpHeld) {
       const body = this.body as Phaser.Physics.Arcade.Body;
       if (body.velocity.y < 0) {
         body.velocity.y *= 0.5;
@@ -722,9 +733,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       // Wall Climb: if the player has the ability and is holding toward the wall
       const onLeftWall = body.blocked.left || body.touching.left;
       const onRightWall = body.blocked.right || body.touching.right;
+      const gpWall = GamepadManager.state;
       const holdingTowardWall =
-        (onLeftWall && this.cursors.left.isDown) ||
-        (onRightWall && this.cursors.right.isDown);
+        (onLeftWall && (this.cursors.left.isDown || gpWall.moveX < -0.2)) ||
+        (onRightWall && (this.cursors.right.isDown || gpWall.moveX > 0.2));
 
       if (
         this.abilities.has("wall_climb") &&
@@ -820,12 +832,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     const canAttack = !this.isAttacking || this.attackState === "RECOVERY";
 
+    const gpCombat = GamepadManager.state;
     if (canAttack && !this.isWallSliding) {
-      if (Phaser.Input.Keyboard.JustDown(this.attackBKey)) {
+      if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpCombat.attackBJustPressed) {
         this.tryAttack(AttackType.LIGHT);
-      } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey)) {
+      } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpCombat.attackXJustPressed) {
         this.tryAttack(AttackType.HEAVY);
-      } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey)) {
+      } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpCombat.attackYJustPressed) {
         // Priest ground SPECIAL: Sacred Ground instead of normal attack
         if (
           this.classType === ClassType.PRIEST &&
@@ -900,11 +913,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.dodgeStartTime = this.scene.time.now;
 
       // Horizontal velocity burst based on input direction
-      const { left, right } = this.cursors;
+      const { left: dodgeLeft, right: dodgeRight } = this.cursors;
+      const gpDodge = GamepadManager.state;
       let dodgeDir: number;
-      if (left.isDown) {
+      if (dodgeLeft.isDown || gpDodge.moveX < -0.2) {
         dodgeDir = -1;
-      } else if (right.isDown) {
+      } else if (dodgeRight.isDown || gpDodge.moveX > 0.2) {
         dodgeDir = 1;
       } else {
         dodgeDir = this.flipX ? -1 : 1;
@@ -1044,9 +1058,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   private tryAttack(type: AttackType) {
+    const gpAttack = GamepadManager.state;
     let direction: AttackDirection = AttackDirection.NEUTRAL;
-    if (this.cursors.up.isDown) direction = AttackDirection.UP;
-    else if (this.cursors.down.isDown) direction = AttackDirection.DOWN;
+    if (this.cursors.up.isDown || gpAttack.moveY < -0.5) direction = AttackDirection.UP;
+    else if (this.cursors.down.isDown || gpAttack.moveY > 0.5) direction = AttackDirection.DOWN;
 
     const config = COMBAT_CONFIG[this.classType];
     const onGround = this.onGround;
@@ -1476,7 +1491,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleCataclysm(): void {
     if (!this.abilities.has('cataclysm')) return;
     if (this.cataclysmCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.cataclysmKey)) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.cataclysmKey) && !GamepadManager.state.cataclysmJustPressed) return;
 
     this.cataclysmCooldown = this.CATACLYSM_COOLDOWN;
 
@@ -1516,7 +1531,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleTemporalRift(): void {
     if (!this.abilities.has('temporal_rift')) return;
     if (this.temporalCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.temporalKey)) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.temporalKey) && !GamepadManager.state.temporalRiftJustPressed) return;
 
     this.temporalCooldown = this.TEMPORAL_COOLDOWN;
 
@@ -1552,7 +1567,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleDivineIntervention(): void {
     if (!this.abilities.has('divine_intervention')) return;
     if (this.divineCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.divineKey)) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.divineKey) && !GamepadManager.state.divineInterventionJustPressed) return;
 
     this.divineCooldown = this.DIVINE_COOLDOWN;
     this.invincibilityTimer = this.DIVINE_DURATION;
@@ -1570,7 +1585,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleEssenceBurst(): void {
     if (!this.abilities.has('essence_burst')) return;
     if (this.essenceBurstActive) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.essenceBurstKey)) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.essenceBurstKey) && !GamepadManager.state.essenceBurstJustPressed) return;
 
     // Get current essence from MainScene
     const mainScene = this.scene as any;
@@ -1613,7 +1628,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (!this.abilities.has('counter_stance')) return;
     if (this.counterCooldown > 0) return;
     if (this.counterStanceActive) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.counterKey)) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.counterKey) && !GamepadManager.state.counterSlashJustPressed) return;
 
     // Activate counter stance
     this.counterStanceActive = true;
@@ -1626,7 +1641,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleGroundSlam(): void {
     if (!this.abilities.has('ground_slam')) return;
     if (this.groundSlamCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.groundSlamKey)) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.groundSlamKey) && !GamepadManager.state.groundSlamJustPressed) return;
 
     if (!this.onGround) {
       // Airborne: slam downward quickly
@@ -1707,7 +1722,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleProjectile(): void {
     if (!this.abilities.has('projectile_shot')) return;
     if (this.projectileCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.projectileKey)) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.projectileKey) && !GamepadManager.state.groundSlamJustPressed) return;
 
     this.projectileCooldown = this.PROJECTILE_COOLDOWN;
 
@@ -1797,7 +1812,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleChargedAttack(delta: number): void {
     if (!this.abilities.has('charged_attack')) return;
 
-    if (this.chargeKey.isDown) {
+    if (this.chargeKey.isDown || GamepadManager.state.counterSlash) {
       if (!this.isCharging) {
         // Start charging
         this.isCharging = true;
