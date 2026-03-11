@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { InventoryUI } from "./InventoryUI";
 import { BossHealthBar } from "./BossHealthBar";
 import { EventBus } from "../systems/EventBus";
 import type { ItemData } from "../config/ItemConfig";
 import type { SynergyBonus } from "../systems/ItemSynergy";
+import { CosmeticManager } from "../systems/CosmeticManager";
 
 interface GameHUDProps {
   health: number;
@@ -74,6 +75,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   isShieldGuarding,
   sacredGroundCooldown,
 }) => {
+  // Cosmetic UI theme accent color
+  const themeColor = useMemo(() => {
+    const themeId = CosmeticManager.getEquipped('UI_THEME');
+    if (!themeId || themeId === 'default_ui') return '#e0d0a0';
+    const themeDef = CosmeticManager.getDefinition(themeId);
+    if (!themeDef) return '#e0d0a0';
+    const hex = themeDef.previewColor.toString(16).padStart(6, '0');
+    return `#${hex}`;
+  }, []);
+
   const healthPercentage = (health / maxHealth) * 100;
   const tierColor = TIER_COLORS[styleTier] || "#666";
 
@@ -268,7 +279,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             minWidth: "240px",
           }}
         >
-          <div style={{ fontSize: "18px", fontWeight: "bold", letterSpacing: "1px" }}>
+          <div style={{ fontSize: "18px", fontWeight: "bold", letterSpacing: "1px", color: themeColor }}>
             HP: {health} / {maxHealth}
           </div>
 
@@ -326,7 +337,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </div>
           </div>
 
-          <div style={{ fontSize: "13px", color: "rgba(200, 200, 220, 0.7)" }}>
+          <div style={{ fontSize: "13px", color: themeColor, opacity: 0.85 }}>
             {className}
           </div>
         </div>
@@ -343,7 +354,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             minWidth: "200px",
           }}
         >
-          <div style={{ fontSize: "18px", fontWeight: "bold", letterSpacing: "1px" }}>
+          <div style={{ fontSize: "18px", fontWeight: "bold", letterSpacing: "1px", color: themeColor }}>
             {Math.floor(altitude)}m
           </div>
 
@@ -633,8 +644,8 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   style={{
                     fontSize: "11px",
                     fontWeight: "bold",
-                    color: "#ffaa00",
-                    textShadow: "0 0 6px rgba(255, 170, 0, 0.4)",
+                    color: themeColor,
+                    textShadow: `0 0 6px ${themeColor}66`,
                     letterSpacing: "0.5px",
                   }}
                 >

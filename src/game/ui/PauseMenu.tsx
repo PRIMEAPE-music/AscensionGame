@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { SettingsScreen } from "./SettingsScreen";
+import { CosmeticManager } from "../systems/CosmeticManager";
 
 interface PauseMenuProps {
   altitude: number;
@@ -26,6 +27,16 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
   onQuit,
 }) => {
   const [showSettings, setShowSettings] = useState(false);
+
+  // Cosmetic UI theme accent color
+  const themeColor = useMemo(() => {
+    const themeId = CosmeticManager.getEquipped('UI_THEME');
+    if (!themeId || themeId === 'default_ui') return '#e0d0a0';
+    const themeDef = CosmeticManager.getDefinition(themeId);
+    if (!themeDef) return '#e0d0a0';
+    const hex = themeDef.previewColor.toString(16).padStart(6, '0');
+    return `#${hex}`;
+  }, []);
 
   if (showSettings) {
     return <SettingsScreen onBack={() => setShowSettings(false)} />;
@@ -74,8 +85,8 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
           marginBottom: "32px",
           letterSpacing: "4px",
           textTransform: "uppercase",
-          color: "#e0d0a0",
-          textShadow: "0 0 20px rgba(224, 208, 160, 0.3)",
+          color: themeColor,
+          textShadow: `0 0 20px ${themeColor}4d`,
         }}
       >
         Paused
@@ -149,9 +160,9 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
           onClick={onResume}
           style={{
             ...buttonStyle,
-            backgroundColor: "rgba(224, 208, 160, 0.15)",
-            borderColor: "#e0d0a0",
-            color: "#e0d0a0",
+            backgroundColor: `${themeColor}26`,
+            borderColor: themeColor,
+            color: themeColor,
           }}
         >
           Resume

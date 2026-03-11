@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { SPRITE_CONFIG } from "../config/AnimationConfig";
+import { CosmeticManager } from "./CosmeticManager";
 
 /**
  * Biome-specific dust tint colours, keyed by biome name.
@@ -214,7 +215,16 @@ export class ParticleManager {
   emitHitImpact(x: number, y: number, isHeavy: boolean): void {
     const count = isHeavy ? 12 : 6;
     const speed = isHeavy ? 200 : 120;
-    const color = isHeavy ? 0xffaa00 : 0xffffff;
+
+    // Apply equipped attack effect cosmetic color
+    let color = isHeavy ? 0xffaa00 : 0xffffff;
+    const effectId = CosmeticManager.getEquipped('ATTACK_EFFECT');
+    if (effectId && effectId !== 'default_attack') {
+      const effectDef = CosmeticManager.getDefinition(effectId);
+      if (effectDef) {
+        color = effectDef.previewColor;
+      }
+    }
 
     for (let i = 0; i < count; i++) {
       const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;

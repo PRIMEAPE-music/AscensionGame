@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { CosmeticManager } from "../systems/CosmeticManager";
 
 interface DeathScreenProps {
   altitude: number;
@@ -114,9 +115,10 @@ interface StatRowProps {
   value: string;
   delay: number;
   isEssence?: boolean;
+  themeColor?: string;
 }
 
-const StatRow: React.FC<StatRowProps> = ({ label, value, delay, isEssence }) => {
+const StatRow: React.FC<StatRowProps> = ({ label, value, delay, isEssence, themeColor }) => {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -132,7 +134,7 @@ const StatRow: React.FC<StatRowProps> = ({ label, value, delay, isEssence }) => 
         transition: "opacity 0.4s ease, transform 0.4s ease",
       }}
     >
-      <div style={statLabelStyle}>{label}</div>
+      <div style={themeColor ? { ...statLabelStyle, color: themeColor, opacity: 0.7 } : statLabelStyle}>{label}</div>
       <div style={isEssence ? essenceValueStyle : statValueStyle}>{value}</div>
     </div>
   );
@@ -147,6 +149,16 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
   onRetry,
   onMainMenu,
 }) => {
+  // Cosmetic UI theme accent color
+  const themeColor = useMemo(() => {
+    const themeId = CosmeticManager.getEquipped('UI_THEME');
+    if (!themeId || themeId === 'default_ui') return '#e0d0a0';
+    const themeDef = CosmeticManager.getDefinition(themeId);
+    if (!themeDef) return '#e0d0a0';
+    const hex = themeDef.previewColor.toString(16).padStart(6, '0');
+    return `#${hex}`;
+  }, []);
+
   const [titleVisible, setTitleVisible] = useState(false);
   const [buttonsVisible, setButtonsVisible] = useState(false);
   const [retryHover, setRetryHover] = useState(false);
@@ -176,11 +188,14 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
       </div>
 
       {/* Stats Grid */}
-      <div style={statsContainerStyle}>
-        <StatRow label="Altitude Reached" value={`${altitude}m`} delay={400} />
-        <StatRow label="Time Survived" value={formatTime(timeMs)} delay={550} />
-        <StatRow label="Enemies Killed" value={String(kills)} delay={700} />
-        <StatRow label="Bosses Defeated" value={String(bossesDefeated)} delay={850} />
+      <div style={{
+        ...statsContainerStyle,
+        borderColor: `${themeColor}33`,
+      }}>
+        <StatRow label="Altitude Reached" value={`${altitude}m`} delay={400} themeColor={themeColor} />
+        <StatRow label="Time Survived" value={formatTime(timeMs)} delay={550} themeColor={themeColor} />
+        <StatRow label="Enemies Killed" value={String(kills)} delay={700} themeColor={themeColor} />
+        <StatRow label="Bosses Defeated" value={String(bossesDefeated)} delay={850} themeColor={themeColor} />
         <div
           style={{
             gridColumn: "1 / -1",
@@ -193,6 +208,7 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
             value={`${essenceEarned}`}
             delay={1000}
             isEssence
+            themeColor={themeColor}
           />
         </div>
       </div>

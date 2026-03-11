@@ -16,6 +16,7 @@ import {
 import { SPRITE_CONFIG } from "../config/AnimationConfig";
 import { PersistentStats } from "../systems/PersistentStats";
 import { GameSettings } from "../systems/GameSettings";
+import { CosmeticManager } from "../systems/CosmeticManager";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
@@ -115,6 +116,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private currentAnim: string = "";
   private wasAirborne: boolean = false;
   private isLanding: boolean = false;
+
+  // Cosmetic tint (applied via CLASS_SKIN cosmetic)
+  private defaultTint: number = 0xffffff;
 
   // Invincibility
   private invincibilityTimer: number = 0;
@@ -235,6 +239,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return body.touching.down || body.blocked.down;
   }
 
+  private restoreDefaultTint(): void {
+    if (this.defaultTint !== 0xffffff) {
+      this.setTint(this.defaultTint);
+    } else {
+      this.clearTint();
+    }
+  }
+
   constructor(
     scene: Phaser.Scene,
     x: number,
@@ -271,6 +283,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.on(`animationcomplete-${classPrefix}_land`, () => {
       this.isLanding = false;
     });
+
+    // Apply equipped class skin cosmetic tint
+    const skinId = CosmeticManager.getEquipped('CLASS_SKIN');
+    if (skinId) {
+      const skinDef = CosmeticManager.getDefinition(skinId);
+      // Only apply tint for non-default skins (defaults use the sprite's natural colors)
+      if (skinDef && !skinId.endsWith('_default')) {
+        this.setTint(skinDef.previewColor);
+        this.defaultTint = skinDef.previewColor;
+      }
+    }
   }
 
   private initInput() {
@@ -421,7 +444,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       if (this.counterStanceTimer <= 0) {
         this.counterStanceActive = false;
         // Remove orange tint when stance expires
-        if (this.active) this.clearTint();
+        if (this.active) this.restoreDefaultTint();
       }
     }
 
@@ -456,7 +479,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.invincibilityTimer <= 0) {
       this.invincibilityTimer = 0;
       this.setAlpha(1);
-      this.clearTint();
+      this.restoreDefaultTint();
     }
   }
 
@@ -925,7 +948,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setTint(0x88ccff);
       this.scene.time.delayedCall(this.AIR_DASH_DURATION, () => {
         if (this.active && !this.isInvincible) {
-          this.clearTint();
+          this.restoreDefaultTint();
         }
       });
 
@@ -1086,7 +1109,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.isAttacking = false;
     this.attackState = "IDLE";
     this.cleanupHitbox();
-    this.clearTint();
+    this.restoreDefaultTint();
     this.comboTimer = COMBAT.COMBO_WINDOW;
   }
 
@@ -1132,7 +1155,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (!GameSettings.get().flashReduction) {
           this.setTint(0xffffff);
           this.scene.time.delayedCall(100, () => {
-            if (this.active) this.clearTint();
+            if (this.active) this.restoreDefaultTint();
           });
         }
       }
@@ -1184,7 +1207,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setTint(0xffd700);
       this.scene.cameras.main.shake(200, 0.005);
       this.scene.time.delayedCall(300, () => {
-        if (this.active) this.clearTint();
+        if (this.active) this.restoreDefaultTint();
       });
 
       // Brief invincibility after counter
@@ -1201,7 +1224,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.chargeGlow.destroy();
         this.chargeGlow = null;
       }
-      this.clearTint();
+      this.restoreDefaultTint();
     }
 
     // Reset out-of-combat timer (Health Regen ability)
@@ -1254,7 +1277,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       // Gold flash effect
       this.setTint(0xffd700);
       this.scene.time.delayedCall(500, () => {
-        if (this.active) this.clearTint();
+        if (this.active) this.restoreDefaultTint();
       });
       EventBus.emit("health-change", {
         health: this.health,
@@ -1271,7 +1294,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       // Golden shield flash
       this.setTint(0xffdd44);
       this.scene.time.delayedCall(3000, () => {
-        if (this.active) this.clearTint();
+        if (this.active) this.restoreDefaultTint();
       });
     }
 
@@ -1381,14 +1404,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         // Maintain a subtle gold tint during parry invincibility
         this.setTint(0xffe680);
       } else if (this.active) {
-        this.clearTint();
+        this.restoreDefaultTint();
       }
     });
 
     // Clear parry tint when invincibility ends
     this.scene.time.delayedCall(this.PARRY_INVINCIBILITY_DURATION, () => {
       if (this.active && !this.isInvincible) {
-        this.clearTint();
+        this.restoreDefaultTint();
       }
     });
 
@@ -1494,7 +1517,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Golden glow effect
     this.setTint(0xffd700);
     this.scene.time.delayedCall(this.DIVINE_DURATION, () => {
-      this.clearTint();
+      this.restoreDefaultTint();
     });
 
     // Camera flash
@@ -1537,7 +1560,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.statModifiers.set(stat, current - boostPercent);
       }
       this.essenceBurstActive = false;
-      this.clearTint();
+      this.restoreDefaultTint();
     });
   }
 
@@ -1836,7 +1859,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.chargeGlow.destroy();
         this.chargeGlow = null;
       }
-      this.clearTint();
+      this.restoreDefaultTint();
     }
 
     // Update glow position if it exists
@@ -1894,7 +1917,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       if (this.isShieldGuarding) {
         this.isShieldGuarding = false;
         this.shieldGuardPulseTimer = 0;
-        this.clearTint();
+        this.restoreDefaultTint();
         this.setAlpha(1);
         EventBus.emit("shield-guard-change", { active: false });
       }

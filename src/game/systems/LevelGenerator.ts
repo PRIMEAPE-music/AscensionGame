@@ -9,6 +9,7 @@ import type { SlopeManager } from "./SlopeManager";
 import type { PlatformTextureManager } from "./PlatformTextureManager";
 import type { PlatformEffectsManager } from "./PlatformEffectsManager";
 import type { BossArenaManager } from "./BossArenaManager";
+import { CosmeticManager } from "./CosmeticManager";
 
 interface DifficultyParams {
   minGap: number;
@@ -814,6 +815,37 @@ export class LevelGenerator {
     );
   }
 
+  /** Special platform types that should not be affected by cosmetic theme tinting. */
+  private static readonly SPECIAL_PLATFORM_TYPES = new Set([
+    PlatformType.SHOP,
+    PlatformType.PORTAL,
+    PlatformType.GAMBLING,
+  ]);
+
+  /**
+   * Returns the cosmetic platform theme tint, or null if using the default theme.
+   * Blends the theme color with the base color for a subtle tint effect.
+   */
+  private getCosmeticPlatformTint(baseColor: number): number | null {
+    const themeId = CosmeticManager.getEquipped('PLATFORM_THEME');
+    if (!themeId || themeId === 'default_platforms') return null;
+    const themeDef = CosmeticManager.getDefinition(themeId);
+    if (!themeDef) return null;
+
+    // Blend the theme color with the base color (70% base, 30% theme) for subtlety
+    const themeColor = themeDef.previewColor;
+    const bR = (baseColor >> 16) & 0xff;
+    const bG = (baseColor >> 8) & 0xff;
+    const bB = baseColor & 0xff;
+    const tR = (themeColor >> 16) & 0xff;
+    const tG = (themeColor >> 8) & 0xff;
+    const tB = themeColor & 0xff;
+    const r = Math.round(bR * 0.7 + tR * 0.3);
+    const g = Math.round(bG * 0.7 + tG * 0.3);
+    const b = Math.round(bB * 0.7 + tB * 0.3);
+    return (r << 16) | (g << 8) | b;
+  }
+
   // Returns actual y used (may differ from input if shifted to avoid slope overlap)
   private createPlatform(
     x: number,
@@ -878,6 +910,9 @@ export class LevelGenerator {
       useProceduralTexture = true;
     }
 
+    // Check if a cosmetic platform theme should be applied (skip special platforms)
+    const isSpecial = LevelGenerator.SPECIAL_PLATFORM_TYPES.has(type);
+
     if (type === PlatformType.MOVING) {
       const platform = this.movingPlatforms.create(x, y, textureKey);
       if (useProceduralTexture) {
@@ -891,6 +926,14 @@ export class LevelGenerator {
 
       if (!useProceduralTexture) {
         platform.setTint(def.color);
+      }
+
+      // Apply cosmetic platform theme tint (subtle blend with base color)
+      if (!isSpecial) {
+        const cosmeticTint = this.getCosmeticPlatformTint(def.color);
+        if (cosmeticTint !== null) {
+          platform.setTint(cosmeticTint);
+        }
       }
 
       // Drop shadow for moving platforms
@@ -940,6 +983,14 @@ export class LevelGenerator {
 
       if (!useProceduralTexture) {
         platform.setTint(def.color);
+      }
+
+      // Apply cosmetic platform theme tint (subtle blend with base color)
+      if (!isSpecial) {
+        const cosmeticTint = this.getCosmeticPlatformTint(def.color);
+        if (cosmeticTint !== null) {
+          platform.setTint(cosmeticTint);
+        }
       }
 
       // Drop shadow for static platforms
