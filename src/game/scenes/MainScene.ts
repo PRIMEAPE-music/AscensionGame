@@ -26,6 +26,8 @@ import { PersistentStats } from "../systems/PersistentStats";
 import { ActiveModifiers } from "../config/RunModifiers";
 import { ITEMS } from "../config/ItemDatabase";
 import { GameSettings } from "../systems/GameSettings";
+import { RunSaveManager } from "../systems/RunSaveManager";
+import type { RunSaveData } from "../systems/RunSaveManager";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -66,6 +68,9 @@ export class MainScene extends Phaser.Scene {
   private bossesDefeated: number = 0;
   private essenceTotal: number = 0;
   private runStartTime: number = 0;
+
+  // Save system
+  private lastSaveAltitude: number = 0;
 
   // Sacred Ground instances (Priest class mechanic)
   private sacredGrounds: SacredGround[] = [];
@@ -441,6 +446,9 @@ export class MainScene extends Phaser.Scene {
         (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
       );
 
+      // Clear saved run on death
+      RunSaveManager.clear();
+
       // Finalize persistent stats for this run and save to localStorage
       PersistentStats.setEssence(this.essenceTotal);
       PersistentStats.endRun();
@@ -454,6 +462,21 @@ export class MainScene extends Phaser.Scene {
         essenceEarned: this.essenceTotal,
       });
     });
+
+    // Save after boss defeat
+    EventBus.on("boss-defeated", () => {
+      // Delay slightly to let boss reward processing finish
+      this.time.delayedCall(500, () => {
+        RunSaveManager.save(this.buildSaveData());
+      });
+    });
+
+    // Check for resume data
+    const resumeData = (window as any).__resumeData as RunSaveData | undefined;
+    if (resumeData) {
+      delete (window as any).__resumeData;
+      this.resumeFromSave(resumeData);
+    }
   }
 
   update(time: number, delta: number) {
@@ -501,6 +524,12 @@ export class MainScene extends Phaser.Scene {
     );
     PersistentStats.setAltitude(altitude);
     EventBus.emit("altitude-change", { altitude });
+
+    // Auto-save every 500m climbed
+    if (altitude >= this.lastSaveAltitude + 500) {
+      this.lastSaveAltitude = Math.floor(altitude / 500) * 500;
+      RunSaveManager.save(this.buildSaveData());
+    }
 
     // Boss arena system
     this.bossArenaManager.update(altitude, this.player.y);
@@ -577,6 +606,87 @@ export class MainScene extends Phaser.Scene {
 
     // Update wall positions to follow camera
     this.updateWalls();
+  }
+
+  public buildSaveData(): RunSaveData {
+    const altitude = Math.max(
+      0,
+      (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
+    );
+    return {
+      version: 1,
+      timestamp: Date.now(),
+      classType: (window as any).__selectedClass || 'PALADIN',
+      health: this.player.health,
+      maxHealth: this.player.maxHealth,
+      altitude: Math.floor(altitude),
+      essence: this.essenceTotal,
+      elapsedTimeMs: Date.now() - this.runStartTime,
+      kills: this.killCount,
+      bossesDefeated: this.bossesDefeated,
+      silverItems: this.player.inventory
+        .filter(item => item.type === 'SILVER')
+        .map(item => ({
+          id: item.id,
+          quality: item.quality,
+        })),
+      equippedGoldItems: (window as any).__equippedGoldItems || [],
+      abilities: [...this.player.abilities],
+      activeModifiers: [...(ActiveModifiers.active || [])],
+      nextBossAltitude: this.bossArenaManager.getNextBossAltitude(),
+      playerX: this.player.x,
+      damageDealt: PersistentStats.getRunStats().damageDealt,
+      damageTaken: PersistentStats.getRunStats().damageTaken,
+      perfectDodges: PersistentStats.getRunStats().perfectDodges,
+      itemsCollected: PersistentStats.getRunStats().itemsCollected,
+    };
+  }
+
+  private resumeFromSave(data: RunSaveData): void {
+    // Set player position to saved altitude
+    const targetY = WORLD.BASE_PLATFORM_Y - data.altitude * WORLD.ALTITUDE_SCALE;
+    this.player.setPosition(data.playerX, targetY);
+    this.player.health = data.health;
+    this.player.maxHealth = data.maxHealth;
+
+    // Restore essence
+    this.essenceTotal = data.essence;
+    EventBus.emit("essence-change", { essence: this.essenceTotal, gained: 0 });
+
+    // Restore run counters
+    this.killCount = data.kills;
+    this.bossesDefeated = data.bossesDefeated;
+
+    // Adjust run start time to account for previously elapsed time
+    this.runStartTime = Date.now() - data.elapsedTimeMs;
+
+    // Restore silver items from save
+    for (const savedItem of data.silverItems) {
+      const itemData = ITEMS[savedItem.id];
+      if (itemData) {
+        // Create a copy with saved quality
+        const itemWithQuality = { ...itemData, quality: savedItem.quality ?? itemData.quality };
+        this.player.collectItem(itemWithQuality);
+      }
+    }
+
+    // Set boss arena manager to correct next boss altitude
+    this.bossArenaManager.setNextBossAltitude(data.nextBossAltitude);
+    this.bossArenaManager.setBossCount(data.bossesDefeated);
+
+    // Update highest Y tracker so death plane works correctly
+    this.highestY = targetY;
+
+    // Emit initial state to HUD
+    EventBus.emit("health-change", { health: data.health, maxHealth: data.maxHealth });
+    EventBus.emit("altitude-change", { altitude: data.altitude });
+
+    // Scroll camera to player
+    this.cameras.main.scrollY = this.player.y - this.cameras.main.height / 2;
+
+    // Clear the save (will re-save at next checkpoint)
+    RunSaveManager.clear();
+    this.lastSaveAltitude = data.altitude;
   }
 
   private updateWalls() {

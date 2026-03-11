@@ -313,6 +313,14 @@ export class BossArenaManager {
     return 384;
   }
 
+  setNextBossAltitude(altitude: number): void {
+    this.nextBossAltitude = altitude;
+  }
+
+  setBossCount(count: number): void {
+    this.bossCount = count;
+  }
+
   getCurrentBoss(): Boss | null {
     return this.currentBoss;
   }

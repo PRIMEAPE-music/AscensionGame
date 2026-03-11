@@ -3,6 +3,9 @@ import { PersistentStats } from "../systems/PersistentStats";
 
 interface MainMenuProps {
   onStartRun: () => void;
+  onResumeRun?: () => void;
+  hasSavedRun?: boolean;
+  savedRunInfo?: { classType: string; altitude: number; timestamp: number };
   onCollection: () => void;
   onStatistics: () => void;
   onSettings: () => void;
@@ -36,6 +39,9 @@ const menuButtonStyle: React.CSSProperties = {
 
 export const MainMenu: React.FC<MainMenuProps> = ({
   onStartRun,
+  onResumeRun,
+  hasSavedRun,
+  savedRunInfo,
   onCollection,
   onStatistics,
   onSettings,
@@ -79,6 +85,22 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
   const getButtonStyle = (id: string): React.CSSProperties => {
     const isHovered = hoveredButton === id;
+    if (id === "resume") {
+      return {
+        ...menuButtonStyle,
+        background: isHovered
+          ? "rgba(100, 200, 100, 0.25)"
+          : "rgba(100, 200, 100, 0.1)",
+        borderColor: isHovered
+          ? "rgba(100, 255, 100, 0.6)"
+          : "rgba(100, 200, 100, 0.35)",
+        transform: isHovered ? "scale(1.04)" : "scale(1)",
+        boxShadow: isHovered
+          ? "0 0 30px rgba(100, 255, 100, 0.2), inset 0 0 20px rgba(100, 255, 100, 0.05)"
+          : "0 0 15px rgba(100, 200, 100, 0.1)",
+        color: isHovered ? "#80ff80" : "#90d090",
+      };
+    }
     if (id === "start") {
       return {
         ...menuButtonStyle,
@@ -212,13 +234,36 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           transition: "opacity 0.5s ease, transform 0.5s ease",
         }}
       >
+        {hasSavedRun && onResumeRun && (
+          <button
+            style={getButtonStyle("resume")}
+            onMouseEnter={() => setHoveredButton("resume")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={onResumeRun}
+          >
+            <div>Resume Run</div>
+            {savedRunInfo && (
+              <div
+                style={{
+                  fontSize: "12px",
+                  fontWeight: "normal",
+                  letterSpacing: "1px",
+                  marginTop: "4px",
+                  opacity: 0.7,
+                }}
+              >
+                {savedRunInfo.classType} at {Math.floor(savedRunInfo.altitude)}m
+              </div>
+            )}
+          </button>
+        )}
         <button
           style={getButtonStyle("start")}
           onMouseEnter={() => setHoveredButton("start")}
           onMouseLeave={() => setHoveredButton(null)}
           onClick={onStartRun}
         >
-          Start Run
+          {hasSavedRun ? "New Run" : "Start Run"}
         </button>
         <button
           style={getButtonStyle("collection")}
