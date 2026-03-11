@@ -25,6 +25,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private attackYKey!: Phaser.Input.Keyboard.Key;
   private dodgeKey!: Phaser.Input.Keyboard.Key;
 
+  // Ultimate/Combat Ability Keys
+  private cataclysmKey!: Phaser.Input.Keyboard.Key;
+  private temporalKey!: Phaser.Input.Keyboard.Key;
+  private divineKey!: Phaser.Input.Keyboard.Key;
+  private essenceBurstKey!: Phaser.Input.Keyboard.Key;
+
   // Combat State
   public isAttacking: boolean = false;
   public currentAttackId: string | null = null;
@@ -147,6 +153,27 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public sacredGroundCooldown: number = 0;
   private readonly SACRED_GROUND_COOLDOWN_TOTAL = 15000; // ms
 
+  // === Gold Ultimate Abilities ===
+  // Cataclysm
+  private cataclysmCooldown: number = 0;
+  private readonly CATACLYSM_COOLDOWN = 60000;
+  private readonly CATACLYSM_RADIUS = 300;
+  private readonly CATACLYSM_DAMAGE_MULT = 5.0;
+
+  // Temporal Rift
+  private temporalCooldown: number = 0;
+  private readonly TEMPORAL_COOLDOWN = 90000;
+  private readonly TEMPORAL_DURATION = 5000;
+  private readonly TEMPORAL_SLOW = 0.3;
+
+  // Divine Intervention
+  private divineCooldown: number = 0;
+  private readonly DIVINE_COOLDOWN = 120000;
+  private readonly DIVINE_DURATION = 5000;
+
+  // Essence Burst
+  private essenceBurstActive: boolean = false;
+
   get isInvincible(): boolean {
     return this.invincibilityTimer > 0;
   }
@@ -214,6 +241,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.grappleKey = this.scene.input.keyboard!.addKey(
       Phaser.Input.Keyboard.KeyCodes.V,
     );
+
+    // Ultimate/Combat Ability Keys
+    this.cataclysmKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.Q,
+    );
+    this.temporalKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.E,
+    );
+    this.divineKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.R,
+    );
+    this.essenceBurstKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.F,
+    );
   }
 
   private getStat(
@@ -240,6 +281,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.handleDodge(delta);
     this.handleAirDash(delta);
     this.handleGrapple(delta);
+    this.handleCataclysm();
+    this.handleTemporalRift();
+    this.handleDivineIntervention();
+    this.handleEssenceBurst();
     this.updateInvincibility(delta);
     this.updateClassMechanics(delta);
     this.updateAnimation();
@@ -264,6 +309,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.currentAttackId = null;
       }
     }
+
+    // Ultimate ability cooldowns
+    if (this.cataclysmCooldown > 0) this.cataclysmCooldown -= delta;
+    if (this.temporalCooldown > 0) this.temporalCooldown -= delta;
+    if (this.divineCooldown > 0) this.divineCooldown -= delta;
 
     // Drop-through timer
     if (this.dropTimer > 0) {
@@ -1061,6 +1111,142 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       EventBus.emit("player-died");
       this.scene.scene.restart();
     }
+  }
+
+  // ─── Gold Ultimate Abilities ────────────────────────────────────────
+
+  private handleCataclysm(): void {
+    if (!this.abilities.has('cataclysm')) return;
+    if (this.cataclysmCooldown > 0) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.cataclysmKey)) return;
+
+    this.cataclysmCooldown = this.CATACLYSM_COOLDOWN;
+
+    // Damage all enemies in radius
+    const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+    const damage = Math.round(COMBAT.BASE_DAMAGE * this.CATACLYSM_DAMAGE_MULT * this.classStats.attackDamage);
+
+    enemies.children.each((enemy: any) => {
+      if (!enemy.active) return true;
+      const dx = enemy.x - this.x;
+      const dy = enemy.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= this.CATACLYSM_RADIUS) {
+        enemy.takeDamage(damage);
+      }
+      return true;
+    });
+
+    // Visual: expanding circle
+    const circle = this.scene.add.circle(this.x, this.y, 10, 0xff4400, 0.6);
+    circle.setDepth(100);
+    this.scene.tweens.add({
+      targets: circle,
+      radius: this.CATACLYSM_RADIUS,
+      alpha: 0,
+      duration: 500,
+      onUpdate: () => {
+        circle.setRadius(circle.radius);
+      },
+      onComplete: () => circle.destroy(),
+    });
+
+    // Screen shake
+    this.scene.cameras.main.shake(500, 0.01);
+  }
+
+  private handleTemporalRift(): void {
+    if (!this.abilities.has('temporal_rift')) return;
+    if (this.temporalCooldown > 0) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.temporalKey)) return;
+
+    this.temporalCooldown = this.TEMPORAL_COOLDOWN;
+
+    // Slow time
+    this.scene.time.timeScale = this.TEMPORAL_SLOW;
+    this.scene.physics.world.timeScale = 1 / this.TEMPORAL_SLOW; // Inverse because physics timeScale works opposite
+
+    // Blue overlay
+    const overlay = this.scene.add.rectangle(
+      this.scene.cameras.main.scrollX + this.scene.cameras.main.width / 2,
+      this.scene.cameras.main.scrollY + this.scene.cameras.main.height / 2,
+      this.scene.cameras.main.width * 2,
+      this.scene.cameras.main.height * 2,
+      0x2244ff,
+      0.15,
+    );
+    overlay.setScrollFactor(0);
+    overlay.setDepth(150);
+
+    // Restore after duration (delayedCall is affected by timeScale, so multiply by slow factor)
+    this.scene.time.delayedCall(this.TEMPORAL_DURATION * this.TEMPORAL_SLOW, () => {
+      this.scene.time.timeScale = 1;
+      this.scene.physics.world.timeScale = 1;
+      this.scene.tweens.add({
+        targets: overlay,
+        alpha: 0,
+        duration: 300,
+        onComplete: () => overlay.destroy(),
+      });
+    });
+  }
+
+  private handleDivineIntervention(): void {
+    if (!this.abilities.has('divine_intervention')) return;
+    if (this.divineCooldown > 0) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.divineKey)) return;
+
+    this.divineCooldown = this.DIVINE_COOLDOWN;
+    this.invincibilityTimer = this.DIVINE_DURATION;
+
+    // Golden glow effect
+    this.setTint(0xffd700);
+    this.scene.time.delayedCall(this.DIVINE_DURATION, () => {
+      this.clearTint();
+    });
+
+    // Camera flash
+    this.scene.cameras.main.flash(300, 255, 215, 0);
+  }
+
+  private handleEssenceBurst(): void {
+    if (!this.abilities.has('essence_burst')) return;
+    if (this.essenceBurstActive) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.essenceBurstKey)) return;
+
+    // Get current essence from MainScene
+    const mainScene = this.scene as any;
+    const essence = mainScene.essenceTotal || 0;
+    if (essence < 100) return;
+
+    // Calculate boost: 10% per 100 essence
+    const boostPercent = Math.floor(essence / 100) * 0.10;
+    const essenceSpent = Math.floor(essence / 100) * 100;
+
+    // Deduct essence
+    mainScene.essenceTotal -= essenceSpent;
+    EventBus.emit("essence-change", { essence: mainScene.essenceTotal, gained: -essenceSpent });
+
+    // Apply temporary stat boosts
+    this.essenceBurstActive = true;
+    const stats: Array<'moveSpeed' | 'jumpHeight' | 'attackDamage' | 'attackSpeed'> = ['moveSpeed', 'jumpHeight', 'attackDamage', 'attackSpeed'];
+    for (const stat of stats) {
+      const current = this.statModifiers.get(stat) || 0;
+      this.statModifiers.set(stat, current + boostPercent);
+    }
+
+    // Purple glow
+    this.setTint(0xcc44ff);
+
+    // Remove after 30 seconds
+    this.scene.time.delayedCall(30000, () => {
+      for (const stat of stats) {
+        const current = this.statModifiers.get(stat) || 0;
+        this.statModifiers.set(stat, current - boostPercent);
+      }
+      this.essenceBurstActive = false;
+      this.clearTint();
+    });
   }
 
   // ─── Class-Specific Mechanics ────────────────────────────────────────

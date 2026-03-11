@@ -165,5 +165,41 @@ export const ITEMS: Record<string, ItemData> = {
         rarity: 'LEGENDARY',
         abilityId: 'temp_shield',
         iconColor: 0xffdd44
+    },
+    'cataclysm_orb': {
+        id: 'cataclysm_orb',
+        name: 'Cataclysm Orb',
+        description: 'Press Q for massive explosion (500% damage, 60s cooldown)',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'cataclysm',
+        iconColor: 0xff2200
+    },
+    'chrono_shard': {
+        id: 'chrono_shard',
+        name: 'Chrono Shard',
+        description: 'Press E to slow time to 30% for 5 seconds (90s cooldown)',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'temporal_rift',
+        iconColor: 0x22aaff
+    },
+    'divine_halo': {
+        id: 'divine_halo',
+        name: 'Divine Halo',
+        description: 'Press R for 5 seconds of invincibility (120s cooldown)',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'divine_intervention',
+        iconColor: 0xffffaa
+    },
+    'essence_crystal': {
+        id: 'essence_crystal',
+        name: 'Essence Crystal',
+        description: 'Press F to convert essence into temporary power (+10% stats per 100 essence, 30s)',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'essence_burst',
+        iconColor: 0xcc44ff
     }
 };
