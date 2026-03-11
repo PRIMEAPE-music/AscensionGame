@@ -152,7 +152,12 @@ export class CombatManager {
     if (this.player.isDodgeActive) return;
     if (this.player.isInvincible) return;
 
-    this.player.takeDamage(1, enemy.x);
+    const parried = this.player.takeDamage(1, enemy.x, enemy);
+
+    // If parried, show parry damage number on the enemy and skip knockback/combo reset
+    if (parried) {
+      return;
+    }
 
     // Damage Reflection ability: reflect 30% of damage back to the attacker
     if (this.player.abilities.has('damage_reflect') && enemy.active) {

@@ -8,6 +8,7 @@ export interface RunStats {
   damageDealt: number;
   damageTaken: number;
   perfectDodges: number;
+  perfectParries: number;
   itemsCollected: number;
   essenceEarned: number;
 }
@@ -64,6 +65,7 @@ function defaultRunStats(): RunStats {
     damageDealt: 0,
     damageTaken: 0,
     perfectDodges: 0,
+    perfectParries: 0,
     itemsCollected: 0,
     essenceEarned: 0,
   };
@@ -178,6 +180,10 @@ export const PersistentStats = {
 
   addPerfectDodge(): void {
     run.perfectDodges++;
+  },
+
+  addPerfectParry(): void {
+    run.perfectParries++;
   },
 
   addItemCollected(): void {

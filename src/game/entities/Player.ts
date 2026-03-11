@@ -40,6 +40,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private attackState: "IDLE" | "STARTUP" | "ACTIVE" | "RECOVERY" = "IDLE";
   private attackTimer: number = 0;
 
+  // Perfect Parry State
+  private attackStartTime: number = 0;
+  private parryInvincibilityTimer: number = 0;
+  private readonly PARRY_WINDOW: number = 150; // ms from attack start where parry is active
+  private readonly PARRY_INVINCIBILITY_DURATION: number = 500; // 0.5s invincibility after parry
+  private readonly PARRY_REFLECT_MULTIPLIER: number = 2.0; // 200% damage reflected back
+
   // Dodge State
   private isDodging: boolean = false;
   private dodgeCooldown: number = 0;
@@ -177,7 +184,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private essenceBurstActive: boolean = false;
 
   get isInvincible(): boolean {
-    return this.invincibilityTimer > 0;
+    return this.invincibilityTimer > 0 || this.parryInvincibilityTimer > 0;
   }
 
   get isDodgeActive(): boolean {
@@ -338,6 +345,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // Grappling Hook cooldown
     if (this.grappleCooldown > 0) this.grappleCooldown -= delta;
+
+    // Parry invincibility timer
+    if (this.parryInvincibilityTimer > 0) {
+      this.parryInvincibilityTimer -= delta;
+      if (this.parryInvincibilityTimer <= 0) {
+        this.parryInvincibilityTimer = 0;
+      }
+    }
 
     // Health Regen tracking (Gold ability: health_regen)
     if (this.abilities.has('health_regen')) {
@@ -953,6 +968,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.currentAttackId = attackId;
     this.attackState = "STARTUP";
     this.attackTimer = 0;
+    this.attackStartTime = this.scene.time.now;
     this.hitEnemies.clear();
 
     if (this.onGround) {
@@ -1003,7 +1019,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.comboTimer = COMBAT.COMBO_WINDOW;
   }
 
-  public takeDamage(amount: number, attackerX?: number) {
+  /**
+   * Apply damage to the player.
+   * @returns true if the damage was parried (caller should skip knockback/combo reset)
+   */
+  public takeDamage(amount: number, attackerX?: number, attackerRef?: any): boolean {
     // Record when enemies attempt to deal damage (used for perfect dodge check)
     this.lastDamageAttemptTime = this.scene.time.now;
 
@@ -1021,10 +1041,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
           if (this.active) this.clearTint();
         });
       }
-      return;
+      return false;
     }
 
-    if (this.isInvincible) return;
+    // Perfect Parry check: if attacking within the parry window, reflect damage
+    if (this.isAttacking && (this.attackState === "STARTUP" || this.attackState === "ACTIVE")) {
+      const timeSinceAttackStart = this.scene.time.now - this.attackStartTime;
+      if (timeSinceAttackStart <= this.PARRY_WINDOW) {
+        this.performPerfectParry(amount, attackerRef);
+        return true;
+      }
+    }
+
+    if (this.isInvincible) return false;
 
     // Reset out-of-combat timer (Health Regen ability)
     this.outOfCombatTimer = 0;
@@ -1082,7 +1111,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         health: this.health,
         maxHealth: this.maxHealth,
       });
-      return; // Don't die
+      return false; // Don't die
     }
 
     // Temporary Shield ability: invincibility when health drops to 1 (once per run)
@@ -1113,6 +1142,109 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       EventBus.emit("player-died");
       this.scene.scene.restart();
     }
+    return false;
+  }
+
+  /**
+   * Execute a perfect parry: negate damage, reflect it back to attacker,
+   * grant brief invincibility, and show visual feedback.
+   */
+  private performPerfectParry(incomingDamage: number, attackerRef?: any): void {
+    // Calculate reflected damage
+    const baseDamage = COMBAT.BASE_DAMAGE;
+    const classMult = this.classStats.attackDamage;
+    const reflectedDamage = Math.max(1, Math.round(baseDamage * classMult * this.PARRY_REFLECT_MULTIPLIER));
+
+    // Grant parry invincibility
+    this.parryInvincibilityTimer = this.PARRY_INVINCIBILITY_DURATION;
+
+    // Track stat
+    PersistentStats.addPerfectParry();
+
+    // Reflect damage back to attacker
+    if (attackerRef && attackerRef.active && typeof attackerRef.takeDamage === 'function') {
+      attackerRef.takeDamage(reflectedDamage);
+      PersistentStats.addDamageDealt(reflectedDamage);
+
+      // Show "PARRY!" and reflected damage number on the enemy
+      if (attackerRef.x !== undefined && attackerRef.y !== undefined) {
+        // "PARRY!" label on the player
+        const parryLabel = this.scene.add.text(this.x, this.y - 40, 'PARRY!', {
+          fontSize: '28px',
+          fontFamily: 'monospace',
+          color: '#ffd700',
+          stroke: '#000000',
+          strokeThickness: 4,
+          fontStyle: 'bold',
+        });
+        parryLabel.setOrigin(0.5);
+        parryLabel.setDepth(101);
+
+        this.scene.tweens.add({
+          targets: parryLabel,
+          y: this.y - 100,
+          alpha: 0,
+          scale: 1.8,
+          duration: 1000,
+          ease: 'Power2',
+          onComplete: () => parryLabel.destroy(),
+        });
+
+        // Reflected damage number on the enemy
+        const dmgText = this.scene.add.text(attackerRef.x, attackerRef.y - 20, `${reflectedDamage}`, {
+          fontSize: '22px',
+          fontFamily: 'monospace',
+          color: '#ff6600',
+          stroke: '#000000',
+          strokeThickness: 3,
+          fontStyle: 'bold',
+        });
+        dmgText.setOrigin(0.5);
+        dmgText.setDepth(101);
+
+        const offsetX = Phaser.Math.Between(-15, 15);
+        this.scene.tweens.add({
+          targets: dmgText,
+          x: attackerRef.x + offsetX,
+          y: attackerRef.y - 70,
+          alpha: 0,
+          scale: 1.4,
+          duration: 800,
+          ease: 'Power2',
+          onComplete: () => dmgText.destroy(),
+        });
+      }
+    }
+
+    // Visual feedback: gold flash on player
+    this.setTint(0xffd700);
+    this.scene.time.delayedCall(200, () => {
+      if (this.active && this.parryInvincibilityTimer > 0) {
+        // Maintain a subtle gold tint during parry invincibility
+        this.setTint(0xffe680);
+      } else if (this.active) {
+        this.clearTint();
+      }
+    });
+
+    // Clear parry tint when invincibility ends
+    this.scene.time.delayedCall(this.PARRY_INVINCIBILITY_DURATION, () => {
+      if (this.active && !this.isInvincible) {
+        this.clearTint();
+      }
+    });
+
+    // Screen shake (moderate)
+    this.scene.cameras.main.shake(100, 0.006);
+
+    // Hit-stop effect: brief time slow for impact feel
+    this.scene.time.timeScale = 0.15;
+    this.scene.time.delayedCall(60, () => {
+      this.scene.time.timeScale = 1;
+    });
+
+    // Emit parry event for HUD
+    EventBus.emit("parry-success", { reflectedDamage });
   }
 
   // ─── Gold Ultimate Abilities ────────────────────────────────────────
