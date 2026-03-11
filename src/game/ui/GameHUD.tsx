@@ -13,6 +13,10 @@ interface GameHUDProps {
   styleMeter: number;
   styleTier: string;
   essence: number;
+  flowMeter: number;
+  flowMaxFlow: number;
+  isShieldGuarding: boolean;
+  sacredGroundCooldown: { remaining: number; total: number };
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -53,6 +57,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   styleMeter,
   styleTier,
   essence,
+  flowMeter,
+  flowMaxFlow,
+  isShieldGuarding,
+  sacredGroundCooldown,
 }) => {
   const healthPercentage = (health / maxHealth) * 100;
   const tierColor = TIER_COLORS[styleTier] || "#666";
@@ -390,6 +398,154 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               {essence}
             </span>
           </div>
+
+          {/* Monk Flow Meter */}
+          {className === "Monk" && flowMaxFlow > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginTop: "4px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12px",
+                  color:
+                    flowMeter >= 100
+                      ? "#ff4444"
+                      : flowMeter >= 75
+                        ? "#ffaa00"
+                        : flowMeter >= 50
+                          ? "#ffcc44"
+                          : flowMeter >= 25
+                            ? "#ffdd88"
+                            : "#888",
+                  fontWeight: "bold",
+                  minWidth: "36px",
+                  textAlign: "right",
+                }}
+              >
+                FLOW
+              </div>
+              <div
+                style={{
+                  width: "110px",
+                  height: "10px",
+                  backgroundColor: "rgba(0,0,0,0.4)",
+                  border: "1px solid rgba(255, 170, 0, 0.3)",
+                  borderRadius: "3px",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${(flowMeter / flowMaxFlow) * 100}%`,
+                    height: "100%",
+                    background:
+                      flowMeter >= 100
+                        ? "linear-gradient(to right, #ff4444, #ffaa00, #ff4444)"
+                        : flowMeter >= 75
+                          ? "linear-gradient(to right, #ff8800, #ffaa00)"
+                          : flowMeter >= 50
+                            ? "linear-gradient(to right, #cc8800, #ffcc44)"
+                            : "linear-gradient(to right, #886600, #ffaa00)",
+                    transition: "width 0.15s ease-out",
+                    boxShadow:
+                      flowMeter >= 75
+                        ? "0 0 8px rgba(255, 170, 0, 0.6)"
+                        : "none",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Paladin Shield Guard Indicator */}
+          {className === "Paladin" && isShieldGuarding && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                marginTop: "4px",
+                animation: "hud-pulse 1.2s ease-in-out infinite",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "18px",
+                  color: "#4488ff",
+                  textShadow: "0 0 10px rgba(68, 136, 255, 0.8)",
+                }}
+              >
+                &#9711;
+              </span>
+              <span
+                style={{
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                  color: "#4488ff",
+                  letterSpacing: "1px",
+                }}
+              >
+                SHIELD
+              </span>
+            </div>
+          )}
+
+          {/* Priest Sacred Ground Cooldown */}
+          {className === "Priest" && sacredGroundCooldown.remaining > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                marginTop: "4px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12px",
+                  color: "#ffdd88",
+                  fontWeight: "bold",
+                  minWidth: "36px",
+                  textAlign: "right",
+                }}
+              >
+                HOLY
+              </div>
+              <div
+                style={{
+                  width: "110px",
+                  height: "10px",
+                  backgroundColor: "rgba(0,0,0,0.4)",
+                  border: "1px solid rgba(255, 221, 136, 0.3)",
+                  borderRadius: "3px",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${((sacredGroundCooldown.total - sacredGroundCooldown.remaining) / sacredGroundCooldown.total) * 100}%`,
+                    height: "100%",
+                    background:
+                      "linear-gradient(to right, #886600, #ffdd88)",
+                    transition: "width 0.15s ease-out",
+                  }}
+                />
+              </div>
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: "#aaa",
+                }}
+              >
+                {Math.ceil(sacredGroundCooldown.remaining / 1000)}s
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

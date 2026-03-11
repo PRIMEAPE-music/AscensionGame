@@ -39,6 +39,13 @@ function App() {
   const [deathStats, setDeathStats] = useState<DeathStats | null>(null);
   const [shopOpen, setShopOpen] = useState(false);
   const [shopOfferings, setShopOfferings] = useState<ShopOffering[]>([]);
+  const [flowMeter, setFlowMeter] = useState(0);
+  const [flowMaxFlow, setFlowMaxFlow] = useState(100);
+  const [isShieldGuarding, setIsShieldGuarding] = useState(false);
+  const [sacredGroundCooldown, setSacredGroundCooldown] = useState<{
+    remaining: number;
+    total: number;
+  }>({ remaining: 0, total: 15000 });
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
@@ -89,6 +96,10 @@ function App() {
     setDeathStats(null);
     setShopOpen(false);
     setShopOfferings([]);
+    setFlowMeter(0);
+    setFlowMaxFlow(100);
+    setIsShieldGuarding(false);
+    setSacredGroundCooldown({ remaining: 0, total: 15000 });
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("CLASS_SELECT");
@@ -109,6 +120,10 @@ function App() {
     setDeathStats(null);
     setShopOpen(false);
     setShopOfferings([]);
+    setFlowMeter(0);
+    setFlowMaxFlow(100);
+    setIsShieldGuarding(false);
+    setSacredGroundCooldown({ remaining: 0, total: 15000 });
     setGameState("CLASS_SELECT");
     setSelectedClass(null);
   }, []);
@@ -125,6 +140,10 @@ function App() {
     setStyleTier("D");
     setShopOpen(false);
     setShopOfferings([]);
+    setFlowMeter(0);
+    setFlowMaxFlow(100);
+    setIsShieldGuarding(false);
+    setSacredGroundCooldown({ remaining: 0, total: 15000 });
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("PLAYING"); // Triggers game recreation with same class
@@ -294,6 +313,36 @@ function App() {
       handleShopOpen as EventListener,
     );
 
+    // Class mechanic event listeners
+    const handleFlowChange = (e: CustomEvent) => {
+      setFlowMeter(e.detail.flow);
+      setFlowMaxFlow(e.detail.maxFlow);
+    };
+
+    const handleShieldGuardChange = (e: CustomEvent) => {
+      setIsShieldGuarding(e.detail.active);
+    };
+
+    const handleSacredGroundCooldown = (e: CustomEvent) => {
+      setSacredGroundCooldown({
+        remaining: e.detail.remaining,
+        total: e.detail.total,
+      });
+    };
+
+    window.addEventListener(
+      "flow-change",
+      handleFlowChange as EventListener,
+    );
+    window.addEventListener(
+      "shield-guard-change",
+      handleShieldGuardChange as EventListener,
+    );
+    window.addEventListener(
+      "sacred-ground-cooldown",
+      handleSacredGroundCooldown as EventListener,
+    );
+
     return () => {
       window.removeEventListener(
         "health-change",
@@ -322,6 +371,18 @@ function App() {
       window.removeEventListener(
         "shop-open",
         handleShopOpen as EventListener,
+      );
+      window.removeEventListener(
+        "flow-change",
+        handleFlowChange as EventListener,
+      );
+      window.removeEventListener(
+        "shield-guard-change",
+        handleShieldGuardChange as EventListener,
+      );
+      window.removeEventListener(
+        "sacred-ground-cooldown",
+        handleSacredGroundCooldown as EventListener,
       );
       gameRef.current?.destroy(true);
       gameRef.current = null;
@@ -355,6 +416,10 @@ function App() {
                 styleMeter={styleMeter}
                 styleTier={styleTier}
                 essence={essence}
+                flowMeter={flowMeter}
+                flowMaxFlow={flowMaxFlow}
+                isShieldGuarding={isShieldGuarding}
+                sacredGroundCooldown={sacredGroundCooldown}
               />
               {isPaused && (
                 <PauseMenu

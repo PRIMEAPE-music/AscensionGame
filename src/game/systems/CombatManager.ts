@@ -73,6 +73,9 @@ export class CombatManager {
 
     enemy.takeDamage(damage);
 
+    // Monk flow state: increment flow on successful hit
+    this.player.onSuccessfulHit();
+
     // Hit feedback: damage numbers, screen shake, hit-stop
     const isHeavy = (attackDef?.damageMultiplier ?? 1) >= 1.5;
     this.damageNumbers?.show(enemyX, enemyY, damage, isHeavy);
@@ -115,7 +118,7 @@ export class CombatManager {
     if (this.player.isDodgeActive) return;
     if (this.player.isInvincible) return;
 
-    this.player.takeDamage(1);
+    this.player.takeDamage(1, enemy.x);
 
     EventBus.emit("health-change", {
       health: this.player.health,

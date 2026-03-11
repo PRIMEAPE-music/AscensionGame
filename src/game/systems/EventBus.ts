@@ -33,6 +33,9 @@ export interface GameEvents {
   "shop-open": { offerings: ShopOffering[] };
   "shop-close": {};
   "shop-purchase": { offeringId: string; cost: number };
+  "flow-change": { flow: number; maxFlow: number };
+  "shield-guard-change": { active: boolean };
+  "sacred-ground-cooldown": { remaining: number; total: number };
 }
 
 export const EventBus = {

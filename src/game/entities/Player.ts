@@ -84,6 +84,28 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public abilities: Set<string> = new Set();
   public statModifiers: Map<StatType, number> = new Map();
 
+  // === Paladin: Shield Guard ===
+  private standStillTimer: number = 0;
+  public isShieldGuarding: boolean = false;
+  private shieldGuardPulseTimer: number = 0;
+  private readonly SHIELD_GUARD_THRESHOLD = 500; // ms standing still to activate
+  private readonly SHIELD_GUARD_DAMAGE_REDUCTION = 0.5;
+
+  // === Monk: Flow State ===
+  public flowMeter: number = 0;
+  private flowDecayTimer: number = 0;
+  private readonly FLOW_MAX = 100;
+  private readonly FLOW_HIT_GAIN = 8;
+  private readonly FLOW_DECAY_RATE = 5; // per second
+  private readonly FLOW_DECAY_DELAY = 500; // ms before decay starts after attacking
+  private flowMoveSpeedMod: number = 0;
+  private flowJumpHeightMod: number = 0;
+  private flowAttackDamageMod: number = 0;
+
+  // === Priest: Sacred Ground ===
+  public sacredGroundCooldown: number = 0;
+  private readonly SACRED_GROUND_COOLDOWN_TOTAL = 15000; // ms
+
   get isInvincible(): boolean {
     return this.invincibilityTimer > 0;
   }
@@ -166,6 +188,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.handleCombat(delta);
     this.handleDodge(delta);
     this.updateInvincibility(delta);
+    this.updateClassMechanics(delta);
     this.updateAnimation();
   }
 
@@ -488,6 +511,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey)) {
         this.tryAttack(AttackType.HEAVY);
       } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey)) {
+        // Priest ground SPECIAL: Sacred Ground instead of normal attack
+        if (
+          this.classType === ClassType.PRIEST &&
+          this.onGround &&
+          this.trySacredGround()
+        ) {
+          // Sacred Ground created — MainScene handles spawning the zone
+          // Emit event so MainScene can create the SacredGround object
+          window.dispatchEvent(
+            new CustomEvent("priest-sacred-ground", {
+              detail: { x: this.x, y: this.y + 20 },
+            }),
+          );
+          return;
+        }
         this.tryAttack(AttackType.SPECIAL);
       }
     }
@@ -629,7 +667,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.comboTimer = COMBAT.COMBO_WINDOW;
   }
 
-  public takeDamage(amount: number) {
+  public takeDamage(amount: number, attackerX?: number) {
     // Record when enemies attempt to deal damage (used for perfect dodge check)
     this.lastDamageAttemptTime = this.scene.time.now;
 
@@ -651,7 +689,41 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this.isInvincible) return;
 
-    this.health -= amount;
+    let finalAmount = amount;
+
+    // Paladin Shield Guard: 50% damage reduction if attack comes from front
+    if (
+      this.classType === ClassType.PALADIN &&
+      this.isShieldGuarding &&
+      attackerX !== undefined
+    ) {
+      const facingRight = !this.flipX;
+      const attackFromRight = attackerX > this.x;
+      // Block succeeds if the attack comes from the direction the player is facing
+      if (
+        (facingRight && attackFromRight) ||
+        (!facingRight && !attackFromRight)
+      ) {
+        finalAmount = Math.max(
+          1,
+          Math.round(amount * this.SHIELD_GUARD_DAMAGE_REDUCTION),
+        );
+        // Visual feedback for blocked hit
+        this.setTint(0x6666ff);
+        this.scene.time.delayedCall(150, () => {
+          if (this.active && this.isShieldGuarding) this.setTint(0x4444ff);
+        });
+      }
+    }
+
+    // Monk: reset flow on taking damage
+    if (this.classType === ClassType.MONK && this.flowMeter > 0) {
+      this.flowMeter = 0;
+      this.applyFlowBuffs();
+      this.emitFlowChange();
+    }
+
+    this.health -= finalAmount;
 
     // Start invincibility
     this.invincibilityTimer = COMBAT.INVINCIBILITY_DURATION;
@@ -667,6 +739,176 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       EventBus.emit("player-died");
       this.scene.scene.restart();
     }
+  }
+
+  // ─── Class-Specific Mechanics ────────────────────────────────────────
+
+  private updateClassMechanics(delta: number): void {
+    if (this.classType === ClassType.PALADIN) {
+      this.updateShieldGuard(delta);
+    } else if (this.classType === ClassType.MONK) {
+      this.updateFlowState(delta);
+    } else if (this.classType === ClassType.PRIEST) {
+      this.updateSacredGroundCooldown(delta);
+    }
+  }
+
+  // --- Paladin: Shield Guard ---
+
+  private updateShieldGuard(delta: number): void {
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    const onGround = body.touching.down || body.blocked.down;
+    const isStill =
+      Math.abs(body.velocity.x) < 10 && Math.abs(body.velocity.y) < 10;
+
+    if (onGround && isStill && !this.isAttacking && !this.isDodging) {
+      this.standStillTimer += delta;
+
+      if (
+        this.standStillTimer >= this.SHIELD_GUARD_THRESHOLD &&
+        !this.isShieldGuarding
+      ) {
+        this.isShieldGuarding = true;
+        EventBus.emit("shield-guard-change", { active: true });
+      }
+
+      // Blue tint pulse while guarding
+      if (this.isShieldGuarding) {
+        this.shieldGuardPulseTimer += delta;
+        const pulse =
+          0.6 + 0.4 * Math.sin(this.shieldGuardPulseTimer * 0.005);
+        this.setTint(0x4444ff);
+        this.setAlpha(pulse);
+      }
+    } else {
+      // Movement or jump breaks guard
+      if (this.isShieldGuarding) {
+        this.isShieldGuarding = false;
+        this.shieldGuardPulseTimer = 0;
+        this.clearTint();
+        this.setAlpha(1);
+        EventBus.emit("shield-guard-change", { active: false });
+      }
+      this.standStillTimer = 0;
+    }
+  }
+
+  // --- Monk: Flow State ---
+
+  private updateFlowState(delta: number): void {
+    // Decay flow when not attacking
+    if (!this.isAttacking) {
+      this.flowDecayTimer += delta;
+      if (this.flowDecayTimer >= this.FLOW_DECAY_DELAY) {
+        const decay = (this.FLOW_DECAY_RATE * delta) / 1000;
+        this.flowMeter = Math.max(0, this.flowMeter - decay);
+        this.emitFlowChange();
+      }
+    } else {
+      this.flowDecayTimer = 0;
+    }
+
+    this.applyFlowBuffs();
+  }
+
+  /** Called by CombatManager when Monk successfully hits an enemy. */
+  public onSuccessfulHit(): void {
+    if (this.classType !== ClassType.MONK) return;
+    this.flowMeter = Math.min(this.FLOW_MAX, this.flowMeter + this.FLOW_HIT_GAIN);
+    this.flowDecayTimer = 0;
+    this.emitFlowChange();
+  }
+
+  private emitFlowChange(): void {
+    EventBus.emit("flow-change", {
+      flow: this.flowMeter,
+      maxFlow: this.FLOW_MAX,
+    });
+  }
+
+  private applyFlowBuffs(): void {
+    // Remove previous flow modifiers
+    this.removeFlowModifiers();
+
+    let moveSpeedMod = 0;
+    let jumpHeightMod = 0;
+    let attackDamageMod = 0;
+
+    if (this.flowMeter >= 100) {
+      moveSpeedMod = 0.2;
+      jumpHeightMod = 0.2;
+      attackDamageMod = 0.5;
+    } else if (this.flowMeter >= 75) {
+      moveSpeedMod = 0.2;
+      jumpHeightMod = 0.2;
+    } else if (this.flowMeter >= 50) {
+      jumpHeightMod = 0.1;
+    } else if (this.flowMeter >= 25) {
+      moveSpeedMod = 0.1;
+    }
+
+    // Apply new flow modifiers (additive to existing item modifiers)
+    if (moveSpeedMod !== this.flowMoveSpeedMod) {
+      const current = this.statModifiers.get("moveSpeed") || 0;
+      this.statModifiers.set(
+        "moveSpeed",
+        current - this.flowMoveSpeedMod + moveSpeedMod,
+      );
+      this.flowMoveSpeedMod = moveSpeedMod;
+    }
+
+    if (jumpHeightMod !== this.flowJumpHeightMod) {
+      const current = this.statModifiers.get("jumpHeight") || 0;
+      this.statModifiers.set(
+        "jumpHeight",
+        current - this.flowJumpHeightMod + jumpHeightMod,
+      );
+      this.flowJumpHeightMod = jumpHeightMod;
+    }
+
+    if (attackDamageMod !== this.flowAttackDamageMod) {
+      const current = this.statModifiers.get("attackDamage") || 0;
+      this.statModifiers.set(
+        "attackDamage",
+        current - this.flowAttackDamageMod + attackDamageMod,
+      );
+      this.flowAttackDamageMod = attackDamageMod;
+    }
+  }
+
+  private removeFlowModifiers(): void {
+    // Only remove if there were flow modifiers applied
+    // (handled in applyFlowBuffs by tracking individual values)
+  }
+
+  // --- Priest: Sacred Ground ---
+
+  private updateSacredGroundCooldown(delta: number): void {
+    if (this.sacredGroundCooldown > 0) {
+      this.sacredGroundCooldown -= delta;
+      if (this.sacredGroundCooldown < 0) this.sacredGroundCooldown = 0;
+      EventBus.emit("sacred-ground-cooldown", {
+        remaining: this.sacredGroundCooldown,
+        total: this.SACRED_GROUND_COOLDOWN_TOTAL,
+      });
+    }
+  }
+
+  /**
+   * Called when Priest uses SPECIAL attack on ground.
+   * Returns true if Sacred Ground should be created instead of normal attack.
+   */
+  public trySacredGround(): boolean {
+    if (this.classType !== ClassType.PRIEST) return false;
+    if (this.sacredGroundCooldown > 0) return false;
+    if (!this.onGround) return false;
+
+    this.sacredGroundCooldown = this.SACRED_GROUND_COOLDOWN_TOTAL;
+    EventBus.emit("sacred-ground-cooldown", {
+      remaining: this.sacredGroundCooldown,
+      total: this.SACRED_GROUND_COOLDOWN_TOTAL,
+    });
+    return true;
   }
 
   public handleSlopePhysics(result: SlopeCollisionResult): void {
