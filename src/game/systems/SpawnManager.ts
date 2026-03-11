@@ -4,7 +4,7 @@ import { Enemy } from "../entities/Enemy";
 import { ItemDrop } from "../entities/ItemDrop";
 import { ITEMS } from "../config/ItemDatabase";
 import { SPAWNING } from "../config/GameConfig";
-import type { ItemData } from "../config/ItemConfig";
+import type { ItemData, ItemQuality } from "../config/ItemConfig";
 import {
   ENEMY_REGISTRY,
   getEnemiesForAltitude,
@@ -184,10 +184,21 @@ export class SpawnManager {
     return enemy;
   }
 
-  spawnItem(x: number, y: number, itemId: string): ItemDrop | null {
-    const itemData = ITEMS[itemId];
-    if (!itemData) return null;
+  private assignQuality(itemData: ItemData): ItemData {
+    if (itemData.type !== 'SILVER') return itemData;
+    const roll = Math.random();
+    let quality: ItemQuality;
+    if (roll < 0.2) quality = 'DAMAGED';
+    else if (roll < 0.7) quality = 'NORMAL';
+    else quality = 'PRISTINE';
+    return { ...itemData, quality };
+  }
 
+  spawnItem(x: number, y: number, itemId: string): ItemDrop | null {
+    const baseData = ITEMS[itemId];
+    if (!baseData) return null;
+
+    const itemData = this.assignQuality(baseData);
     const item = new ItemDrop(this.scene, x, y, itemData);
     this.items.add(item);
     return item;

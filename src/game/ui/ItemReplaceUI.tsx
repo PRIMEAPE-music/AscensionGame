@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import type { ItemData } from "../config/ItemConfig";
+import { QUALITY_MULTIPLIERS, QUALITY_COLORS, QUALITY_LABELS } from "../config/ItemConfig";
+import { calculateSynergies } from "../systems/ItemSynergy";
 
 interface ItemReplaceUIProps {
   newItem: ItemData;
@@ -38,12 +40,13 @@ const glassPanel: React.CSSProperties = {
   gap: "8px",
 };
 
-function formatEffect(effect: { targetStat: string; value: number; operation: string }): string {
+function formatEffect(effect: { targetStat: string; value: number; operation: string }, qualityMult: number = 1): string {
   const label = STAT_LABELS[effect.targetStat] || effect.targetStat;
+  const scaledValue = effect.value * qualityMult;
   if (effect.targetStat === "health") {
-    return `${label} +${effect.value}`;
+    return `${label} +${Math.round(scaledValue)}`;
   }
-  const pct = Math.round(effect.value * 100);
+  const pct = Math.round(scaledValue * 100);
   return `${label} +${pct}%`;
 }
 
@@ -69,26 +72,28 @@ function computeNetChange(
   oldItem: ItemData,
 ): { text: string; color: string }[] {
   const statDiffs = new Map<string, number>();
+  const newQualityMult = QUALITY_MULTIPLIERS[newItem.quality ?? 'NORMAL'];
+  const oldQualityMult = QUALITY_MULTIPLIERS[oldItem.quality ?? 'NORMAL'];
 
-  // Add new item effects
+  // Add new item effects (quality-scaled)
   if (newItem.effects) {
     newItem.effects.forEach((e) => {
       const current = statDiffs.get(e.targetStat) || 0;
-      statDiffs.set(e.targetStat, current + e.value);
+      statDiffs.set(e.targetStat, current + e.value * newQualityMult);
     });
   }
 
-  // Subtract old item effects
+  // Subtract old item effects (quality-scaled)
   if (oldItem.effects) {
     oldItem.effects.forEach((e) => {
       const current = statDiffs.get(e.targetStat) || 0;
-      statDiffs.set(e.targetStat, current - e.value);
+      statDiffs.set(e.targetStat, current - e.value * oldQualityMult);
     });
   }
 
   const results: { text: string; color: string }[] = [];
   statDiffs.forEach((diff, stat) => {
-    if (diff !== 0) {
+    if (Math.abs(diff) > 0.001) {
       results.push(formatDiff(stat, diff));
     }
   });
@@ -125,7 +130,17 @@ export const ItemReplaceUI: React.FC<ItemReplaceUIProps> = ({
   );
 
   const newRarityColor = RARITY_COLORS[newItem.rarity] || "#aaaaaa";
+  const newQualityColor = QUALITY_COLORS[newItem.quality ?? 'NORMAL'];
+  const newQualityMult = QUALITY_MULTIPLIERS[newItem.quality ?? 'NORMAL'];
   const timerColor = timer <= 3 ? "#ff4444" : timer <= 5 ? "#ffaa00" : "#ffffff";
+
+  // Calculate synergy info for preview
+  const currentSynergies = useMemo(() => calculateSynergies(currentItems), [currentItems]);
+  const synergyAfterAdd = useMemo(() => {
+    // Simulate adding new item to see potential synergy
+    const simulated = [...currentItems, newItem];
+    return calculateSynergies(simulated);
+  }, [currentItems, newItem]);
 
   return (
     <div
@@ -211,17 +226,32 @@ export const ItemReplaceUI: React.FC<ItemReplaceUIProps> = ({
               height: "56px",
               borderRadius: "8px",
               background: `${newRarityColor}22`,
-              border: `2px solid ${newRarityColor}`,
+              border: `3px solid ${newQualityColor}`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontSize: "28px",
               color: newRarityColor,
-              boxShadow: `0 0 12px ${newRarityColor}44`,
+              boxShadow: `0 0 12px ${newQualityColor}44`,
             }}
           >
             &#9670;
           </div>
+
+          {/* Quality Badge */}
+          {newItem.quality && newItem.quality !== 'NORMAL' && (
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: "bold",
+                color: newQualityColor,
+                letterSpacing: "1px",
+                textShadow: `0 0 6px ${newQualityColor}66`,
+              }}
+            >
+              [{QUALITY_LABELS[newItem.quality]}]
+            </div>
+          )}
 
           {/* Name */}
           <div
@@ -279,7 +309,7 @@ export const ItemReplaceUI: React.FC<ItemReplaceUIProps> = ({
                   textAlign: "center",
                 }}
               >
-                {formatEffect(effect)}
+                {formatEffect(effect, newQualityMult)}
               </div>
             ))}
             {newItem.abilityId && (
@@ -320,6 +350,8 @@ export const ItemReplaceUI: React.FC<ItemReplaceUIProps> = ({
 
           {currentItems.map((item, index) => {
             const rarityColor = RARITY_COLORS[item.rarity] || "#aaaaaa";
+            const itemQualityColor = QUALITY_COLORS[item.quality ?? 'NORMAL'];
+            const itemQualityMult = QUALITY_MULTIPLIERS[item.quality ?? 'NORMAL'];
             const isHovered = hoveredIndex === index;
             const netChanges = isHovered ? computeNetChange(newItem, item) : [];
 
@@ -337,7 +369,7 @@ export const ItemReplaceUI: React.FC<ItemReplaceUIProps> = ({
                   cursor: "pointer",
                   borderColor: isHovered
                     ? "rgba(255, 204, 0, 0.6)"
-                    : `${rarityColor}33`,
+                    : `${itemQualityColor}33`,
                   background: isHovered
                     ? "rgba(255, 204, 0, 0.08)"
                     : "rgba(0, 0, 0, 0.5)",
@@ -354,7 +386,7 @@ export const ItemReplaceUI: React.FC<ItemReplaceUIProps> = ({
                     height: "40px",
                     borderRadius: "6px",
                     background: `${rarityColor}22`,
-                    border: `2px solid ${rarityColor}`,
+                    border: `2px solid ${itemQualityColor}`,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -370,15 +402,34 @@ export const ItemReplaceUI: React.FC<ItemReplaceUIProps> = ({
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
-                      fontSize: "16px",
-                      fontWeight: "bold",
-                      color: rarityColor,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
                     }}
                   >
-                    {item.name}
+                    <span
+                      style={{
+                        fontSize: "16px",
+                        fontWeight: "bold",
+                        color: rarityColor,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {item.name}
+                    </span>
+                    {item.quality && item.quality !== 'NORMAL' && (
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: "bold",
+                          color: itemQualityColor,
+                        }}
+                      >
+                        [{QUALITY_LABELS[item.quality]}]
+                      </span>
+                    )}
                   </div>
                   <div
                     style={{
@@ -389,7 +440,7 @@ export const ItemReplaceUI: React.FC<ItemReplaceUIProps> = ({
                     {item.effects?.map((e, i) => (
                       <span key={i}>
                         {i > 0 && ", "}
-                        {formatEffect(e)}
+                        {formatEffect(e, itemQualityMult)}
                       </span>
                     ))}
                   </div>
@@ -446,6 +497,59 @@ export const ItemReplaceUI: React.FC<ItemReplaceUIProps> = ({
           })}
         </div>
       </div>
+
+      {/* Synergy Info */}
+      {(currentSynergies.length > 0 || synergyAfterAdd.length > 0) && (
+        <div
+          style={{
+            marginTop: "16px",
+            padding: "8px 16px",
+            background: "rgba(0, 0, 0, 0.4)",
+            borderRadius: "8px",
+            border: "1px solid rgba(255, 170, 0, 0.2)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+            alignItems: "center",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "11px",
+              color: "rgba(255, 255, 255, 0.4)",
+              letterSpacing: "2px",
+              textTransform: "uppercase",
+            }}
+          >
+            Rarity Synergies
+          </div>
+          {currentSynergies.map((s, i) => (
+            <div
+              key={i}
+              style={{
+                fontSize: "13px",
+                color: "#ffaa00",
+              }}
+            >
+              {s.count}x {s.rarity} = +{Math.round(s.bonus * 100)}% bonus
+            </div>
+          ))}
+          {synergyAfterAdd.filter(s =>
+            !currentSynergies.find(cs => cs.rarity === s.rarity && cs.bonus === s.bonus)
+          ).map((s, i) => (
+            <div
+              key={`new-${i}`}
+              style={{
+                fontSize: "13px",
+                color: "#44ff44",
+                fontStyle: "italic",
+              }}
+            >
+              After replace: {s.count}x {s.rarity} = +{Math.round(s.bonus * 100)}% bonus
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Leave It button */}
       <button
