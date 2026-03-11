@@ -20,9 +20,12 @@ import { AchievementPopup } from "./game/ui/AchievementPopup";
 import { PersistentStats } from "./game/systems/PersistentStats";
 import { GoldItemCollection } from "./game/systems/GoldItemCollection";
 import { GoldItemEquip } from "./game/ui/GoldItemEquip";
+import { MainMenu } from "./game/ui/MainMenu";
+import { StatsScreen } from "./game/ui/StatsScreen";
+import { CollectionGallery } from "./game/ui/CollectionGallery";
 import "./App.css";
 
-type GameState = "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
+type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
 
 interface DeathStats {
   altitude: number;
@@ -34,7 +37,8 @@ interface DeathStats {
 
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null);
-  const [gameState, setGameState] = useState<GameState>("CLASS_SELECT");
+  const [gameState, setGameState] = useState<GameState>("MAIN_MENU");
+  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection">("main");
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [health, setHealth] = useState(3);
@@ -76,8 +80,10 @@ function App() {
   const elapsedTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
 
-  // Load achievement data on mount
+  // Load persistent data on mount
   useEffect(() => {
+    PersistentStats.load();
+    GoldItemCollection.load();
     AchievementManager.load();
   }, []);
 
@@ -89,6 +95,22 @@ function App() {
       setAchievementQueue(rest);
     }
   }, [achievementPopup, achievementQueue]);
+
+  const handleStartRun = useCallback(() => {
+    setGameState("CLASS_SELECT");
+  }, []);
+
+  const handleShowStats = useCallback(() => {
+    setMenuScreen("stats");
+  }, []);
+
+  const handleShowCollection = useCallback(() => {
+    setMenuScreen("collection");
+  }, []);
+
+  const handleBackToMenu = useCallback(() => {
+    setMenuScreen("main");
+  }, []);
 
   const handleClassSelect = useCallback((classType: ClassType) => {
     setSelectedClass(classType);
@@ -159,7 +181,8 @@ function App() {
     GoldItemCollection.clearEquipped();
     gameRef.current?.destroy(true);
     gameRef.current = null;
-    setGameState("CLASS_SELECT");
+    setGameState("MAIN_MENU");
+    setMenuScreen("main");
     setSelectedClass(null);
   }, []);
 
@@ -188,7 +211,8 @@ function App() {
     setItemReplaceData(null);
     ActiveModifiers.clear();
     GoldItemCollection.clearEquipped();
-    setGameState("CLASS_SELECT");
+    setGameState("MAIN_MENU");
+    setMenuScreen("main");
     setSelectedClass(null);
   }, []);
 
@@ -571,6 +595,19 @@ function App() {
         overflow: "hidden",
       }}
     >
+      {gameState === "MAIN_MENU" && menuScreen === "main" && (
+        <MainMenu
+          onStartRun={handleStartRun}
+          onCollection={handleShowCollection}
+          onStatistics={handleShowStats}
+        />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "stats" && (
+        <StatsScreen onBack={handleBackToMenu} />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "collection" && (
+        <CollectionGallery onBack={handleBackToMenu} />
+      )}
       {gameState === "CLASS_SELECT" && (
         <ClassSelect onSelect={handleClassSelect} />
       )}
