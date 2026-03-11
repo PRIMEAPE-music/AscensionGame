@@ -27,6 +27,7 @@ import { SettingsScreen } from "./game/ui/SettingsScreen";
 import { CosmeticScreen } from "./game/ui/CosmeticScreen";
 import { GameSettings } from "./game/systems/GameSettings";
 import { CosmeticManager } from "./game/systems/CosmeticManager";
+import { RunSaveManager } from "./game/systems/RunSaveManager";
 import "./App.css";
 
 type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
@@ -79,6 +80,8 @@ function App() {
   const [achievementQueue, setAchievementQueue] = useState<
     { name: string; description: string; icon: string }[]
   >([]);
+  const [hasSavedRun, setHasSavedRun] = useState(false);
+  const [savedRunInfo, setSavedRunInfo] = useState<{ classType: string; altitude: number; timestamp: number } | null>(null);
   const maxComboRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
@@ -91,6 +94,10 @@ function App() {
     AchievementManager.load();
     GameSettings.load();
     CosmeticManager.load();
+
+    // Check for saved run
+    setHasSavedRun(RunSaveManager.hasSave());
+    setSavedRunInfo(RunSaveManager.getSaveInfo());
   }, []);
 
   // Process achievement popup queue — show next when current is dismissed
@@ -104,6 +111,38 @@ function App() {
 
   const handleStartRun = useCallback(() => {
     setGameState("CLASS_SELECT");
+  }, []);
+
+  const handleResumeRun = useCallback(() => {
+    const saveData = RunSaveManager.load();
+    if (!saveData) {
+      // Save corrupted or missing, fall back to normal start
+      setHasSavedRun(false);
+      setSavedRunInfo(null);
+      return;
+    }
+
+    // Set the class
+    (window as any).__selectedClass = saveData.classType;
+    setSelectedClass(saveData.classType as ClassType);
+
+    // Set gold items
+    (window as any).__equippedGoldItems = saveData.equippedGoldItems;
+
+    // Restore active modifiers
+    ActiveModifiers.setModifiers(saveData.activeModifiers);
+
+    // Store save data for MainScene to read
+    (window as any).__resumeData = saveData;
+
+    // Clear the saved run state in UI
+    setHasSavedRun(false);
+    setSavedRunInfo(null);
+
+    // Skip class select/equip/modifiers — go directly to PLAYING
+    setGameState("PLAYING");
+    startTimeRef.current = Date.now() - saveData.elapsedTimeMs;
+    elapsedTimeRef.current = saveData.elapsedTimeMs;
   }, []);
 
   const handleShowStats = useCallback(() => {
@@ -138,6 +177,10 @@ function App() {
   }, []);
 
   const handleModifiersConfirm = useCallback((modifierIds: string[]) => {
+    // Starting a new run — clear any existing saved run
+    RunSaveManager.clear();
+    setHasSavedRun(false);
+    setSavedRunInfo(null);
     ActiveModifiers.setModifiers(modifierIds);
     setGameState("PLAYING");
     startTimeRef.current = Date.now();
@@ -171,6 +214,8 @@ function App() {
   }, [togglePause]);
 
   const handleRestart = useCallback(() => {
+    // Clear saved run since we're restarting
+    RunSaveManager.clear();
     setIsPaused(false);
     setHealth(3);
     setMaxHealth(3);
@@ -195,12 +240,22 @@ function App() {
     GoldItemCollection.clearEquipped();
     gameRef.current?.destroy(true);
     gameRef.current = null;
+    setHasSavedRun(false);
+    setSavedRunInfo(null);
     setGameState("MAIN_MENU");
     setMenuScreen("main");
     setSelectedClass(null);
   }, []);
 
   const handleQuit = useCallback(() => {
+    // Save run state before quitting to menu (only if actively playing, not dead)
+    if (gameState === "PLAYING") {
+      const scene = gameRef.current?.scene.getScene("MainScene") as any;
+      if (scene && typeof scene.buildSaveData === 'function') {
+        RunSaveManager.save(scene.buildSaveData());
+      }
+    }
+
     setIsPaused(false);
     gameRef.current?.destroy(true);
     gameRef.current = null;
@@ -225,13 +280,18 @@ function App() {
     setItemReplaceData(null);
     ActiveModifiers.clear();
     GoldItemCollection.clearEquipped();
+    // Update saved run state for the menu
+    setHasSavedRun(RunSaveManager.hasSave());
+    setSavedRunInfo(RunSaveManager.getSaveInfo());
     setGameState("MAIN_MENU");
     setMenuScreen("main");
     setSelectedClass(null);
-  }, []);
+  }, [gameState]);
 
   // Retry from death screen - restart with the same class
   const handleDeathRetry = useCallback(() => {
+    // Run save already cleared on death in MainScene
+    RunSaveManager.clear();
     setDeathStats(null);
     setEssence(0);
     setHealth(3);
@@ -612,6 +672,9 @@ function App() {
       {gameState === "MAIN_MENU" && menuScreen === "main" && (
         <MainMenu
           onStartRun={handleStartRun}
+          onResumeRun={handleResumeRun}
+          hasSavedRun={hasSavedRun}
+          savedRunInfo={savedRunInfo ?? undefined}
           onCollection={handleShowCollection}
           onStatistics={handleShowStats}
           onSettings={handleShowSettings}
