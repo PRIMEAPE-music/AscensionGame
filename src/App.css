@@ -53,3 +53,13 @@
   animation: bubble-rise linear infinite;
   pointer-events: none;
 }
+
+/* Boss distance indicator pulse */
+@keyframes hud-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

@@ -7,6 +7,8 @@ export class ImpCrawler extends Enemy {
 
     constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
         super(scene, x, y, 'dude', player, 3, 1, 100); // Reusing 'dude' texture for now, will tint
+        this.enemyType = 'crawler';
+        this.tier = 'basic';
         this.setTint(0x00ff00); // Greenish tint for Imp
         this.setScale(0.8);
         this.setFlipX(this.direction < 0);

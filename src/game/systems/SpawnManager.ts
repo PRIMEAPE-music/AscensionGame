@@ -1,14 +1,16 @@
 import Phaser from "phaser";
 import { Player } from "../entities/Player";
 import { Enemy } from "../entities/Enemy";
-import { ImpCrawler } from "../entities/ImpCrawler";
-import { ShadowBat } from "../entities/ShadowBat";
-import { DemonTurret } from "../entities/DemonTurret";
-import { HellHound } from "../entities/HellHound";
 import { ItemDrop } from "../entities/ItemDrop";
 import { ITEMS } from "../config/ItemDatabase";
 import { SPAWNING } from "../config/GameConfig";
 import type { ItemData } from "../config/ItemConfig";
+import {
+  ENEMY_REGISTRY,
+  getEnemiesForAltitude,
+  selectWeightedEnemy,
+  type EnemyTier,
+} from "../config/EnemyConfig";
 
 export class SpawnManager {
   private scene: Phaser.Scene;
@@ -92,10 +94,30 @@ export class SpawnManager {
     const comp = this.getComposition(altitude);
     const roll = Math.random();
 
-    if (roll < comp.basic) return "crawler";
-    if (roll < comp.basic + comp.intermediate) return "bat";
-    if (roll < comp.basic + comp.intermediate + comp.advanced) return "turret";
-    return "hound";
+    // Determine which tier to pick from
+    let tier: EnemyTier;
+    if (roll < comp.basic) {
+      tier = "basic";
+    } else if (roll < comp.basic + comp.intermediate) {
+      tier = "intermediate";
+    } else if (roll < comp.basic + comp.intermediate + comp.advanced) {
+      tier = "advanced";
+    } else {
+      tier = "elite";
+    }
+
+    // Get eligible enemies for this tier and altitude
+    const eligible = getEnemiesForAltitude(tier, altitude);
+
+    // Fallback: if no enemies for the selected tier, try basic
+    if (eligible.length === 0) {
+      const fallback = getEnemiesForAltitude("basic", altitude);
+      const picked = selectWeightedEnemy(fallback);
+      return picked?.id ?? "crawler";
+    }
+
+    const picked = selectWeightedEnemy(eligible);
+    return picked?.id ?? "crawler";
   }
 
   private spawnEnemyNearPlayer(altitude: number): void {
@@ -143,23 +165,19 @@ export class SpawnManager {
     this.spawnEnemy(spawnX, spawnY, type);
   }
 
-  spawnEnemy(x: number, y: number, type: string = "crawler"): Enemy {
+  spawnEnemy(x: number, y: number, type: string = "crawler", elite: boolean = false): Enemy {
+    const def = ENEMY_REGISTRY[type];
     let enemy: Enemy;
 
-    switch (type) {
-      case "bat":
-        enemy = new ShadowBat(this.scene, x, y, this.player);
-        break;
-      case "turret":
-        enemy = new DemonTurret(this.scene, x, y, this.player);
-        break;
-      case "hound":
-        enemy = new HellHound(this.scene, x, y, this.player);
-        break;
-      case "crawler":
-      default:
-        enemy = new ImpCrawler(this.scene, x, y, this.player);
-        break;
+    if (def) {
+      enemy = def.factory(this.scene, x, y, this.player);
+    } else {
+      // Fallback to crawler if type not found
+      enemy = ENEMY_REGISTRY["crawler"].factory(this.scene, x, y, this.player);
+    }
+
+    if (elite) {
+      enemy.applyElite();
     }
 
     this.enemies.add(enemy);

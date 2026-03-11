@@ -12,6 +12,8 @@ export class ShadowBat extends Enemy {
 
   constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
     super(scene, x, y, "dude", player, 2, 1, 100); // 2 HP, 1 Dmg, 100 Speed
+    this.enemyType = 'bat';
+    this.tier = 'basic';
     this.setTint(0x550055); // Purple/Shadow tint
     this.setScale(0.7);
     this.startY = y;

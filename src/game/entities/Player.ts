@@ -22,6 +22,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private attackBKey!: Phaser.Input.Keyboard.Key;
   private attackXKey!: Phaser.Input.Keyboard.Key;
   private attackYKey!: Phaser.Input.Keyboard.Key;
+  private dodgeKey!: Phaser.Input.Keyboard.Key;
 
   // Combat State
   public isAttacking: boolean = false;
@@ -29,6 +30,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private comboTimer: number = 0;
   private attackState: "IDLE" | "STARTUP" | "ACTIVE" | "RECOVERY" = "IDLE";
   private attackTimer: number = 0;
+
+  // Dodge State
+  private isDodging: boolean = false;
+  private dodgeCooldown: number = 0;
+  private dodgeTimer: number = 0;
+  public perfectDodgeBuff: boolean = false;
+  private perfectDodgeBuffTimer: number = 0;
+  private lastDamageAttemptTime: number = 0;
+  private dodgeStartTime: number = 0;
+
+  private readonly DODGE_DURATION = 200;
+  private readonly DODGE_COOLDOWN = 300;
+  private readonly DODGE_SPEED = 400;
+  private readonly PERFECT_DODGE_WINDOW = 150;
+  private readonly PERFECT_DODGE_BUFF_DURATION = 2000;
 
   private isWallSliding: boolean = false;
   public attackHitbox: Phaser.GameObjects.Rectangle | null = null;
@@ -70,6 +86,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   get isInvincible(): boolean {
     return this.invincibilityTimer > 0;
+  }
+
+  get isDodgeActive(): boolean {
+    return this.dodgeTimer > 0;
   }
 
   private get onGround(): boolean {
@@ -121,6 +141,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.attackYKey = this.scene.input.keyboard!.addKey(
       Phaser.Input.Keyboard.KeyCodes.C,
     );
+    this.dodgeKey = this.scene.input.keyboard!.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SHIFT,
+    );
   }
 
   private getStat(
@@ -141,6 +164,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.handleJumping(delta);
     this.handleWallInteraction();
     this.handleCombat(delta);
+    this.handleDodge(delta);
     this.updateInvincibility(delta);
     this.updateAnimation();
   }
@@ -469,6 +493,59 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  private handleDodge(delta: number) {
+    // Decrement timers
+    if (this.dodgeCooldown > 0) this.dodgeCooldown -= delta;
+    if (this.dodgeTimer > 0) {
+      this.dodgeTimer -= delta;
+
+      // Dodge just expired
+      if (this.dodgeTimer <= 0) {
+        this.isDodging = false;
+        this.setAlpha(1);
+      }
+    }
+
+    // Perfect dodge buff timer
+    if (this.perfectDodgeBuffTimer > 0) {
+      this.perfectDodgeBuffTimer -= delta;
+      if (this.perfectDodgeBuffTimer <= 0) {
+        this.perfectDodgeBuff = false;
+      }
+    }
+
+    // Initiate dodge
+    if (
+      Phaser.Input.Keyboard.JustDown(this.dodgeKey) &&
+      this.dodgeCooldown <= 0 &&
+      this.dodgeTimer <= 0
+    ) {
+      this.isDodging = true;
+      this.dodgeTimer = this.DODGE_DURATION;
+      this.dodgeCooldown = this.DODGE_COOLDOWN;
+      this.dodgeStartTime = this.scene.time.now;
+
+      // Horizontal velocity burst based on input direction
+      const { left, right } = this.cursors;
+      let dodgeDir: number;
+      if (left.isDown) {
+        dodgeDir = -1;
+      } else if (right.isDown) {
+        dodgeDir = 1;
+      } else {
+        dodgeDir = this.flipX ? -1 : 1;
+      }
+      this.setVelocityX(this.DODGE_SPEED * dodgeDir);
+
+      // Ghost effect
+      this.setAlpha(0.4);
+
+      // Set invincibility for dodge duration
+      this.invincibilityTimer = this.DODGE_DURATION;
+      this.flashTimer = 0;
+    }
+  }
+
   private tryAttack(type: AttackType) {
     let direction: AttackDirection = AttackDirection.NEUTRAL;
     if (this.cursors.up.isDown) direction = AttackDirection.UP;
@@ -553,6 +630,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   public takeDamage(amount: number) {
+    // Record when enemies attempt to deal damage (used for perfect dodge check)
+    this.lastDamageAttemptTime = this.scene.time.now;
+
+    // Dodge i-frames — skip damage but check for perfect dodge
+    if (this.dodgeTimer > 0) {
+      const timeSinceDodgeStart = this.scene.time.now - this.dodgeStartTime;
+      if (timeSinceDodgeStart <= this.PERFECT_DODGE_WINDOW) {
+        // Perfect dodge! Grant buff
+        this.perfectDodgeBuff = true;
+        this.perfectDodgeBuffTimer = this.PERFECT_DODGE_BUFF_DURATION;
+        // Brief white flash to indicate perfect dodge
+        this.setTint(0xffffff);
+        this.scene.time.delayedCall(100, () => {
+          if (this.active) this.clearTint();
+        });
+      }
+      return;
+    }
+
     if (this.isInvincible) return;
 
     this.health -= amount;

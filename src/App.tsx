@@ -4,13 +4,24 @@ import { MainScene } from "./game/scenes/MainScene";
 import GameHUD from "./game/ui/GameHUD";
 import { ClassSelect } from "./game/ui/ClassSelect";
 import { PauseMenu } from "./game/ui/PauseMenu";
+import { DeathScreen } from "./game/ui/DeathScreen";
+import { ShopUI } from "./game/ui/ShopUI";
 import { CLASSES } from "./game/config/ClassConfig";
 import type { ClassType } from "./game/config/ClassConfig";
 import type { ItemData } from "./game/config/ItemConfig";
 import { EventBus } from "./game/systems/EventBus";
+import type { ShopOffering } from "./game/systems/EventBus";
 import "./App.css";
 
-type GameState = "CLASS_SELECT" | "PLAYING";
+type GameState = "CLASS_SELECT" | "PLAYING" | "DEATH";
+
+interface DeathStats {
+  altitude: number;
+  kills: number;
+  bossesDefeated: number;
+  timeMs: number;
+  essenceEarned: number;
+}
 
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null);
@@ -24,6 +35,10 @@ function App() {
   const [styleMeter, setStyleMeter] = useState(0);
   const [styleTier, setStyleTier] = useState("D");
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [essence, setEssence] = useState(0);
+  const [deathStats, setDeathStats] = useState<DeathStats | null>(null);
+  const [shopOpen, setShopOpen] = useState(false);
+  const [shopOfferings, setShopOfferings] = useState<ShopOffering[]>([]);
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
@@ -70,6 +85,10 @@ function App() {
     setInventory([]);
     setStyleMeter(0);
     setStyleTier("D");
+    setEssence(0);
+    setDeathStats(null);
+    setShopOpen(false);
+    setShopOfferings([]);
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("CLASS_SELECT");
@@ -86,8 +105,49 @@ function App() {
     setInventory([]);
     setStyleMeter(0);
     setStyleTier("D");
+    setEssence(0);
+    setDeathStats(null);
+    setShopOpen(false);
+    setShopOfferings([]);
     setGameState("CLASS_SELECT");
     setSelectedClass(null);
+  }, []);
+
+  // Retry from death screen - restart with the same class
+  const handleDeathRetry = useCallback(() => {
+    setDeathStats(null);
+    setEssence(0);
+    setHealth(3);
+    setMaxHealth(3);
+    setAltitude(0);
+    setInventory([]);
+    setStyleMeter(0);
+    setStyleTier("D");
+    setShopOpen(false);
+    setShopOfferings([]);
+    gameRef.current?.destroy(true);
+    gameRef.current = null;
+    setGameState("PLAYING"); // Triggers game recreation with same class
+  }, []);
+
+  // Shop purchase handler
+  const handleShopPurchase = useCallback(
+    (offering: ShopOffering) => {
+      if (essence < offering.cost) return;
+      setEssence((prev) => prev - offering.cost);
+      EventBus.emit("shop-purchase", {
+        offeringId: offering.id,
+        cost: offering.cost,
+      });
+    },
+    [essence],
+  );
+
+  // Shop close handler
+  const handleShopClose = useCallback(() => {
+    setShopOpen(false);
+    const scene = gameRef.current?.scene.getScene("MainScene");
+    if (scene) scene.scene.resume();
   }, []);
 
   // Escape key handler
@@ -128,22 +188,29 @@ function App() {
     return () => clearInterval(interval);
   }, [gameState, isPaused]);
 
-  // Player died event handler
+  // Player died event handler — now handled via show-death-screen
+  // Keep listening to reset HUD state when scene restarts in background
   useEffect(() => {
     const unsubscribe = EventBus.on("player-died", () => {
-      setHealth(3);
-      setMaxHealth(3);
-      setAltitude(0);
-      setInventory([]);
-      setStyleMeter(0);
-      setStyleTier("D");
+      // Scene restarts automatically in Player.ts, but we show the death screen overlay
+      // Don't reset state here — the death screen or retry handler will do that
     });
     return unsubscribe;
   }, []);
 
-  // Phaser game creation
+  // Counter incremented each time we need to create a new Phaser game
+  const [gameSessionId, setGameSessionId] = useState(0);
+
+  // Trigger new game session when entering PLAYING without an active game
   useEffect(() => {
-    if (gameState !== "PLAYING") return;
+    if (gameState === "PLAYING" && !gameRef.current) {
+      setGameSessionId((prev) => prev + 1);
+    }
+  }, [gameState]);
+
+  // Phaser game creation — keyed on gameSessionId so it persists through DEATH
+  useEffect(() => {
+    if (gameSessionId === 0) return;
     if (gameRef.current) return;
 
     const config: Phaser.Types.Core.GameConfig = {
@@ -200,6 +267,33 @@ function App() {
     );
     window.addEventListener("style-change", handleStyleChange as EventListener);
 
+    const handleEssenceChange = (e: CustomEvent) => {
+      setEssence(e.detail.essence);
+    };
+
+    const handleDeathScreen = (e: CustomEvent) => {
+      setDeathStats(e.detail);
+      setGameState("DEATH");
+    };
+
+    const handleShopOpen = (e: CustomEvent) => {
+      setShopOfferings(e.detail.offerings);
+      setShopOpen(true);
+    };
+
+    window.addEventListener(
+      "essence-change",
+      handleEssenceChange as EventListener,
+    );
+    window.addEventListener(
+      "show-death-screen",
+      handleDeathScreen as EventListener,
+    );
+    window.addEventListener(
+      "shop-open",
+      handleShopOpen as EventListener,
+    );
+
     return () => {
       window.removeEventListener(
         "health-change",
@@ -217,10 +311,22 @@ function App() {
         "style-change",
         handleStyleChange as EventListener,
       );
+      window.removeEventListener(
+        "essence-change",
+        handleEssenceChange as EventListener,
+      );
+      window.removeEventListener(
+        "show-death-screen",
+        handleDeathScreen as EventListener,
+      );
+      window.removeEventListener(
+        "shop-open",
+        handleShopOpen as EventListener,
+      );
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
-  }, [gameState]);
+  }, [gameSessionId]);
 
   return (
     <div
@@ -235,26 +341,46 @@ function App() {
       {gameState === "CLASS_SELECT" && (
         <ClassSelect onSelect={handleClassSelect} />
       )}
-      {gameState === "PLAYING" && (
+      {(gameState === "PLAYING" || gameState === "DEATH") && (
         <>
           <div id="phaser-game" style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", zIndex: 0 }} />
-          <GameHUD
-            health={health}
-            maxHealth={maxHealth}
-            altitude={altitude}
-            inventory={inventory}
-            className={selectedClass ? CLASSES[selectedClass].name : undefined}
-            styleMeter={styleMeter}
-            styleTier={styleTier}
-          />
-          {isPaused && (
-            <PauseMenu
-              altitude={altitude}
-              elapsedTime={elapsedTime}
-              itemCount={inventory.length}
-              onResume={handleResume}
-              onRestart={handleRestart}
-              onQuit={handleQuit}
+          {gameState === "PLAYING" && (
+            <>
+              <GameHUD
+                health={health}
+                maxHealth={maxHealth}
+                altitude={altitude}
+                inventory={inventory}
+                className={selectedClass ? CLASSES[selectedClass].name : undefined}
+                styleMeter={styleMeter}
+                styleTier={styleTier}
+                essence={essence}
+              />
+              {isPaused && (
+                <PauseMenu
+                  altitude={altitude}
+                  elapsedTime={elapsedTime}
+                  itemCount={inventory.length}
+                  onResume={handleResume}
+                  onRestart={handleRestart}
+                  onQuit={handleQuit}
+                />
+              )}
+              {shopOpen && (
+                <ShopUI
+                  offerings={shopOfferings}
+                  essence={essence}
+                  onPurchase={handleShopPurchase}
+                  onClose={handleShopClose}
+                />
+              )}
+            </>
+          )}
+          {gameState === "DEATH" && deathStats && (
+            <DeathScreen
+              {...deathStats}
+              onRetry={handleDeathRetry}
+              onMainMenu={handleQuit}
             />
           )}
         </>

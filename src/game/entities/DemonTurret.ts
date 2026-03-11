@@ -14,6 +14,8 @@ export class DemonTurret extends Enemy {
 
   constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
     super(scene, x, y, "dude", player, 5, 1, 0); // 5 HP, 1 Dmg, 0 Speed (stationary)
+    this.enemyType = 'turret';
+    this.tier = 'basic';
     this.setTint(0x990000); // Dark red
     this.setScale(0.9);
 

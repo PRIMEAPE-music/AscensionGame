@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { InventoryUI } from "./InventoryUI";
+import { BossHealthBar } from "./BossHealthBar";
+import { EventBus } from "../systems/EventBus";
 import type { ItemData } from "../config/ItemConfig";
 
 interface GameHUDProps {
@@ -10,6 +12,7 @@ interface GameHUDProps {
   className?: string;
   styleMeter: number;
   styleTier: string;
+  essence: number;
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -49,12 +52,145 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   className = "Monk",
   styleMeter,
   styleTier,
+  essence,
 }) => {
   const healthPercentage = (health / maxHealth) * 100;
   const tierColor = TIER_COLORS[styleTier] || "#666";
 
+  // Boss fight state
+  const [bossActive, setBossActive] = useState(false);
+  const [bossName, setBossName] = useState("");
+  const [bossHealth, setBossHealth] = useState(0);
+  const [bossMaxHealth, setBossMaxHealth] = useState(0);
+  const [bossPhase, setBossPhase] = useState(1);
+  const [showWarning, setShowWarning] = useState(false);
+  const [warningOpacity, setWarningOpacity] = useState(1);
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showWarningFiredRef = useRef(false);
+
+  // Boss distance indicator
+  const [bossDistance, setBossDistance] = useState<number | null>(null);
+
+  // Essence flash animation
+  const [essenceFlash, setEssenceFlash] = useState(false);
+  const prevEssenceRef = useRef(essence);
+  useEffect(() => {
+    if (essence !== prevEssenceRef.current && essence > 0) {
+      setEssenceFlash(true);
+      const timer = setTimeout(() => setEssenceFlash(false), 400);
+      prevEssenceRef.current = essence;
+      return () => clearTimeout(timer);
+    }
+    prevEssenceRef.current = essence;
+  }, [essence]);
+
+  useEffect(() => {
+    const unsubSpawn = EventBus.on("boss-spawn", (data) => {
+      setBossActive(true);
+      setBossName(data.name);
+      setBossHealth(data.maxHealth);
+      setBossMaxHealth(data.maxHealth);
+      setBossPhase(1);
+      setBossDistance(null); // Hide distance when fight starts
+    });
+
+    const unsubHealth = EventBus.on("boss-health-change", (data) => {
+      setBossHealth(data.health);
+      setBossMaxHealth(data.maxHealth);
+      setBossPhase(data.phase);
+    });
+
+    const unsubDefeated = EventBus.on("boss-defeated", () => {
+      setBossActive(false);
+      setBossName("");
+      setBossHealth(0);
+      setBossMaxHealth(0);
+      setBossPhase(1);
+      setBossDistance(null);
+      showWarningFiredRef.current = false;
+    });
+
+    const unsubDied = EventBus.on("player-died", () => {
+      setBossActive(false);
+      setBossName("");
+      setBossHealth(0);
+      setBossMaxHealth(0);
+      setBossPhase(1);
+      setShowWarning(false);
+      setBossDistance(null);
+      showWarningFiredRef.current = false;
+    });
+
+    const unsubWarning = EventBus.on("boss-warning", (data) => {
+      // Update distance indicator continuously
+      setBossDistance(Math.floor(data.distance));
+
+      // Show the big "BOSS APPROACHING" warning once (when first entering range)
+      if (!showWarningFiredRef.current) {
+        showWarningFiredRef.current = true;
+        setShowWarning(true);
+        setWarningOpacity(1);
+        // Start fade after 2 seconds
+        fadeTimerRef.current = setTimeout(() => {
+          setWarningOpacity(0);
+        }, 2000);
+        // Remove warning after 3 seconds total
+        warningTimerRef.current = setTimeout(() => {
+          setShowWarning(false);
+        }, 3000);
+      }
+    });
+
+    return () => {
+      unsubSpawn();
+      unsubHealth();
+      unsubDefeated();
+      unsubDied();
+      unsubWarning();
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+      if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+    };
+  }, []);
+
   return (
     <>
+      {/* Boss Health Bar */}
+      {bossActive && (
+        <BossHealthBar
+          bossName={bossName}
+          health={bossHealth}
+          maxHealth={bossMaxHealth}
+          phase={bossPhase}
+        />
+      )}
+
+      {/* Boss Warning Text */}
+      {showWarning && (
+        <div
+          style={{
+            position: "absolute",
+            top: "40%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            fontFamily: "monospace",
+            fontSize: "48px",
+            fontWeight: "bold",
+            color: "#ff2222",
+            textShadow:
+              "0 0 20px rgba(255, 34, 34, 0.8), 0 0 40px rgba(255, 34, 34, 0.4), 2px 2px 4px rgba(0, 0, 0, 0.9)",
+            letterSpacing: "6px",
+            textTransform: "uppercase",
+            zIndex: 20,
+            pointerEvents: "none",
+            opacity: warningOpacity,
+            transition: "opacity 1s ease-out",
+          }}
+        >
+          BOSS APPROACHING
+        </div>
+      )}
+
       {/* Top Bar */}
       <div
         style={{
@@ -147,7 +283,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           </div>
         </div>
 
-        {/* Right: Altitude + Style */}
+        {/* Right: Altitude + Style + Boss Distance */}
         <div
           style={{
             ...glassStyle,
@@ -162,6 +298,22 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <div style={{ fontSize: "18px", fontWeight: "bold", letterSpacing: "1px" }}>
             {Math.floor(altitude)}m
           </div>
+
+          {/* Boss Distance Indicator */}
+          {bossDistance !== null && (
+            <div
+              style={{
+                fontSize: "14px",
+                fontWeight: "bold",
+                color: "#ff2222",
+                letterSpacing: "1px",
+                textShadow: "0 0 8px rgba(255, 34, 34, 0.6)",
+                animation: "hud-pulse 1.2s ease-in-out infinite",
+              }}
+            >
+              BOSS IN {bossDistance}m
+            </div>
+          )}
 
           {/* Style Meter */}
           <div
@@ -202,6 +354,41 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 }}
               />
             </div>
+          </div>
+
+          {/* Essence Counter */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginTop: "2px",
+              transform: essenceFlash ? "scale(1.15)" : "scale(1)",
+              transition: "transform 0.2s ease-out",
+            }}
+          >
+            <span
+              style={{
+                fontSize: "16px",
+                color: "#cc44ff",
+                textShadow: essenceFlash
+                  ? "0 0 12px rgba(204, 68, 255, 0.8)"
+                  : "0 0 6px rgba(204, 68, 255, 0.4)",
+                transition: "text-shadow 0.2s ease-out",
+              }}
+            >
+              &#9670;
+            </span>
+            <span
+              style={{
+                fontSize: "16px",
+                fontWeight: "bold",
+                color: essenceFlash ? "#dd66ff" : "#cc44ff",
+                transition: "color 0.2s ease-out",
+              }}
+            >
+              {essence}
+            </span>
           </div>
         </div>
       </div>

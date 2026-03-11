@@ -20,6 +20,8 @@ export class HellHound extends Enemy {
 
   constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
     super(scene, x, y, "dude", player, 4, 1, 250); // 4 HP, 1 Dmg, 250 Speed
+    this.enemyType = 'hound';
+    this.tier = 'basic';
     this.setTint(0xff4400); // Orange-red
     this.setScale(0.75);
   }

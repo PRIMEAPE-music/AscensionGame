@@ -8,6 +8,7 @@ import {
 import type { SlopeManager } from "./SlopeManager";
 import type { PlatformTextureManager } from "./PlatformTextureManager";
 import type { PlatformEffectsManager } from "./PlatformEffectsManager";
+import type { BossArenaManager } from "./BossArenaManager";
 
 interface DifficultyParams {
   minGap: number;
@@ -28,8 +29,13 @@ export class LevelGenerator {
   private slopeManager: SlopeManager;
   private textureManager: PlatformTextureManager | null = null;
   private platformEffectsManager: PlatformEffectsManager | null = null;
+  private bossArenaManager: BossArenaManager | null = null;
   private lastPlatformY: number;
   private lastPlatformX: number;
+
+  // Shop platform spawning
+  private lastShopAltitude: number = 0;
+  private nextShopDist: number = 0;
 
   // Tower-climb state: alternates between side climbing and bridging
   private currentSide: "left" | "right" = "left";
@@ -59,7 +65,18 @@ export class LevelGenerator {
     this.platformEffectsManager = manager;
   }
 
+  setBossArenaManager(manager: BossArenaManager) {
+    this.bossArenaManager = manager;
+  }
+
+  private nextShopInterval(): number {
+    return Phaser.Math.Between(300, 500);
+  }
+
   init() {
+    this.lastShopAltitude = 0;
+    this.nextShopDist = this.nextShopInterval();
+
     // Wide starting platform
     this.createPlatform(960, WORLD.BASE_PLATFORM_Y, 10, PlatformType.STANDARD);
     // Guide player toward left wall to start the climb
@@ -83,6 +100,24 @@ export class LevelGenerator {
         0,
         (WORLD.BASE_PLATFORM_Y - this.lastPlatformY) / WORLD.ALTITUDE_SCALE,
       );
+
+      // Check if we should place a boss arena instead of normal platforms
+      if (
+        this.bossArenaManager &&
+        this.bossArenaManager.shouldSpawnArena(altitude)
+      ) {
+        const arena = this.bossArenaManager.generateArena(
+          this.scene,
+          this.staticPlatforms,
+        );
+        // Skip normal generation for the arena's vertical range
+        // Move generation position to above the arena
+        this.lastPlatformY =
+          arena.centerY - arena.height / 2 - 100;
+        this.lastPlatformX = WORLD.WIDTH / 2;
+        continue;
+      }
+
       this.generateNextChunk(altitude);
     }
 
@@ -335,6 +370,24 @@ export class LevelGenerator {
           this.runSpecialPattern(params);
         }
       }
+    }
+
+    // Shop platform check — spawn a golden shop platform at regular intervals
+    // Don't spawn during boss arena zones
+    const isInBossArena =
+      this.bossArenaManager && this.bossArenaManager.shouldSpawnArena(altitude);
+    if (!isInBossArena && altitude - this.lastShopAltitude >= this.nextShopDist) {
+      const shopY = this.lastPlatformY - Phaser.Math.Between(params.minGap, params.maxGap);
+      const shopX = Phaser.Math.Clamp(
+        this.lastPlatformX + Phaser.Math.Between(-200, 200),
+        300,
+        WORLD.WIDTH - 300,
+      );
+      const shopScale = Phaser.Math.FloatBetween(2.0, 2.5);
+      this.lastPlatformY = this.createPlatform(shopX, shopY, shopScale, PlatformType.SHOP);
+      this.lastPlatformX = shopX;
+      this.lastShopAltitude = altitude;
+      this.nextShopDist = this.nextShopInterval();
     }
   }
 

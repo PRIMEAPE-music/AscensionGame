@@ -11,11 +11,21 @@ import { BackgroundRenderer } from "../systems/BackgroundRenderer";
 import { PlatformEffectsManager } from "../systems/PlatformEffectsManager";
 import { ParticleManager } from "../systems/ParticleManager";
 import { AtmosphereManager } from "../systems/AtmosphereManager";
+import { BossArenaManager } from "../systems/BossArenaManager";
 import { EventBus } from "../systems/EventBus";
 import { ClassType } from "../config/ClassConfig";
 import { WORLD } from "../config/GameConfig";
 import { PlatformType } from "../config/PlatformTypes";
 import { SPRITE_CONFIG, ANIMATIONS } from "../config/AnimationConfig";
+import { ENEMY_REGISTRY } from "../config/EnemyConfig";
+import { DamageNumberManager } from "../systems/DamageNumberManager";
+
+const ESSENCE_REWARDS: Record<string, number> = {
+  basic: 5,
+  intermediate: 15,
+  advanced: 30,
+  elite: 60,
+};
 
 export class MainScene extends Phaser.Scene {
   private player!: Player;
@@ -34,10 +44,18 @@ export class MainScene extends Phaser.Scene {
   private platformEffectsManager!: PlatformEffectsManager;
   private particleManager!: ParticleManager;
   private atmosphereManager!: AtmosphereManager;
+  private bossArenaManager!: BossArenaManager;
+  private bossWarningEmitted: boolean = false;
   private leftWall!: Phaser.GameObjects.Rectangle;
   private rightWall!: Phaser.GameObjects.Rectangle;
   private highestY: number = WORLD.PLAYER_SPAWN.y;
   private ridingPlatform: Phaser.GameObjects.GameObject | null = null;
+
+  // Run tracking
+  private killCount: number = 0;
+  private bossesDefeated: number = 0;
+  private essenceTotal: number = 0;
+  private runStartTime: number = 0;
 
   constructor() {
     super({ key: "MainScene" });
@@ -116,6 +134,11 @@ export class MainScene extends Phaser.Scene {
     );
     this.levelGenerator.setTextureManager(this.platformTextureManager);
     this.levelGenerator.setPlatformEffectsManager(this.platformEffectsManager);
+
+    // Boss arena manager
+    this.bossArenaManager = new BossArenaManager(this, this.staticPlatforms);
+    this.levelGenerator.setBossArenaManager(this.bossArenaManager);
+
     this.levelGenerator.init();
 
     // Player
@@ -141,6 +164,7 @@ export class MainScene extends Phaser.Scene {
       this.staticPlatforms,
     );
     this.combatManager = new CombatManager(this, this.player, this.enemies);
+    this.combatManager.setDamageNumberManager(new DamageNumberManager(this));
 
     // Colliders
     this.physics.add.collider(
@@ -218,6 +242,88 @@ export class MainScene extends Phaser.Scene {
       health: this.player.health,
       maxHealth: this.player.maxHealth,
     });
+
+    // Listen for boss defeats to spawn reward items
+    EventBus.on("boss-defeated", (data) => {
+      // Spawn a silver item at the player's location
+      this.spawnManager.spawnRandomItem(this.player.x, this.player.y - 50);
+      // Every 3rd boss also drops a gold item
+      if (data.bossNumber % 3 === 0) {
+        this.spawnManager.spawnRandomItem(this.player.x + 60, this.player.y - 50);
+      }
+
+      // Track boss defeat and award essence
+      this.bossesDefeated++;
+      const bossEssence = 50 * data.bossNumber;
+      this.essenceTotal += bossEssence;
+      EventBus.emit("essence-change", {
+        essence: this.essenceTotal,
+        gained: bossEssence,
+      });
+    });
+
+    // Track enemy kills and award essence
+    EventBus.on("enemy-killed", (data) => {
+      this.killCount++;
+      const def = ENEMY_REGISTRY[data.enemyType];
+      const tier = def?.tier ?? "basic";
+      const essenceReward = ESSENCE_REWARDS[tier] ?? 5;
+      this.essenceTotal += essenceReward;
+      EventBus.emit("essence-change", {
+        essence: this.essenceTotal,
+        gained: essenceReward,
+      });
+    });
+
+    // Handle shop purchases
+    EventBus.on("shop-purchase", (data) => {
+      switch (data.offeringId) {
+        case "health_restore":
+          if (this.player.health < this.player.maxHealth) {
+            this.player.health = Math.min(this.player.health + 1, this.player.maxHealth);
+            EventBus.emit("health-change", {
+              health: this.player.health,
+              maxHealth: this.player.maxHealth,
+            });
+          }
+          break;
+        case "random_item":
+          this.spawnManager.spawnRandomItem(this.player.x, this.player.y - 40);
+          break;
+        case "damage_buff": {
+          // Temporary +20% damage for 2 minutes
+          const currentMod = this.player.statModifiers.get("attackDamage") || 0;
+          this.player.statModifiers.set("attackDamage", currentMod + 0.2);
+          this.time.delayedCall(120000, () => {
+            const mod = this.player.statModifiers.get("attackDamage") || 0;
+            this.player.statModifiers.set("attackDamage", mod - 0.2);
+          });
+          break;
+        }
+      }
+      // Deduct essence
+      this.essenceTotal -= data.cost;
+      EventBus.emit("essence-change", {
+        essence: this.essenceTotal,
+        gained: -data.cost,
+      });
+    });
+
+    // Handle player death — emit death screen event with run stats
+    this.runStartTime = Date.now();
+    EventBus.on("player-died", () => {
+      const altitude = Math.max(
+        0,
+        (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
+      );
+      EventBus.emit("show-death-screen", {
+        altitude: Math.floor(altitude),
+        kills: this.killCount,
+        bossesDefeated: this.bossesDefeated,
+        timeMs: Date.now() - this.runStartTime,
+        essenceEarned: this.essenceTotal,
+      });
+    });
   }
 
   update(time: number, delta: number) {
@@ -265,6 +371,9 @@ export class MainScene extends Phaser.Scene {
     );
     EventBus.emit("altitude-change", { altitude });
 
+    // Boss arena system
+    this.bossArenaManager.update(altitude, this.player.y);
+
     // Style tracking
     const vx = this.player.body!.velocity.x;
     const vy = this.player.body!.velocity.y;
@@ -278,8 +387,10 @@ export class MainScene extends Phaser.Scene {
     this.platformEffectsManager.update(time, delta);
     this.particleManager.update(this.player, time, delta);
 
-    // Systems
-    this.spawnManager.update(altitude, delta);
+    // Systems — suppress normal spawning during boss fights
+    if (!this.bossArenaManager.getIsBossFight()) {
+      this.spawnManager.update(altitude, delta);
+    }
     this.combatManager.update();
 
     // Death plane (relative to highest reached point)
@@ -329,6 +440,23 @@ export class MainScene extends Phaser.Scene {
     // Detect platform type for surface effects
     if (_player.body?.touching?.down) {
       this.player.detectPlatformType(platform);
+    }
+
+    // Shop platform detection
+    if (
+      platform.getData("type") === PlatformType.SHOP &&
+      _player.body?.touching?.down &&
+      !platform.getData("shopVisited")
+    ) {
+      platform.setData("shopVisited", true);
+      this.scene.pause();
+      EventBus.emit("shop-open", {
+        offerings: [
+          { id: "health_restore", name: "Health Restore", description: "Restore 1 HP", cost: 30, icon: "\u2665" },
+          { id: "random_item", name: "Random Item", description: "Random silver item", cost: 100, icon: "\u25C6" },
+          { id: "damage_buff", name: "Demon Fury", description: "+20% damage for 2 min", cost: 75, icon: "\u2694" },
+        ],
+      });
     }
 
     // Bounce platforms auto-bounce on contact
