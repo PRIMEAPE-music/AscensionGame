@@ -13,6 +13,11 @@ export class CombatManager {
   private enemies: Phaser.Physics.Arcade.Group;
   private damageNumbers: DamageNumberManager | null = null;
 
+  // Combo tracking
+  private comboCount: number = 0;
+  private comboTimer: number = 0;
+  private readonly COMBO_TIMEOUT = 3000; // 3 seconds to chain next hit
+
   constructor(
     scene: Phaser.Scene,
     player: Player,
@@ -27,7 +32,20 @@ export class CombatManager {
     this.damageNumbers = manager;
   }
 
-  update(): void {
+  update(delta: number): void {
+    // Combo timeout
+    if (this.comboCount > 0) {
+      this.comboTimer -= delta;
+    }
+    if (this.comboTimer <= 0 && this.comboCount > 0) {
+      // Combo ended — award style points based on length
+      if (this.comboCount >= 3) {
+        EventBus.emit("combo-end", { finalCount: this.comboCount });
+      }
+      this.comboCount = 0;
+      EventBus.emit("combo-update", { count: 0, multiplier: 1.0, timer: 0 });
+    }
+
     if (!this.player.isAttacking || !this.player.attackHitbox) return;
 
     this.scene.physics.overlap(
@@ -51,7 +69,9 @@ export class CombatManager {
         ? classConfig.attacks[this.player.currentAttackId]
         : null;
 
-    const damage = this.calculateDamage(attackDef?.damageMultiplier ?? 1);
+    // Apply combo multiplier to damage
+    const comboMultiplier = 1.0 + Math.min(0.3, this.comboCount * 0.1);
+    const damage = this.calculateDamage((attackDef?.damageMultiplier ?? 1) * comboMultiplier);
 
     // Check if the enemy is blocking from the front
     if (enemy.isBlocking) {
@@ -72,6 +92,16 @@ export class CombatManager {
     const enemyType = enemy.enemyType;
 
     enemy.takeDamage(damage);
+
+    // Increment combo
+    this.comboCount++;
+    this.comboTimer = this.COMBO_TIMEOUT;
+    const newComboMultiplier = 1.0 + Math.min(0.3, this.comboCount * 0.1);
+    EventBus.emit("combo-update", {
+      count: this.comboCount,
+      multiplier: newComboMultiplier,
+      timer: this.comboTimer,
+    });
 
     // Hit feedback: damage numbers, screen shake, hit-stop
     const isHeavy = (attackDef?.damageMultiplier ?? 1) >= 1.5;
@@ -116,6 +146,11 @@ export class CombatManager {
     if (this.player.isInvincible) return;
 
     this.player.takeDamage(1);
+
+    // Reset combo on taking damage
+    this.comboCount = 0;
+    this.comboTimer = 0;
+    EventBus.emit("combo-update", { count: 0, multiplier: 1.0, timer: 0 });
 
     EventBus.emit("health-change", {
       health: this.player.health,

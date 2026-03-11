@@ -37,6 +37,8 @@ function App() {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [essence, setEssence] = useState(0);
   const [deathStats, setDeathStats] = useState<DeathStats | null>(null);
+  const [comboCount, setComboCount] = useState(0);
+  const [comboMultiplier, setComboMultiplier] = useState(1.0);
   const [shopOpen, setShopOpen] = useState(false);
   const [shopOfferings, setShopOfferings] = useState<ShopOffering[]>([]);
   const startTimeRef = useRef<number>(0);
@@ -86,6 +88,8 @@ function App() {
     setStyleMeter(0);
     setStyleTier("D");
     setEssence(0);
+    setComboCount(0);
+    setComboMultiplier(1.0);
     setDeathStats(null);
     setShopOpen(false);
     setShopOfferings([]);
@@ -106,6 +110,8 @@ function App() {
     setStyleMeter(0);
     setStyleTier("D");
     setEssence(0);
+    setComboCount(0);
+    setComboMultiplier(1.0);
     setDeathStats(null);
     setShopOpen(false);
     setShopOfferings([]);
@@ -123,6 +129,8 @@ function App() {
     setInventory([]);
     setStyleMeter(0);
     setStyleTier("D");
+    setComboCount(0);
+    setComboMultiplier(1.0);
     setShopOpen(false);
     setShopOfferings([]);
     gameRef.current?.destroy(true);
@@ -267,6 +275,11 @@ function App() {
     );
     window.addEventListener("style-change", handleStyleChange as EventListener);
 
+    const handleComboUpdate = (e: CustomEvent) => {
+      setComboCount(e.detail.count);
+      setComboMultiplier(e.detail.multiplier);
+    };
+
     const handleEssenceChange = (e: CustomEvent) => {
       setEssence(e.detail.essence);
     };
@@ -281,6 +294,10 @@ function App() {
       setShopOpen(true);
     };
 
+    window.addEventListener(
+      "combo-update",
+      handleComboUpdate as EventListener,
+    );
     window.addEventListener(
       "essence-change",
       handleEssenceChange as EventListener,
@@ -310,6 +327,10 @@ function App() {
       window.removeEventListener(
         "style-change",
         handleStyleChange as EventListener,
+      );
+      window.removeEventListener(
+        "combo-update",
+        handleComboUpdate as EventListener,
       );
       window.removeEventListener(
         "essence-change",
@@ -355,6 +376,8 @@ function App() {
                 styleMeter={styleMeter}
                 styleTier={styleTier}
                 essence={essence}
+                comboCount={comboCount}
+                comboMultiplier={comboMultiplier}
               />
               {isPaused && (
                 <PauseMenu
