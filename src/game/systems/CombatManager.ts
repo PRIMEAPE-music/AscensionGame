@@ -136,8 +136,10 @@ export class CombatManager {
     // Knockback (only if enemy survived)
     const direction = enemyX > this.player.x ? 1 : -1;
     const kb = attackDef?.knockback ?? COMBAT.KNOCKBACK_ENEMY;
-    enemy.setVelocityX(kb.x * direction);
-    enemy.setVelocityY(kb.y);
+    // Mega Knockback ability: +50% knockback
+    const kbMult = this.player.abilities.has('mega_knockback') ? 1.5 : 1.0;
+    enemy.setVelocityX(kb.x * direction * kbMult);
+    enemy.setVelocityY(kb.y * kbMult);
 
     // Hit flash feedback
     this.scene.time.delayedCall(COMBAT.HIT_FLASH_DURATION, () => {
@@ -151,6 +153,12 @@ export class CombatManager {
     if (this.player.isInvincible) return;
 
     this.player.takeDamage(1, enemy.x);
+
+    // Damage Reflection ability: reflect 30% of damage back to the attacker
+    if (this.player.abilities.has('damage_reflect') && enemy.active) {
+      const reflectDamage = Math.max(1, Math.round(1 * 0.3));
+      enemy.takeDamage(reflectDamage);
+    }
 
     // Reset combo on taking damage
     this.comboCount = 0;
