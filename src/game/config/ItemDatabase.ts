@@ -102,5 +102,32 @@ export const ITEMS: Record<string, ItemData> = {
         rarity: 'LEGENDARY',
         abilityId: 'essence_boost',
         iconColor: 0xcc44ff
+    },
+    'wind_runner': {
+        id: 'wind_runner',
+        name: 'Wind Runner',
+        description: 'Press Shift in midair to air dash',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'air_dash',
+        iconColor: 0x88ccff
+    },
+    'spider_silk': {
+        id: 'spider_silk',
+        name: 'Spider Silk',
+        description: 'Hold toward wall to climb upward',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'wall_climb',
+        iconColor: 0xcccccc
+    },
+    'chain_hook': {
+        id: 'chain_hook',
+        name: 'Chain Hook',
+        description: 'Press V to grapple to nearest platform',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'grappling_hook',
+        iconColor: 0x886644
     }
 };
