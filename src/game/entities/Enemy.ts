@@ -39,7 +39,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.setCollideWorldBounds(false); // Enemies can fall off world
     }
 
-    /** Apply elite modifiers: 3x health, 1.5x damage, 1.2x speed, silver aura. */
+    /** Apply elite modifiers: 3x health, 1.5x damage, 1.2x speed, silver aura + shimmer. */
     public applyElite(): void {
         this.isElite = true;
         this.health *= 3;
@@ -47,6 +47,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.damage = Math.ceil(this.damage * 1.5);
         this.speed *= 1.2;
         this.setTint(0xccccff); // Silver aura
+
+        // Pulsing shimmer effect: oscillate alpha to create a glowing look
+        this.scene.tweens.add({
+            targets: this,
+            alpha: { from: 1.0, to: 0.7 },
+            duration: 800,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+        });
     }
 
     public takeDamage(amount: number) {

@@ -21,7 +21,9 @@ import { SPRITE_CONFIG, ANIMATIONS } from "../config/AnimationConfig";
 import { ENEMY_REGISTRY } from "../config/EnemyConfig";
 import { DamageNumberManager } from "../systems/DamageNumberManager";
 import { SacredGround } from "../systems/SacredGround";
+import { RisingDarkness } from "../systems/RisingDarkness";
 import { PersistentStats } from "../systems/PersistentStats";
+import { ActiveModifiers } from "../config/RunModifiers";
 import { ITEMS } from "../config/ItemDatabase";
 
 const ESSENCE_REWARDS: Record<string, number> = {
@@ -50,6 +52,7 @@ export class MainScene extends Phaser.Scene {
   private atmosphereManager!: AtmosphereManager;
   private bossArenaManager!: BossArenaManager;
   private hazardManager!: HazardManager;
+  private risingDarkness!: RisingDarkness;
   private bossWarningEmitted: boolean = false;
   private leftWall!: Phaser.GameObjects.Rectangle;
   private rightWall!: Phaser.GameObjects.Rectangle;
@@ -176,6 +179,12 @@ export class MainScene extends Phaser.Scene {
 
     // Hazard manager (needs player and staticPlatforms)
     this.hazardManager = new HazardManager(this, this.player, this.staticPlatforms);
+
+    // Rising Darkness system (optional difficulty modifier)
+    this.risingDarkness = new RisingDarkness(this);
+    if (ActiveModifiers.isActive('rising_darkness')) {
+      this.risingDarkness.enable(WORLD.PLAYER_SPAWN.y);
+    }
 
     // Particle effects (needs player for state tracking)
     this.particleManager = new ParticleManager(this);
@@ -496,6 +505,14 @@ export class MainScene extends Phaser.Scene {
     // Hazard system (stalactites, wind, portal effects)
     this.hazardManager.update(time, delta, altitude, this.cameras.main.scrollY);
 
+    // Rising Darkness system
+    this.risingDarkness.update(
+      delta,
+      this.player.y,
+      (amount: number) => this.player.takeDamage(amount),
+      this.enemies,
+    );
+
     // Style tracking
     const vx = this.player.body!.velocity.x;
     const vy = this.player.body!.velocity.y;
@@ -551,6 +568,7 @@ export class MainScene extends Phaser.Scene {
     this.particleManager?.destroy();
     this.platformEffectsManager?.destroy?.();
     this.hazardManager?.destroy?.();
+    this.risingDarkness?.destroy?.();
 
     // Clean up Sacred Ground instances and listener
     this.sacredGrounds.forEach((sg) => sg.destroy());
