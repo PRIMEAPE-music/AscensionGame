@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import { SettingsScreen } from "./SettingsScreen";
 
 interface PauseMenuProps {
   altitude: number;
@@ -24,6 +25,12 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
   onRestart,
   onQuit,
 }) => {
+  const [showSettings, setShowSettings] = useState(false);
+
+  if (showSettings) {
+    return <SettingsScreen onBack={() => setShowSettings(false)} />;
+  }
+
   const buttonStyle: React.CSSProperties = {
     width: "240px",
     padding: "14px 0",
@@ -151,6 +158,9 @@ export const PauseMenu: React.FC<PauseMenuProps> = ({
         </button>
         <button onClick={onRestart} style={buttonStyle}>
           Restart
+        </button>
+        <button onClick={() => setShowSettings(true)} style={buttonStyle}>
+          Settings
         </button>
         <button
           onClick={onQuit}
