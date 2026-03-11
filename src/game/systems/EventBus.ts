@@ -33,6 +33,8 @@ export interface GameEvents {
   "shop-open": { offerings: ShopOffering[] };
   "shop-close": {};
   "shop-purchase": { offeringId: string; cost: number };
+  "combo-update": { count: number; multiplier: number; timer: number };
+  "combo-end": { finalCount: number };
 }
 
 export const EventBus = {

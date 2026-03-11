@@ -13,6 +13,8 @@ interface GameHUDProps {
   styleMeter: number;
   styleTier: string;
   essence: number;
+  comboCount: number;
+  comboMultiplier: number;
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -53,9 +55,21 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   styleMeter,
   styleTier,
   essence,
+  comboCount,
+  comboMultiplier,
 }) => {
   const healthPercentage = (health / maxHealth) * 100;
   const tierColor = TIER_COLORS[styleTier] || "#666";
+
+  // Combo color progression
+  const comboColor =
+    comboCount >= 10
+      ? "#ff4444"
+      : comboCount >= 6
+        ? "#ff8800"
+        : comboCount >= 3
+          ? "#ffcc00"
+          : "#ffffff";
 
   // Boss fight state
   const [bossActive, setBossActive] = useState(false);
@@ -420,6 +434,51 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <InventoryUI items={inventory} />
         </div>
       </div>
+
+      {/* Combo Meter */}
+      {comboCount > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            right: "40px",
+            top: "50%",
+            transform: "translateY(-50%)",
+            textAlign: "center",
+            fontFamily: "monospace",
+            pointerEvents: "none",
+            zIndex: 15,
+          }}
+        >
+          <div
+            style={{
+              fontSize: `${Math.min(72, 36 + comboCount * 4)}px`,
+              fontWeight: "bold",
+              color: comboColor,
+              textShadow: `0 0 20px ${comboColor}`,
+            }}
+          >
+            {comboCount}
+          </div>
+          <div
+            style={{
+              fontSize: "20px",
+              color: comboColor,
+              opacity: 0.8,
+            }}
+          >
+            {comboMultiplier.toFixed(1)}x
+          </div>
+          <div
+            style={{
+              fontSize: "14px",
+              color: "#aaa",
+              letterSpacing: "2px",
+            }}
+          >
+            COMBO
+          </div>
+        </div>
+      )}
     </>
   );
 };

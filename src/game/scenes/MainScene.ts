@@ -391,7 +391,7 @@ export class MainScene extends Phaser.Scene {
     if (!this.bossArenaManager.getIsBossFight()) {
       this.spawnManager.update(altitude, delta);
     }
-    this.combatManager.update();
+    this.combatManager.update(delta);
 
     // Death plane (relative to highest reached point)
     if (this.player.y > this.highestY + WORLD.DEATH_PLANE_OFFSET) {
