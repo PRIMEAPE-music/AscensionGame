@@ -18,9 +18,11 @@ import { RunModifierSelect } from "./game/ui/RunModifierSelect";
 import { AchievementManager } from "./game/systems/AchievementManager";
 import { AchievementPopup } from "./game/ui/AchievementPopup";
 import { PersistentStats } from "./game/systems/PersistentStats";
+import { GoldItemCollection } from "./game/systems/GoldItemCollection";
+import { GoldItemEquip } from "./game/ui/GoldItemEquip";
 import "./App.css";
 
-type GameState = "CLASS_SELECT" | "MODIFIERS" | "PLAYING" | "DEATH";
+type GameState = "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
 
 interface DeathStats {
   altitude: number;
@@ -57,6 +59,10 @@ function App() {
   }>({ remaining: 0, total: 15000 });
   const [gamblingOpen, setGamblingOpen] = useState(false);
   const [gamblingEssence, setGamblingEssence] = useState(0);
+  const [itemReplaceData, setItemReplaceData] = useState<{
+    newItem: ItemData;
+    currentItems: ItemData[];
+  } | null>(null);
   const [achievementPopup, setAchievementPopup] = useState<{
     name: string;
     description: string;
@@ -87,6 +93,11 @@ function App() {
   const handleClassSelect = useCallback((classType: ClassType) => {
     setSelectedClass(classType);
     (window as any).__selectedClass = classType;
+    setGameState("EQUIP");
+  }, []);
+
+  const handleGoldEquipConfirm = useCallback((equippedIds: string[]) => {
+    (window as any).__equippedGoldItems = equippedIds;
     setGameState("MODIFIERS");
   }, []);
 
@@ -143,7 +154,9 @@ function App() {
     setSacredGroundCooldown({ remaining: 0, total: 15000 });
     setGamblingOpen(false);
     setGamblingEssence(0);
+    setItemReplaceData(null);
     ActiveModifiers.clear();
+    GoldItemCollection.clearEquipped();
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("CLASS_SELECT");
@@ -172,7 +185,9 @@ function App() {
     setSacredGroundCooldown({ remaining: 0, total: 15000 });
     setGamblingOpen(false);
     setGamblingEssence(0);
+    setItemReplaceData(null);
     ActiveModifiers.clear();
+    GoldItemCollection.clearEquipped();
     setGameState("CLASS_SELECT");
     setSelectedClass(null);
   }, []);
@@ -197,7 +212,9 @@ function App() {
     setSacredGroundCooldown({ remaining: 0, total: 15000 });
     setGamblingOpen(false);
     setGamblingEssence(0);
+    setItemReplaceData(null);
     ActiveModifiers.clear();
+    GoldItemCollection.clearEquipped();
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("PLAYING"); // Triggers game recreation with same class
@@ -226,6 +243,22 @@ function App() {
   // Gambling close handler
   const handleGamblingClose = useCallback(() => {
     setGamblingOpen(false);
+  }, []);
+
+  // Item replace handlers
+  const handleItemReplaceTake = useCallback((replaceIndex: number) => {
+    if (!itemReplaceData) return;
+    EventBus.emit("item-replace-decision", { action: "take", replaceIndex });
+    setItemReplaceData(null);
+    const scene = gameRef.current?.scene.getScene("MainScene");
+    if (scene) scene.scene.resume();
+  }, [itemReplaceData]);
+
+  const handleItemReplaceLeave = useCallback(() => {
+    EventBus.emit("item-replace-decision", { action: "leave" });
+    setItemReplaceData(null);
+    const scene = gameRef.current?.scene.getScene("MainScene");
+    if (scene) scene.scene.resume();
   }, []);
 
   // Escape key handler
@@ -390,6 +423,14 @@ function App() {
       handleGamblingOpen as EventListener,
     );
 
+    const handleItemReplacePrompt = (e: CustomEvent) => {
+      setItemReplaceData(e.detail);
+    };
+    window.addEventListener(
+      "item-replace-prompt",
+      handleItemReplacePrompt as EventListener,
+    );
+
     // Class mechanic event listeners
     const handleFlowChange = (e: CustomEvent) => {
       setFlowMeter(e.detail.flow);
@@ -469,6 +510,10 @@ function App() {
         "gambling-open",
         handleGamblingOpen as EventListener,
       );
+      window.removeEventListener(
+        "item-replace-prompt",
+        handleItemReplacePrompt as EventListener,
+      );
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
@@ -486,6 +531,9 @@ function App() {
     >
       {gameState === "CLASS_SELECT" && (
         <ClassSelect onSelect={handleClassSelect} />
+      )}
+      {gameState === "EQUIP" && (
+        <GoldItemEquip onConfirm={handleGoldEquipConfirm} />
       )}
       {gameState === "MODIFIERS" && (
         <RunModifierSelect onConfirm={handleModifiersConfirm} />
@@ -533,6 +581,14 @@ function App() {
                 <GamblingUI
                   essence={essence}
                   onClose={handleGamblingClose}
+                />
+              )}
+              {itemReplaceData && (
+                <ItemReplaceUI
+                  newItem={itemReplaceData.newItem}
+                  currentItems={itemReplaceData.currentItems}
+                  onTake={handleItemReplaceTake}
+                  onLeave={handleItemReplaceLeave}
                 />
               )}
             </>

@@ -22,6 +22,7 @@ import { ENEMY_REGISTRY } from "../config/EnemyConfig";
 import { DamageNumberManager } from "../systems/DamageNumberManager";
 import { SacredGround } from "../systems/SacredGround";
 import { PersistentStats } from "../systems/PersistentStats";
+import { ITEMS } from "../config/ItemDatabase";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -384,6 +385,15 @@ export class MainScene extends Phaser.Scene {
     // Handle gambling close — resume scene
     EventBus.on("gambling-close", () => {
       this.scene.resume();
+    });
+
+    // Handle item replacement decision
+    EventBus.on("item-replace-decision", (data) => {
+      if (data.action === "take" && data.replaceIndex !== undefined) {
+        this.player.handleReplaceDecision(data.replaceIndex);
+      } else {
+        this.player.handleReplaceDecision(-1); // -1 means leave
+      }
     });
 
     // Handle player death — emit death screen event with run stats

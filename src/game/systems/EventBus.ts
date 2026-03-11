@@ -43,6 +43,8 @@ export interface GameEvents {
   "gambling-open": { essence: number };
   "gambling-close": {};
   "gambling-result": { bet: number; reward: string; rewardType: "nothing" | "item" | "health" | "gold_item" };
+  "item-replace-prompt": { newItem: ItemData; currentItems: ItemData[] };
+  "item-replace-decision": { action: "take" | "leave"; replaceIndex?: number };
 }
 
 export const EventBus = {

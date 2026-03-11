@@ -89,6 +89,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public inventory: ItemData[] = [];
   public abilities: Set<string> = new Set();
   public statModifiers: Map<StatType, number> = new Map();
+  private pendingItem: ItemData | null = null;
+  private readonly MAX_SILVER_ITEMS = 3;
 
   // === Paladin: Shield Guard ===
   private standStillTimer: number = 0;
@@ -1013,6 +1015,30 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   public collectItem(item: ItemData) {
+    // Gold items always collected (they're abilities, no slot limit)
+    if (item.type === 'GOLD') {
+      this.applyItem(item);
+      return;
+    }
+
+    // Silver items — check slot limit
+    const silverItems = this.inventory.filter(i => i.type === 'SILVER');
+    if (silverItems.length >= this.MAX_SILVER_ITEMS) {
+      // Inventory full — store pending item and emit event to show replacement UI
+      this.pendingItem = item;
+      this.scene.scene.pause();
+      EventBus.emit("item-replace-prompt", {
+        newItem: item,
+        currentItems: silverItems,
+      });
+      return;
+    }
+
+    // Normal collection (has room)
+    this.applyItem(item);
+  }
+
+  private applyItem(item: ItemData) {
     this.inventory.push(item);
     PersistentStats.addItemCollected();
 
@@ -1047,5 +1073,44 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
 
     EventBus.emit("inventory-change", { inventory: this.inventory });
+  }
+
+  public replaceItem(index: number, newItem: ItemData) {
+    const oldItem = this.inventory[index];
+    // Remove old item effects
+    if (oldItem && oldItem.effects) {
+      oldItem.effects.forEach((effect) => {
+        if (effect.targetStat === "health") {
+          this.maxHealth -= effect.value;
+          this.health = Math.min(this.health, this.maxHealth);
+        } else {
+          const current = this.statModifiers.get(effect.targetStat) || 0;
+          this.statModifiers.set(effect.targetStat, current - effect.value);
+        }
+      });
+    }
+    if (oldItem && oldItem.abilityId) {
+      this.abilities.delete(oldItem.abilityId);
+    }
+    // Remove old item from inventory
+    this.inventory.splice(index, 1);
+    // Apply new item
+    this.applyItem(newItem);
+  }
+
+  public handleReplaceDecision(replaceIndex: number) {
+    if (!this.pendingItem) return;
+    if (replaceIndex >= 0) {
+      // Find the actual inventory index for the silver item at the given silver-index
+      const silverIndices: number[] = [];
+      this.inventory.forEach((item, idx) => {
+        if (item.type === 'SILVER') silverIndices.push(idx);
+      });
+      const actualIndex = silverIndices[replaceIndex];
+      if (actualIndex !== undefined) {
+        this.replaceItem(actualIndex, this.pendingItem);
+      }
+    }
+    this.pendingItem = null;
   }
 }
