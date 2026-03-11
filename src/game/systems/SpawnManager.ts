@@ -4,7 +4,7 @@ import { Enemy } from "../entities/Enemy";
 import { ItemDrop } from "../entities/ItemDrop";
 import { ITEMS } from "../config/ItemDatabase";
 import { SPAWNING } from "../config/GameConfig";
-import type { ItemData, ItemQuality } from "../config/ItemConfig";
+import type { ItemData, ItemQuality, ItemRarity } from "../config/ItemConfig";
 import {
   ENEMY_REGISTRY,
   getEnemiesForAltitude,
@@ -266,14 +266,64 @@ export class SpawnManager {
     return item;
   }
 
-  spawnRandomItem(x: number, y: number): ItemDrop | null {
+  spawnRandomItem(x: number, y: number, altitude?: number): ItemDrop | null {
+    const alt = altitude ?? 0;
+    const selectedItem = this.selectSilverItemByAltitude(alt);
+    if (!selectedItem) return null;
+    return this.spawnItem(x, y, selectedItem.id);
+  }
+
+  /**
+   * Selects a silver item weighted by rarity based on current altitude.
+   * At lower altitudes: favors COMMON (T1) items.
+   * At higher altitudes: favors UNCOMMON/RARE (T2/T3) items.
+   */
+  private selectSilverItemByAltitude(altitude: number): ItemData | null {
     const silverItems = Object.values(ITEMS).filter(
       (i: ItemData) => i.type === "SILVER",
     );
     if (silverItems.length === 0) return null;
 
-    const item = silverItems[Math.floor(Math.random() * silverItems.length)];
-    return this.spawnItem(x, y, item.id);
+    // Determine rarity weights based on altitude
+    let commonWeight: number, uncommonWeight: number, rareWeight: number;
+    if (altitude > 6000) {
+      commonWeight = 15; uncommonWeight = 35; rareWeight = 50;
+    } else if (altitude > 3000) {
+      commonWeight = 30; uncommonWeight = 40; rareWeight = 30;
+    } else {
+      commonWeight = 60; uncommonWeight = 30; rareWeight = 10;
+    }
+
+    const rarityWeights: Record<ItemRarity, number> = {
+      'COMMON': commonWeight,
+      'UNCOMMON': uncommonWeight,
+      'RARE': rareWeight,
+      'LEGENDARY': 0, // Silver items don't use LEGENDARY
+    };
+
+    // Build weighted pool
+    const weightedPool: { item: ItemData; weight: number }[] = [];
+    for (const item of silverItems) {
+      const weight = rarityWeights[item.rarity] || 0;
+      if (weight > 0) {
+        weightedPool.push({ item, weight });
+      }
+    }
+
+    if (weightedPool.length === 0) return null;
+
+    // Weighted random selection
+    const totalWeight = weightedPool.reduce((sum, entry) => sum + entry.weight, 0);
+    let roll = Math.random() * totalWeight;
+    for (const entry of weightedPool) {
+      roll -= entry.weight;
+      if (roll <= 0) {
+        return entry.item;
+      }
+    }
+
+    // Fallback to last item
+    return weightedPool[weightedPool.length - 1].item;
   }
 
   private cleanup(playerY: number): void {
