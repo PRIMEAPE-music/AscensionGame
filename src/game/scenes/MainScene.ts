@@ -21,6 +21,7 @@ import { SPRITE_CONFIG, ANIMATIONS } from "../config/AnimationConfig";
 import { ENEMY_REGISTRY } from "../config/EnemyConfig";
 import { DamageNumberManager } from "../systems/DamageNumberManager";
 import { SacredGround } from "../systems/SacredGround";
+import { PersistentStats } from "../systems/PersistentStats";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -159,6 +160,10 @@ export class MainScene extends Phaser.Scene {
     );
     this.highestY = WORLD.PLAYER_SPAWN.y;
 
+    // Persistent stats — load from localStorage and start tracking this run
+    PersistentStats.load();
+    PersistentStats.startRun(selectedClass);
+
     // Hazard manager (needs player and staticPlatforms)
     this.hazardManager = new HazardManager(this, this.player, this.staticPlatforms);
 
@@ -273,6 +278,7 @@ export class MainScene extends Phaser.Scene {
 
       // Track boss defeat and award essence
       this.bossesDefeated++;
+      PersistentStats.addBossDefeat();
       const bossEssence = 50 * data.bossNumber;
       this.essenceTotal += bossEssence;
       EventBus.emit("essence-change", {
@@ -284,6 +290,7 @@ export class MainScene extends Phaser.Scene {
     // Track enemy kills and award essence
     EventBus.on("enemy-killed", (data) => {
       this.killCount++;
+      PersistentStats.addKill();
       const def = ENEMY_REGISTRY[data.enemyType];
       const tier = def?.tier ?? "basic";
       const essenceReward = ESSENCE_REWARDS[tier] ?? 5;
@@ -386,6 +393,12 @@ export class MainScene extends Phaser.Scene {
         0,
         (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
       );
+
+      // Finalize persistent stats for this run and save to localStorage
+      PersistentStats.setEssence(this.essenceTotal);
+      PersistentStats.endRun();
+      PersistentStats.save();
+
       EventBus.emit("show-death-screen", {
         altitude: Math.floor(altitude),
         kills: this.killCount,
@@ -439,6 +452,7 @@ export class MainScene extends Phaser.Scene {
       0,
       (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
     );
+    PersistentStats.setAltitude(altitude);
     EventBus.emit("altitude-change", { altitude });
 
     // Boss arena system

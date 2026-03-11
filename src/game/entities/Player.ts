@@ -12,6 +12,7 @@ import {
   COMBAT_CONFIG,
 } from "../systems/CombatTypes";
 import { SPRITE_CONFIG } from "../config/AnimationConfig";
+import { PersistentStats } from "../systems/PersistentStats";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
@@ -714,6 +715,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         // Perfect dodge! Grant buff
         this.perfectDodgeBuff = true;
         this.perfectDodgeBuffTimer = this.PERFECT_DODGE_BUFF_DURATION;
+        PersistentStats.addPerfectDodge();
         // Brief white flash to indicate perfect dodge
         this.setTint(0xffffff);
         this.scene.time.delayedCall(100, () => {
@@ -760,6 +762,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.health -= finalAmount;
+    PersistentStats.addDamageTaken(finalAmount);
 
     // Start invincibility
     this.invincibilityTimer = COMBAT.INVINCIBILITY_DURATION;
@@ -1011,6 +1014,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   public collectItem(item: ItemData) {
     this.inventory.push(item);
+    PersistentStats.addItemCollected();
 
     if (item.effects) {
       item.effects.forEach((effect) => {

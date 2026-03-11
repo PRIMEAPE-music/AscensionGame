@@ -6,6 +6,7 @@ import { COMBAT } from "../config/GameConfig";
 import { EventBus } from "./EventBus";
 import { COMBAT_CONFIG } from "./CombatTypes";
 import { DamageNumberManager } from "./DamageNumberManager";
+import { PersistentStats } from "./PersistentStats";
 
 export class CombatManager {
   private scene: Phaser.Scene;
@@ -92,6 +93,7 @@ export class CombatManager {
     const enemyType = enemy.enemyType;
 
     enemy.takeDamage(damage);
+    PersistentStats.addDamageDealt(damage);
 
     // Increment combo
     this.comboCount++;
