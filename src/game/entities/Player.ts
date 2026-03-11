@@ -634,7 +634,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // Initial Jump (coyote + buffer)
     if (wantsToJump && canJump) {
-      this.setVelocityY(jumpForce);
+      // Running jump bonus: up to 15% extra height based on horizontal speed
+      const hSpeed = Math.abs(this.body!.velocity.x);
+      const maxSpeed = this.getStat("moveSpeed", PHYSICS.MOVE_SPEED, this.classStats.moveSpeed);
+      const speedRatio = Math.min(hSpeed / maxSpeed, 1);
+      const runningJumpForce = jumpForce * (1 + speedRatio * 0.15);
+
+      this.setVelocityY(runningJumpForce);
       this.onSlope = false;
       this.wasOnSlope = false;
       this.isJumping = true;
@@ -671,7 +677,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       });
     }
 
-    // Variable jump height (hold button)
+    // Variable jump height (hold button): apply additional upward force while held
     if (this.isJumping && this.cursors.space?.isDown && !this.isWallSliding) {
       this.jumpTimer += delta;
       if (this.jumpTimer < PHYSICS.JUMP_HOLD_DURATION) {
@@ -679,10 +685,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
-    if (
-      !this.cursors.space?.isDown ||
-      this.jumpTimer >= PHYSICS.JUMP_HOLD_DURATION
-    ) {
+    // Cut jump short on early release: halve upward velocity for a "short hop" feel
+    if (this.isJumping && !this.cursors.space?.isDown) {
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      if (body.velocity.y < 0) {
+        body.velocity.y *= 0.5;
+      }
+      this.isJumping = false;
+    } else if (this.jumpTimer >= PHYSICS.JUMP_HOLD_DURATION) {
       this.isJumping = false;
     }
   }
