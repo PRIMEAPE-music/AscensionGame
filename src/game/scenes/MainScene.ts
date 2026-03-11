@@ -289,7 +289,13 @@ export class MainScene extends Phaser.Scene {
       // Track boss defeat and award essence
       this.bossesDefeated++;
       PersistentStats.addBossDefeat();
-      const bossEssence = 50 * data.bossNumber;
+      let bossEssence = 50 * data.bossNumber;
+
+      // Essence Boost ability: +25% essence
+      if (this.player.abilities.has('essence_boost')) {
+        bossEssence = Math.round(bossEssence * 1.25);
+      }
+
       this.essenceTotal += bossEssence;
       EventBus.emit("essence-change", {
         essence: this.essenceTotal,
@@ -301,9 +307,19 @@ export class MainScene extends Phaser.Scene {
     EventBus.on("enemy-killed", (data) => {
       this.killCount++;
       PersistentStats.addKill();
+
+      // Vampirism ability: heal on every 10th kill
+      this.player.onEnemyKilled();
+
       const def = ENEMY_REGISTRY[data.enemyType];
       const tier = def?.tier ?? "basic";
-      const essenceReward = ESSENCE_REWARDS[tier] ?? 5;
+      let essenceReward = ESSENCE_REWARDS[tier] ?? 5;
+
+      // Essence Boost ability: +25% essence
+      if (this.player.abilities.has('essence_boost')) {
+        essenceReward = Math.round(essenceReward * 1.25);
+      }
+
       this.essenceTotal += essenceReward;
       EventBus.emit("essence-change", {
         essence: this.essenceTotal,

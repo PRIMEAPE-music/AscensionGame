@@ -92,6 +92,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private pendingItem: ItemData | null = null;
   private readonly MAX_SILVER_ITEMS = 3;
 
+  // === Gold Ability State ===
+  private healthRegenTimer: number = 0;
+  private outOfCombatTimer: number = 0;
+  private readonly HEALTH_REGEN_INTERVAL = 30000; // 30s
+  private readonly OUT_OF_COMBAT_THRESHOLD = 5000; // 5s
+  private vampirismKillCount: number = 0;
+  private hasRevived: boolean = false;
+  private tempShieldUsed: boolean = false;
+
   // === Paladin: Shield Guard ===
   private standStillTimer: number = 0;
   public isShieldGuarding: boolean = false;
@@ -231,6 +240,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       if (this.dropTimer <= 0) {
         this.dropTimer = 0;
         this.isDropping = false;
+      }
+    }
+
+    // Health Regen tracking (Gold ability: health_regen)
+    if (this.abilities.has('health_regen')) {
+      this.outOfCombatTimer += delta;
+      if (this.outOfCombatTimer >= this.OUT_OF_COMBAT_THRESHOLD) {
+        this.healthRegenTimer += delta;
+        if (this.healthRegenTimer >= this.HEALTH_REGEN_INTERVAL) {
+          this.healthRegenTimer = 0;
+          if (this.health < this.maxHealth) {
+            this.health++;
+            EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
+          }
+        }
       }
     }
   }
@@ -571,6 +595,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   private handleDodge(delta: number) {
+    // Dynamic dodge values (Dodge Mastery ability)
+    const dodgeDuration = this.abilities.has('dodge_mastery') ? this.DODGE_DURATION * 2 : this.DODGE_DURATION;
+    const dodgeCooldown = this.abilities.has('dodge_mastery') ? this.DODGE_COOLDOWN / 2 : this.DODGE_COOLDOWN;
+
     // Decrement timers
     if (this.dodgeCooldown > 0) this.dodgeCooldown -= delta;
     if (this.dodgeTimer > 0) {
@@ -579,7 +607,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       // Dodge just expired
       if (this.dodgeTimer <= 0) {
         this.isDodging = false;
-        this.setAlpha(1);
+
+        // Shadow Dodge: grant 1s invisibility after dodge ends
+        if (this.abilities.has('shadow_dodge')) {
+          this.setAlpha(0.3);
+          this.invincibilityTimer = Math.max(this.invincibilityTimer, 1000);
+          this.scene.time.delayedCall(1000, () => {
+            if (this.active && !this.isDodging) this.setAlpha(1);
+          });
+        } else {
+          this.setAlpha(1);
+        }
       }
     }
 
@@ -598,8 +636,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.dodgeTimer <= 0
     ) {
       this.isDodging = true;
-      this.dodgeTimer = this.DODGE_DURATION;
-      this.dodgeCooldown = this.DODGE_COOLDOWN;
+      this.dodgeTimer = dodgeDuration;
+      this.dodgeCooldown = dodgeCooldown;
       this.dodgeStartTime = this.scene.time.now;
 
       // Horizontal velocity burst based on input direction
@@ -618,7 +656,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setAlpha(0.4);
 
       // Set invincibility for dodge duration
-      this.invincibilityTimer = this.DODGE_DURATION;
+      this.invincibilityTimer = dodgeDuration;
       this.flashTimer = 0;
     }
   }
@@ -729,6 +767,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this.isInvincible) return;
 
+    // Reset out-of-combat timer (Health Regen ability)
+    this.outOfCombatTimer = 0;
+    this.healthRegenTimer = 0;
+
     let finalAmount = amount;
 
     // Paladin Shield Guard: 50% damage reduction if attack comes from front
@@ -766,9 +808,41 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.health -= finalAmount;
     PersistentStats.addDamageTaken(finalAmount);
 
+    // Revive ability: prevent death once per run
+    if (this.health <= 0 && this.abilities.has('revive') && !this.hasRevived) {
+      this.hasRevived = true;
+      this.health = 1;
+      this.invincibilityTimer = 3000; // 3s invincibility on revive
+      this.flashTimer = 0;
+      // Gold flash effect
+      this.setTint(0xffd700);
+      this.scene.time.delayedCall(500, () => {
+        if (this.active) this.clearTint();
+      });
+      EventBus.emit("health-change", {
+        health: this.health,
+        maxHealth: this.maxHealth,
+      });
+      return; // Don't die
+    }
+
+    // Temporary Shield ability: invincibility when health drops to 1 (once per run)
+    if (this.health === 1 && this.abilities.has('temp_shield') && !this.tempShieldUsed) {
+      this.tempShieldUsed = true;
+      this.invincibilityTimer = 3000;
+      this.flashTimer = 0;
+      // Golden shield flash
+      this.setTint(0xffdd44);
+      this.scene.time.delayedCall(3000, () => {
+        if (this.active) this.clearTint();
+      });
+    }
+
     // Start invincibility
-    this.invincibilityTimer = COMBAT.INVINCIBILITY_DURATION;
-    this.flashTimer = 0;
+    if (this.invincibilityTimer <= 0) {
+      this.invincibilityTimer = COMBAT.INVINCIBILITY_DURATION;
+      this.flashTimer = 0;
+    }
     this.setTint(0xff0000);
 
     EventBus.emit("health-change", {
@@ -852,12 +926,32 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.applyFlowBuffs();
   }
 
-  /** Called by CombatManager when Monk successfully hits an enemy. */
+  /** Called by CombatManager when player successfully hits an enemy. */
   public onSuccessfulHit(): void {
-    if (this.classType !== ClassType.MONK) return;
-    this.flowMeter = Math.min(this.FLOW_MAX, this.flowMeter + this.FLOW_HIT_GAIN);
-    this.flowDecayTimer = 0;
-    this.emitFlowChange();
+    // Reset out-of-combat timer (Health Regen ability)
+    this.outOfCombatTimer = 0;
+    this.healthRegenTimer = 0;
+
+    // Monk flow state
+    if (this.classType === ClassType.MONK) {
+      this.flowMeter = Math.min(this.FLOW_MAX, this.flowMeter + this.FLOW_HIT_GAIN);
+      this.flowDecayTimer = 0;
+      this.emitFlowChange();
+    }
+  }
+
+  /** Called by MainScene when an enemy is killed (Vampirism ability). */
+  public onEnemyKilled(): void {
+    if (this.abilities.has('vampirism')) {
+      this.vampirismKillCount++;
+      if (this.vampirismKillCount >= 10) {
+        this.vampirismKillCount = 0;
+        if (this.health < this.maxHealth) {
+          this.health++;
+          EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
+        }
+      }
+    }
   }
 
   private emitFlowChange(): void {

@@ -102,5 +102,41 @@ export const ITEMS: Record<string, ItemData> = {
         rarity: 'LEGENDARY',
         abilityId: 'essence_boost',
         iconColor: 0xcc44ff
+    },
+    'life_spring': {
+        id: 'life_spring',
+        name: 'Life Spring',
+        description: 'Regenerate 1 HP every 30 seconds out of combat',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'health_regen',
+        iconColor: 0x44ff44
+    },
+    'phantom_step': {
+        id: 'phantom_step',
+        name: 'Phantom Step',
+        description: 'Double i-frames and halved dodge cooldown',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'dodge_mastery',
+        iconColor: 0x8844ff
+    },
+    'mirror_shield': {
+        id: 'mirror_shield',
+        name: 'Mirror Shield',
+        description: 'Reflect 30% of damage back to attackers',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'damage_reflect',
+        iconColor: 0x44ddff
+    },
+    'guardian_angel': {
+        id: 'guardian_angel',
+        name: 'Guardian Angel',
+        description: '3s invincibility when health drops to 1 (once per run)',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'temp_shield',
+        iconColor: 0xffdd44
     }
 };
