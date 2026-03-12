@@ -37,6 +37,7 @@ import { MouseManager } from "../systems/MouseManager";
 import { TutorialManager } from "../systems/TutorialManager";
 import { ReplayManager } from "../systems/ReplayManager";
 import { SoundCueManager } from "../systems/SoundCueManager";
+import { AchievementManager } from "../systems/AchievementManager";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -93,6 +94,12 @@ export class MainScene extends Phaser.Scene {
   // Sacred Ground instances (Priest class mechanic)
   private sacredGrounds: SacredGround[] = [];
   private sacredGroundListener: ((e: Event) => void) | null = null;
+
+  // EventBus listener cleanup functions (prevent leak across scene restarts)
+  private _eventCleanups: (() => void)[] = [];
+
+  // Boss fight tracking for AchievementManager
+  private _inBossFight: boolean = false;
 
   constructor() {
     super({ key: "MainScene" });
@@ -352,7 +359,7 @@ export class MainScene extends Phaser.Scene {
     });
 
     // Listen for boss defeats to spawn reward items
-    EventBus.on("boss-defeated", (data) => {
+    this._eventCleanups.push(EventBus.on("boss-defeated", (data) => {
       // Spawn a silver item at the player's location
       this.spawnManager.spawnRandomItem(this.player.x, this.player.y - 50);
       // Every 3rd boss also drops a gold item
@@ -380,10 +387,10 @@ export class MainScene extends Phaser.Scene {
       if (data.bossNumber % 3 === 0 && !ActiveModifiers.isActive('minimalist')) {
         this.player.addSilverItemSlot();
       }
-    });
+    }));
 
     // Track enemy kills and award essence
-    EventBus.on("enemy-killed", (data) => {
+    this._eventCleanups.push(EventBus.on("enemy-killed", (data) => {
       this.killCount++;
       PersistentStats.addKill();
 
@@ -415,10 +422,10 @@ export class MainScene extends Phaser.Scene {
         essence: this.essenceTotal,
         gained: essenceReward,
       });
-    });
+    }));
 
     // Handle shop purchases
-    EventBus.on("shop-purchase", (data) => {
+    this._eventCleanups.push(EventBus.on("shop-purchase", (data) => {
       switch (data.offeringId) {
         case "health_restore":
           if (this.player.health < this.player.maxHealth) {
@@ -449,7 +456,7 @@ export class MainScene extends Phaser.Scene {
         essence: this.essenceTotal,
         gained: -data.cost,
       });
-    });
+    }));
 
     // Listen for Priest Sacred Ground creation
     this.sacredGroundListener = (e: Event) => {
@@ -469,7 +476,7 @@ export class MainScene extends Phaser.Scene {
     );
 
     // Handle gambling results
-    EventBus.on("gambling-result", (data) => {
+    this._eventCleanups.push(EventBus.on("gambling-result", (data) => {
       switch (data.rewardType) {
         case "health":
           if (this.player.health < this.player.maxHealth) {
@@ -495,81 +502,115 @@ export class MainScene extends Phaser.Scene {
         essence: this.essenceTotal,
         gained: -data.bet,
       });
-    });
+    }));
 
     // Handle gambling close — resume scene
-    EventBus.on("gambling-close", () => {
+    this._eventCleanups.push(EventBus.on("gambling-close", () => {
       this.scene.resume();
-    });
+    }));
 
     // Handle item replacement decision
-    EventBus.on("item-replace-decision", (data) => {
+    this._eventCleanups.push(EventBus.on("item-replace-decision", (data) => {
       if (data.action === "take" && data.replaceIndex !== undefined) {
         this.player.handleReplaceDecision(data.replaceIndex);
       } else {
         this.player.handleReplaceDecision(-1); // -1 means leave
       }
-    });
+    }));
 
     // Audio system — init, hook into game events, and start procedural music
     AudioManager.init();
     AudioManager.resume();
     AudioManager.startMusic();
 
-    EventBus.on("enemy-killed", () => AudioManager.playHitHeavy());
-    EventBus.on("boss-warning", () => AudioManager.startBossMusic());
-    EventBus.on("boss-defeated", () => AudioManager.playBossDefeat());
-    EventBus.on("parry-success", () => AudioManager.playParry());
-    EventBus.on("portal-teleport", () => {
+    this._eventCleanups.push(EventBus.on("enemy-killed", () => AudioManager.playHitHeavy()));
+    this._eventCleanups.push(EventBus.on("boss-warning", () => AudioManager.startBossMusic()));
+    this._eventCleanups.push(EventBus.on("boss-defeated", () => AudioManager.playBossDefeat()));
+    this._eventCleanups.push(EventBus.on("parry-success", () => AudioManager.playParry()));
+    this._eventCleanups.push(EventBus.on("portal-teleport", () => {
       AudioManager.playPortalTeleport();
       PersistentStats.addPortalUsed();
-    });
-    EventBus.on("combo-update", () => AudioManager.playComboTick());
-    EventBus.on("essence-change", (data) => {
+    }));
+    this._eventCleanups.push(EventBus.on("combo-update", () => AudioManager.playComboTick()));
+    this._eventCleanups.push(EventBus.on("essence-change", (data) => {
       if (data.gained > 0) AudioManager.playEssencePickup();
-    });
-    EventBus.on("player-jump", () => AudioManager.playJump());
-    EventBus.on("player-attack", () => AudioManager.playAttackSwing());
-    EventBus.on("player-dodge", (data) => {
+    }));
+    this._eventCleanups.push(EventBus.on("player-jump", () => AudioManager.playJump()));
+    this._eventCleanups.push(EventBus.on("player-attack", () => AudioManager.playAttackSwing()));
+    this._eventCleanups.push(EventBus.on("player-dodge", (data) => {
       if (data.perfect) {
         AudioManager.playPerfectDodge();
       } else {
         AudioManager.playDodge();
       }
-    });
-    EventBus.on("player-land", () => AudioManager.playLand());
-    EventBus.on("item-pickup", () => AudioManager.playItemPickup());
+    }));
+    this._eventCleanups.push(EventBus.on("player-land", () => AudioManager.playLand()));
+    this._eventCleanups.push(EventBus.on("item-pickup", () => AudioManager.playItemPickup()));
 
     // Initialize visual sound cue system (accessibility)
     SoundCueManager.init(this);
 
     // Music state: biome changes
-    EventBus.on("biome-change", (data) => AudioManager.setBiome(data.biome));
+    this._eventCleanups.push(EventBus.on("biome-change", (data) => AudioManager.setBiome(data.biome)));
 
     // Music state: boss fight
-    EventBus.on("boss-spawn", () => AudioManager.setBossState(true));
-    EventBus.on("boss-defeated", () => AudioManager.setBossState(false));
+    this._eventCleanups.push(EventBus.on("boss-spawn", () => AudioManager.setBossState(true)));
+    this._eventCleanups.push(EventBus.on("boss-defeated", () => AudioManager.setBossState(false)));
 
     // Boss arena visual effects
-    EventBus.on("boss-arena-start", (_data) => {
+    this._eventCleanups.push(EventBus.on("boss-arena-start", (_data) => {
       // Darken ambient lighting during boss fight
       this.cameras.main.setBackgroundColor(0x000011);
-    });
-    EventBus.on("boss-arena-end", () => {
+    }));
+    this._eventCleanups.push(EventBus.on("boss-arena-end", () => {
       // Restore ambient lighting after boss fight
       this.cameras.main.setBackgroundColor(0x000000);
-    });
-    EventBus.on("boss-enrage", () => {
+    }));
+    this._eventCleanups.push(EventBus.on("boss-enrage", () => {
       // Screen effect for boss entering enrage (phase 3)
       AudioManager.playHitHeavy();
-    });
+    }));
+
+    // AchievementManager: boss fight tracking
+    let prevHealthForBoss = this.player.health;
+    this._eventCleanups.push(EventBus.on("boss-arena-start", () => {
+      this._inBossFight = true;
+      prevHealthForBoss = this.player.health;
+      AchievementManager.startBossFight();
+    }));
+    this._eventCleanups.push(EventBus.on("health-change", (data) => {
+      // Record boss damage when player health decreases during a boss fight
+      if (this._inBossFight && data.health < prevHealthForBoss) {
+        AchievementManager.recordBossDamage();
+      }
+      prevHealthForBoss = data.health;
+    }));
+    this._eventCleanups.push(EventBus.on("boss-defeated", () => {
+      if (this._inBossFight) {
+        AchievementManager.endBossFight(true);
+        this._inBossFight = false;
+      }
+    }));
+    this._eventCleanups.push(EventBus.on("player-died", () => {
+      if (this._inBossFight) {
+        AchievementManager.endBossFight(false);
+        this._inBossFight = false;
+      }
+    }));
+    this._eventCleanups.push(EventBus.on("boss-arena-end", () => {
+      if (this._inBossFight) {
+        // Boss arena ended without a defeat event — boss was not killed
+        AchievementManager.endBossFight(false);
+        this._inBossFight = false;
+      }
+    }));
 
     // Music state: low health
-    EventBus.on("health-change", (data) => AudioManager.setLowHealth(data.health <= 1));
+    this._eventCleanups.push(EventBus.on("health-change", (data) => AudioManager.setLowHealth(data.health <= 1)));
 
     // Handle player death — emit death screen event with run stats
     this.runStartTime = Date.now();
-    EventBus.on("player-died", () => {
+    this._eventCleanups.push(EventBus.on("player-died", () => {
       AudioManager.stopMusic();
       AudioManager.playDeath();
       AudioManager.playDeathMusic();
@@ -596,15 +637,15 @@ export class MainScene extends Phaser.Scene {
         timeMs: Date.now() - this.runStartTime,
         essenceEarned: this.essenceTotal,
       });
-    });
+    }));
 
     // Save after boss defeat
-    EventBus.on("boss-defeated", () => {
+    this._eventCleanups.push(EventBus.on("boss-defeated", () => {
       // Delay slightly to let boss reward processing finish
       this.time.delayedCall(500, () => {
         RunSaveManager.save(this.buildSaveData());
       });
-    });
+    }));
 
     // Check for resume data
     const resumeData = (window as any).__resumeData as RunSaveData | undefined;
@@ -974,6 +1015,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   shutdown(): void {
+    // Clean up all EventBus listeners to prevent leaks across scene restarts
+    this._eventCleanups.forEach(fn => fn());
+    this._eventCleanups = [];
+
     AudioManager.stopMusic();
     SoundCueManager.destroy();
     MouseManager.destroy();

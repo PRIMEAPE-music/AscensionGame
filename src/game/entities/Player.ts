@@ -677,6 +677,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       // Just landed
       anim = "monk_land";
       this.isLanding = true;
+      EventBus.emit("player-land", {});
     } else if (this.isLanding) {
       // Still playing land animation — don't interrupt
       anim = "monk_land";
@@ -815,6 +816,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.jumpTimer = 0;
       this.coyoteTimer = 0;
       this.jumpBufferTimer = 0;
+      EventBus.emit("player-jump", {});
     }
     // Double Jump (Triple Jump when stacked)
     else if (
@@ -831,6 +833,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.hasDoubleJumped = this.extraJumpsUsed >= maxExtraJumps;
         this.isJumping = true;
         this.jumpTimer = 0;
+        EventBus.emit("player-jump", {});
 
         const particle = this.scene.add.circle(
           this.x,
@@ -1094,6 +1097,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.dodgeTimer = dodgeDuration;
       this.dodgeCooldown = dodgeCooldown;
       this.dodgeStartTime = this.scene.time.now;
+      EventBus.emit("player-dodge", { perfect: false });
 
       // Horizontal velocity burst based on input direction
       const { left: dodgeLeft, right: dodgeRight } = this.cursors;
@@ -1336,6 +1340,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     const def = COMBAT_CONFIG[this.classType].attacks[attackId];
     if (def) this.setTint(def.color); // attack flash tint
+
+    EventBus.emit("player-attack", {});
   }
 
   private enterActiveState(def: AttackDefinition) {
@@ -1515,6 +1521,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.dodgeTimer = dodgeDuration;
       this.dodgeCooldown = dodgeCooldown;
       this.dodgeStartTime = this.scene.time.now;
+      EventBus.emit("player-dodge", { perfect: false });
       // Apply dodge velocity away from attacker
       const dodgeDir = attackerX !== undefined ? (this.x > attackerX ? 1 : -1) : (this.flipX ? -1 : 1);
       this.setVelocityX(this.DODGE_SPEED * dodgeDir);
@@ -1529,6 +1536,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.perfectDodgeBuff = true;
         this.perfectDodgeBuffTimer = this.PERFECT_DODGE_BUFF_DURATION;
         PersistentStats.addPerfectDodge();
+        EventBus.emit("player-dodge", { perfect: true });
         // Brief white flash to indicate perfect dodge (reduced if flash reduction enabled)
         if (!GameSettings.get().flashReduction) {
           this.setTint(0xffffff);
@@ -2745,6 +2753,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private applyItem(item: ItemData) {
     this.inventory.push(item);
     PersistentStats.addItemCollected();
+    EventBus.emit("item-pickup", {});
 
     if (item.abilityId) {
       if (this.abilities.has(item.abilityId)) {

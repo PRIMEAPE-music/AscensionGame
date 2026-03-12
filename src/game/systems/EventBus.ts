@@ -62,6 +62,7 @@ export interface GameEvents {
     biome: string;
   };
   "wind-zone-enter": { windType: string; strength: number };
+  "synergy-change": { synergies: Array<{ rarity: string; count: number; bonus: number }> };
   "wind-zone-exit": {};
   "achievement-unlocked": {
     id: string;
