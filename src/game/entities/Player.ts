@@ -163,7 +163,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private armorItems: Map<string, number> = new Map(); // itemId -> remaining hits
 
   // === Gold Ability State ===
-  private stackedAbilities: Set<string> = new Set();
+  public stackedAbilities: Set<string> = new Set();
   private healthRegenTimer: number = 0;
   private outOfCombatTimer: number = 0;
   private readonly HEALTH_REGEN_INTERVAL = 30000; // 30s
@@ -174,6 +174,31 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private tempShieldUsed: boolean = false;
   private tempShieldRechargeTimer: number = 0;
   private readonly TEMP_SHIELD_RECHARGE_TIME = 300000; // 5 minutes
+
+  // Second Wind
+  private secondWindUsed: number = 0; // How many times triggered this run
+
+  // Thorns Aura
+  private thornsAuraTimer: number = 0;
+  private readonly THORNS_AURA_INTERVAL = 1000; // 1 second tick
+  private readonly THORNS_AURA_RADIUS = 80; // melee range
+
+  // Absorption Shield
+  private absorptionShieldActive: boolean = false;
+  private absorptionShieldTimer: number = 0;
+  private readonly ABSORPTION_SHIELD_INTERVAL = 30000; // 30s
+  private readonly ABSORPTION_SHIELD_INTERVAL_STACKED = 20000; // 20s when stacked
+
+  // Magnet Pull
+  private readonly MAGNET_PULL_RANGE = 200;
+  private readonly MAGNET_PULL_RANGE_STACKED = 350;
+  private readonly MAGNET_PULL_SPEED = 300;
+
+  // Item Radar
+  private itemRadarIndicators: Phaser.GameObjects.Graphics[] = [];
+  private itemRadarTimer: number = 0;
+  private readonly ITEM_RADAR_UPDATE_INTERVAL = 500; // Update indicators every 500ms
+  private readonly ITEM_RADAR_RANGE = 800; // Detection range
 
   // === Paladin: Shield Guard ===
   private standStillTimer: number = 0;
@@ -389,6 +414,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.handleChargedAttack(delta);
     this.updateInvincibility(delta);
     this.updateClassMechanics(delta);
+    this.updateItemRadar(delta);
     this.updateAnimation();
 
     // Safety net: re-enable gravity if it's off and we're not in a state that needs it off
@@ -494,6 +520,41 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.tempShieldRechargeTimer = 0;
       }
     }
+
+    // Thorns Aura: periodically damage nearby enemies
+    if (this.abilities.has('thorns_aura')) {
+      this.thornsAuraTimer += delta;
+      if (this.thornsAuraTimer >= this.THORNS_AURA_INTERVAL) {
+        this.thornsAuraTimer = 0;
+        this.applyThornsAuraDamage();
+      }
+    }
+
+    // Absorption Shield: regenerate shield over time
+    if (this.abilities.has('absorption_shield')) {
+      if (!this.absorptionShieldActive) {
+        this.absorptionShieldTimer += delta;
+        const rechargeTime = this.stackedAbilities.has('absorption_shield')
+          ? this.ABSORPTION_SHIELD_INTERVAL_STACKED
+          : this.ABSORPTION_SHIELD_INTERVAL;
+        if (this.absorptionShieldTimer >= rechargeTime) {
+          this.absorptionShieldActive = true;
+          this.absorptionShieldTimer = 0;
+          // Visual: brief cyan flash to indicate shield ready
+          if (this.active) {
+            this.setTint(0x4488cc);
+            this.scene.time.delayedCall(300, () => {
+              if (this.active && !this.isInvincible) this.restoreDefaultTint();
+            });
+          }
+        }
+      }
+    }
+
+    // Magnet Pull: attract nearby items toward the player
+    if (this.abilities.has('magnet_pull')) {
+      this.applyMagnetPull();
+    }
   }
 
   private updateInvincibility(delta: number) {
@@ -582,6 +643,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       PHYSICS.MOVE_SPEED,
       this.classStats.moveSpeed,
     );
+
+    // Speed Demon ability: +30% move speed (stacked: +60%)
+    if (this.abilities.has('speed_demon')) {
+      moveSpeed *= this.stackedAbilities.has('speed_demon') ? 1.6 : 1.3;
+    }
 
     // Platform speed modifiers
     if (platType === PlatformType.STICKY && onGround) {
@@ -1453,6 +1519,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.restoreDefaultTint();
     }
 
+    // Absorption Shield: absorb 1 hit if shield is active (regenerates over time)
+    if (this.absorptionShieldActive) {
+      this.absorptionShieldActive = false;
+      this.absorptionShieldTimer = 0;
+      // Visual feedback: cyan flash for shield absorb
+      if (!GameSettings.get().flashReduction) {
+        this.setTint(0x4488cc);
+        this.scene.time.delayedCall(200, () => {
+          if (this.active) this.restoreDefaultTint();
+        });
+      }
+      this.scene.cameras.main.shake(50, 0.003);
+      EventBus.emit('health-change', { health: this.health, maxHealth: this.maxHealth });
+      return false; // Damage absorbed by shield
+    }
+
     // Armor absorb: check armor AFTER dodge/parry/invincibility/counter but BEFORE damage
     if (this.armorHits > 0) {
       // Find which armor item to decrement
@@ -1533,7 +1615,29 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       attackerRef.takeDamage(extraReflect);
     }
 
-    // Revive ability: prevent death once per run
+    // Second Wind ability: heal to full HP once when dropping to 0 or below
+    // (stacked: can trigger twice per run)
+    if (this.health <= 0 && this.abilities.has('second_wind')) {
+      const maxUses = this.stackedAbilities.has('second_wind') ? 2 : 1;
+      if (this.secondWindUsed < maxUses) {
+        this.secondWindUsed++;
+        this.health = this.maxHealth;
+        this.invincibilityTimer = 2000; // 2s invincibility on second wind
+        this.flashTimer = 0;
+        // Green flash effect
+        this.setTint(0x44ff88);
+        this.scene.time.delayedCall(500, () => {
+          if (this.active) this.restoreDefaultTint();
+        });
+        EventBus.emit("health-change", {
+          health: this.health,
+          maxHealth: this.maxHealth,
+        });
+        return false; // Don't die
+      }
+    }
+
+    // Revive ability: prevent death once per run (revive at 1 HP)
     if (this.health <= 0 && this.abilities.has('revive') && !this.hasRevived) {
       this.hasRevived = true;
       this.health = 1;
@@ -2143,6 +2247,117 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.chargeGlow.fillStyle(0xffaa00, glowAlpha);
       this.chargeGlow.fillCircle(this.x, this.y, glowRadius);
     }
+  }
+
+  // ─── Gold Passive Ability Helpers ────────────────────────────────────
+
+  private applyThornsAuraDamage(): void {
+    const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+    if (!enemies) return;
+
+    const damage = this.stackedAbilities.has('thorns_aura') ? 2 : 1;
+
+    enemies.children.each((enemy: any) => {
+      if (!enemy.active || typeof enemy.takeDamage !== 'function') return true;
+      const dx = enemy.x - this.x;
+      const dy = enemy.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= this.THORNS_AURA_RADIUS) {
+        enemy.takeDamage(damage);
+      }
+      return true;
+    });
+  }
+
+  private applyMagnetPull(): void {
+    const items = (this.scene as any).items as Phaser.Physics.Arcade.Group;
+    if (!items) return;
+
+    const pullRange = this.stackedAbilities.has('magnet_pull')
+      ? this.MAGNET_PULL_RANGE_STACKED
+      : this.MAGNET_PULL_RANGE;
+
+    items.children.each((item: any) => {
+      if (!item.active) return true;
+      const dx = this.x - item.x;
+      const dy = this.y - item.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= pullRange && dist > 5) {
+        // Move item toward player
+        const nx = dx / dist;
+        const ny = dy / dist;
+        item.x += nx * this.MAGNET_PULL_SPEED * (this.scene.game.loop.delta / 1000);
+        item.y += ny * this.MAGNET_PULL_SPEED * (this.scene.game.loop.delta / 1000);
+      }
+      return true;
+    });
+  }
+
+  private updateItemRadar(delta: number): void {
+    if (!this.abilities.has('item_radar')) {
+      // Clean up any existing indicators
+      if (this.itemRadarIndicators.length > 0) {
+        this.itemRadarIndicators.forEach(g => g.destroy());
+        this.itemRadarIndicators = [];
+      }
+      return;
+    }
+
+    this.itemRadarTimer += delta;
+    if (this.itemRadarTimer < this.ITEM_RADAR_UPDATE_INTERVAL) return;
+    this.itemRadarTimer = 0;
+
+    // Destroy old indicators
+    this.itemRadarIndicators.forEach(g => g.destroy());
+    this.itemRadarIndicators = [];
+
+    const items = (this.scene as any).items as Phaser.Physics.Arcade.Group;
+    if (!items) return;
+
+    const camera = this.scene.cameras.main;
+    const camLeft = camera.scrollX;
+    const camRight = camera.scrollX + camera.width;
+    const camTop = camera.scrollY;
+    const camBottom = camera.scrollY + camera.height;
+
+    items.children.each((item: any) => {
+      if (!item.active) return true;
+
+      const dx = item.x - this.x;
+      const dy = item.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Only show indicators for off-screen items within detection range
+      const isOnScreen = item.x >= camLeft && item.x <= camRight &&
+                          item.y >= camTop && item.y <= camBottom;
+
+      if (!isOnScreen && dist <= this.ITEM_RADAR_RANGE) {
+        // Create a small arrow indicator at the edge of the screen pointing toward the item
+        const angle = Math.atan2(dy, dx);
+        const edgeX = Phaser.Math.Clamp(item.x, camLeft + 30, camRight - 30);
+        const edgeY = Phaser.Math.Clamp(item.y, camTop + 30, camBottom - 30);
+
+        const indicator = this.scene.add.graphics();
+        indicator.setDepth(200);
+
+        // Draw a small diamond/arrow indicator
+        const size = 8;
+        indicator.fillStyle(0xffaa00, 0.8);
+        indicator.beginPath();
+        indicator.moveTo(edgeX + Math.cos(angle) * size, edgeY + Math.sin(angle) * size);
+        indicator.lineTo(edgeX + Math.cos(angle + 2.5) * size * 0.6, edgeY + Math.sin(angle + 2.5) * size * 0.6);
+        indicator.lineTo(edgeX + Math.cos(angle - 2.5) * size * 0.6, edgeY + Math.sin(angle - 2.5) * size * 0.6);
+        indicator.closePath();
+        indicator.fillPath();
+
+        // Add a pulsing glow
+        indicator.fillStyle(0xffaa00, 0.3);
+        indicator.fillCircle(edgeX, edgeY, 6);
+
+        this.itemRadarIndicators.push(indicator);
+      }
+      return true;
+    });
   }
 
   // ─── Class-Specific Mechanics ────────────────────────────────────────

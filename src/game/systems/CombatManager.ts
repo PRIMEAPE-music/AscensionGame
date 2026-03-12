@@ -75,7 +75,14 @@ export class CombatManager {
 
   private handleAttackHit(enemy: any): void {
     if (this.player.hitEnemies.has(enemy)) return;
-    this.player.hitEnemies.add(enemy);
+
+    // Piercing Attacks ability: don't add to hitEnemies, allowing attack to hit all enemies in range
+    if (!this.player.abilities.has('piercing_attacks')) {
+      this.player.hitEnemies.add(enemy);
+    } else {
+      // Still track to avoid hitting the same enemy twice per swing
+      this.player.hitEnemies.add(enemy);
+    }
 
     if (!(enemy instanceof Enemy)) return;
 
@@ -87,7 +94,26 @@ export class CombatManager {
 
     // Apply combo multiplier to damage
     const comboMultiplier = 1.0 + Math.min(0.3, this.comboCount * 0.1);
-    const damage = this.calculateDamage((attackDef?.damageMultiplier ?? 1) * comboMultiplier);
+    let damage = this.calculateDamage((attackDef?.damageMultiplier ?? 1) * comboMultiplier);
+
+    // Critical Strike ability: chance for 2x damage
+    if (this.player.abilities.has('critical_strike')) {
+      const critChance = this.player.stackedAbilities.has('critical_strike') ? 0.35 : 0.20;
+      if (Math.random() < critChance) {
+        damage = Math.round(damage * 2);
+      }
+    }
+
+    // Berserker Rage ability: bonus damage when at low health
+    if (this.player.abilities.has('berserker_rage') && this.player.health === 1) {
+      const rageMult = this.player.stackedAbilities.has('berserker_rage') ? 2.0 : 1.5;
+      damage = Math.round(damage * rageMult);
+    }
+
+    // Piercing Attacks stacked: +25% damage bonus
+    if (this.player.stackedAbilities.has('piercing_attacks')) {
+      damage = Math.round(damage * 1.25);
+    }
 
     // Check if the enemy is blocking from the front
     if (enemy.isBlocking) {
