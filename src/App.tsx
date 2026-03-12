@@ -29,6 +29,7 @@ import { DailyChallengeScreen } from "./game/ui/DailyChallengeScreen";
 import { GameSettings } from "./game/systems/GameSettings";
 import { CosmeticManager } from "./game/systems/CosmeticManager";
 import { RunSaveManager } from "./game/systems/RunSaveManager";
+import { AudioManager } from "./game/systems/AudioManager";
 import { DailyChallenge } from "./game/systems/DailyChallenge";
 import "./App.css";
 
@@ -234,6 +235,7 @@ function App() {
   const handleRestart = useCallback(() => {
     // Clear saved run since we're restarting
     RunSaveManager.clear();
+    AudioManager.stopMusic();
     setIsPaused(false);
     setHealth(3);
     setMaxHealth(3);
@@ -268,6 +270,7 @@ function App() {
   }, []);
 
   const handleQuit = useCallback(() => {
+    AudioManager.stopMusic();
     // Save run state before quitting to menu (only if actively playing, not dead)
     if (gameState === "PLAYING") {
       const scene = gameRef.current?.scene.getScene("MainScene") as any;
@@ -313,6 +316,7 @@ function App() {
   // Retry from death screen - restart with the same class
   const handleDeathRetry = useCallback(() => {
     // Run save already cleared on death in MainScene
+    AudioManager.stopMusic();
     RunSaveManager.clear();
     setDeathStats(null);
     setEssence(0);

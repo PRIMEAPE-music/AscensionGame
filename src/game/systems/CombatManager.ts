@@ -149,15 +149,14 @@ export class CombatManager {
       return;
     }
 
-    // Knockback (only if enemy survived)
-    const direction = enemyX > this.player.x ? 1 : -1;
-    const kb = attackDef?.knockback ?? COMBAT.KNOCKBACK_ENEMY;
-    // Mega Knockback ability: +50% knockback
-    const kbMult = this.player.abilities.has('mega_knockback') ? 1.5 : 1.0;
-    // Bosses resist knockback heavily to prevent falling through platforms
-    const bossResist = enemy.enemyType === 'boss' ? 0.15 : 1.0;
-    enemy.setVelocityX(kb.x * direction * kbMult * bossResist);
-    enemy.setVelocityY(kb.y * kbMult * bossResist);
+    // Knockback (only if enemy survived — bosses are immune to prevent falling through platforms)
+    if (enemy.enemyType !== 'boss') {
+      const direction = enemyX > this.player.x ? 1 : -1;
+      const kb = attackDef?.knockback ?? COMBAT.KNOCKBACK_ENEMY;
+      const kbMult = this.player.abilities.has('mega_knockback') ? 1.5 : 1.0;
+      enemy.setVelocityX(kb.x * direction * kbMult);
+      enemy.setVelocityY(kb.y * kbMult);
+    }
 
     // Hit flash feedback: white flash first, then red flash, then clear
     enemy.setTint(0xffffff);

@@ -279,18 +279,41 @@ export const AudioManager = {
 
     stopMusic(): void {
         this._musicPlaying = false;
+        this._inBoss = false;
         this._stopFade();
-        if (this._currentTrack) {
-            this._currentTrack.pause();
-            this._currentTrack.currentTime = 0;
-        }
-        if (this._bossTrack) {
-            this._bossTrack.pause();
-            this._bossTrack.currentTime = 0;
-        }
+        this._destroyTrack('_currentTrack', '_currentSource', '_trackGain');
+        this._destroyTrack('_bossTrack', '_bossSource', '_bossGain');
         if (this._deathTrack) {
             this._deathTrack.pause();
-            this._deathTrack.currentTime = 0;
+            this._deathTrack.src = '';
+            this._deathTrack = null;
+        }
+        if (this._deathSource) {
+            try { this._deathSource.disconnect(); } catch { /* already disconnected */ }
+            this._deathSource = null;
+        }
+    },
+
+    _destroyTrack(
+        audioKey: '_currentTrack' | '_bossTrack',
+        sourceKey: '_currentSource' | '_bossSource',
+        gainKey: '_trackGain' | '_bossGain',
+    ): void {
+        const audio = this[audioKey] as HTMLAudioElement | null;
+        if (audio) {
+            audio.pause();
+            audio.src = '';
+            (this as any)[audioKey] = null;
+        }
+        const source = this[sourceKey] as MediaElementAudioSourceNode | null;
+        if (source) {
+            try { source.disconnect(); } catch { /* already disconnected */ }
+            (this as any)[sourceKey] = null;
+        }
+        const gain = this[gainKey] as GainNode | null;
+        if (gain) {
+            try { gain.disconnect(); } catch { /* already disconnected */ }
+            (this as any)[gainKey] = null;
         }
     },
 
@@ -321,6 +344,9 @@ export const AudioManager = {
     _playTrack(name: string): void {
         if (!this.ctx || !this.musicGain) return;
 
+        // Clean up previous track fully
+        this._destroyTrack('_currentTrack', '_currentSource', '_trackGain');
+
         // Create audio element
         const audio = new Audio(`${MUSIC_PATH}${name}.mp3`);
         audio.loop = false;
@@ -333,11 +359,6 @@ export const AudioManager = {
 
         const source = this.ctx.createMediaElementSource(audio);
         source.connect(trackGain);
-
-        // Clean up previous track
-        if (this._currentTrack) {
-            this._currentTrack.pause();
-        }
 
         this._currentTrack = audio;
         this._currentSource = source;
