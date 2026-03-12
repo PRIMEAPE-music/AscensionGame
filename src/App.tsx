@@ -18,6 +18,9 @@ import { RunModifierSelect } from "./game/ui/RunModifierSelect";
 import { AchievementManager } from "./game/systems/AchievementManager";
 import { AchievementPopup } from "./game/ui/AchievementPopup";
 import { PersistentStats } from "./game/systems/PersistentStats";
+import { AscensionManager } from "./game/systems/AscensionManager";
+import type { AscensionBoosts } from "./game/systems/AscensionManager";
+import { AscensionScreen } from "./game/ui/AscensionScreen";
 import { GoldItemCollection } from "./game/systems/GoldItemCollection";
 import { GoldItemEquip } from "./game/ui/GoldItemEquip";
 import { MainMenu } from "./game/ui/MainMenu";
@@ -85,6 +88,8 @@ function App() {
     newItem: ItemData;
     currentItems: ItemData[];
   } | null>(null);
+  const [ascensionOpen, setAscensionOpen] = useState(false);
+  const [ascensionBossNumber, setAscensionBossNumber] = useState(0);
   const [achievementPopup, setAchievementPopup] = useState<{
     name: string;
     description: string;
@@ -105,6 +110,7 @@ function App() {
   // Load persistent data on mount
   useEffect(() => {
     PersistentStats.load();
+    AscensionManager.load();
     GoldItemCollection.load();
     AchievementManager.load();
     GameSettings.load();
@@ -464,6 +470,13 @@ function App() {
     setGameState("PLAYING"); // Triggers game recreation with same class
   }, []);
 
+  // Ascension chosen handler
+  const handleAscensionChosen = useCallback((stat: keyof AscensionBoosts) => {
+    AscensionManager.addBoost(stat);
+    setAscensionOpen(false);
+    EventBus.emit("ascension-chosen", { stat });
+  }, []);
+
   // Shop purchase handler
   const handleShopPurchase = useCallback(
     (offering: ShopOffering) => {
@@ -767,6 +780,23 @@ function App() {
       handleItemReplacePrompt as EventListener,
     );
 
+    const handleAscensionOffer = (e: CustomEvent) => {
+      setAscensionBossNumber(e.detail.bossNumber);
+      setAscensionOpen(true);
+    };
+    window.addEventListener(
+      "ascension-offer",
+      handleAscensionOffer as EventListener,
+    );
+
+    const handleAscensionChosen = () => {
+      setAscensionOpen(false);
+    };
+    window.addEventListener(
+      "ascension-chosen",
+      handleAscensionChosen as EventListener,
+    );
+
     // Class mechanic event listeners
     const handleFlowChange = (e: CustomEvent) => {
       setFlowMeter(e.detail.flow);
@@ -856,6 +886,14 @@ function App() {
       window.removeEventListener(
         "item-replace-prompt",
         handleItemReplacePrompt as EventListener,
+      );
+      window.removeEventListener(
+        "ascension-offer",
+        handleAscensionOffer as EventListener,
+      );
+      window.removeEventListener(
+        "ascension-chosen",
+        handleAscensionChosen as EventListener,
       );
       gameRef.current?.destroy(true);
       gameRef.current = null;
@@ -997,6 +1035,12 @@ function App() {
                     TutorialManager.hideHint();
                     setTutorialHint(null);
                   }}
+                />
+              )}
+              {ascensionOpen && (
+                <AscensionScreen
+                  bossNumber={ascensionBossNumber}
+                  onChosen={handleAscensionChosen}
                 />
               )}
             </div>

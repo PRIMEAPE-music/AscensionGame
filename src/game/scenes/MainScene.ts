@@ -366,6 +366,21 @@ export class MainScene extends Phaser.Scene {
       if (data.bossNumber % 3 === 0) {
         this.spawnManager.spawnRandomItem(this.player.x + 60, this.player.y - 50);
       }
+      // Boss 10: class-specific gold item reward
+      if (data.rewards.includes('class_gold_item')) {
+        const classType = (window as any).__selectedClass as string;
+        const classItemMap: Record<string, string> = {
+          'PALADIN': 'divine_aegis',
+          'MONK': 'eternal_flow',
+          'PRIEST': 'sacred_relic',
+        };
+        const classItemId = classItemMap[classType];
+        if (classItemId) {
+          this.spawnManager.spawnItem(this.player.x + 120, this.player.y - 50, classItemId);
+          PersistentStats.unlockGoldItem(classItemId);
+          PersistentStats.save();
+        }
+      }
 
       // Track boss defeat and award essence
       this.bossesDefeated++;
@@ -387,6 +402,17 @@ export class MainScene extends Phaser.Scene {
       if (data.bossNumber % 3 === 0 && !ActiveModifiers.isActive('minimalist')) {
         this.player.addSilverItemSlot();
       }
+
+      // Every 15th boss offers an Ascension boost
+      if (data.rewards.includes('ascension')) {
+        this.scene.pause();
+        EventBus.emit('ascension-offer', { bossNumber: data.bossNumber });
+      }
+    }));
+
+    // Resume game after player chooses an ascension boost
+    this._eventCleanups.push(EventBus.on("ascension-chosen", () => {
+      this.scene.resume();
     }));
 
     // Track enemy kills and award essence

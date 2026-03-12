@@ -766,6 +766,12 @@ export abstract class Boss extends Enemy {
     if (this.bossNumber % 3 === 0) {
       rewards.push('gold_item');
     }
+    if (this.bossNumber === 10) {
+      rewards.push('class_gold_item');
+    }
+    if (this.bossNumber % 15 === 0) {
+      rewards.push('ascension');
+    }
     EventBus.emit('boss-defeated', {
       bossNumber: this.bossNumber,
       altitude: 0, // filled by listener

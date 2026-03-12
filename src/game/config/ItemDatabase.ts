@@ -515,4 +515,36 @@ export const ITEMS: Record<string, ItemData> = {
         stackable: true,
         stackDescription: '+30% bonus essence instead of 15%',
     },
+
+    // --- CLASS-SPECIFIC GOLD ITEMS (Boss 10 Reward) ---
+    'divine_aegis': {
+        id: 'divine_aegis',
+        name: 'Divine Aegis',
+        description: 'Paladin Exclusive: Blocking reflects 100% damage and heals 1 HP on perfect parry',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'divine_aegis',
+        iconColor: 0x3355ff,
+        stackable: false,
+    },
+    'eternal_flow': {
+        id: 'eternal_flow',
+        name: 'Eternal Flow',
+        description: 'Monk Exclusive: Flow meter never decays and grants 20% move speed at max flow',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'eternal_flow',
+        iconColor: 0xffaa00,
+        stackable: false,
+    },
+    'sacred_relic': {
+        id: 'sacred_relic',
+        name: 'Sacred Relic',
+        description: 'Priest Exclusive: Sacred Ground heals +1 HP and cooldown reduced by 50%',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'sacred_relic',
+        iconColor: 0xffffff,
+        stackable: false,
+    },
 };

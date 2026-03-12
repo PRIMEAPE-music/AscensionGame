@@ -71,6 +71,8 @@ export interface GameEvents {
     description: string;
     icon: string;
   };
+  "ascension-offer": { bossNumber: number };
+  "ascension-chosen": { stat: string };
 }
 
 export const EventBus = {

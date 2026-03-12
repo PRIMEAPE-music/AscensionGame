@@ -22,6 +22,7 @@ import {
 } from "../systems/ComboDefinitions";
 import { SPRITE_CONFIG } from "../config/AnimationConfig";
 import { PersistentStats } from "../systems/PersistentStats";
+import { AscensionManager } from "../systems/AscensionManager";
 import { GameSettings } from "../systems/GameSettings";
 import { CosmeticManager } from "../systems/CosmeticManager";
 import { GamepadManager } from "../systems/GamepadManager";
@@ -330,8 +331,23 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     scene.physics.add.existing(this);
 
     this.classType = classType;
-    this.classStats = CLASSES[classType];
+    // Copy classStats so ascension boosts don't mutate the shared config
+    this.classStats = { ...CLASSES[classType] };
+
+    // Apply ascension boosts to class stats
+    const ascensionBoosts = AscensionManager.getBoosts();
+    this.classStats.attackDamage *= (1 + ascensionBoosts.attackDamage);
+    this.classStats.moveSpeed *= (1 + ascensionBoosts.moveSpeed);
+    this.classStats.jumpHeight *= (1 + ascensionBoosts.jumpHeight);
+    // attackSpeed: lower = faster, so boost makes it smaller (faster)
+    this.classStats.attackSpeed *= (1 - ascensionBoosts.attackSpeed);
+    // maxHealth: each 0.02 increment adds +1 flat HP; bake into classStats.health
+    // so that applyItems() also respects this bonus when recalculating maxHealth
+    const ascensionHealthBonus = Math.round(ascensionBoosts.maxHealth / 0.02);
+    this.classStats.health += ascensionHealthBonus;
+
     this.maxHealth = this.classStats.health;
+
     // Accessibility: Extra Starting Health (+2 max health)
     const accessSettings = GameSettings.get();
     if (accessSettings.assistMode && accessSettings.extraStartingHealth) {
