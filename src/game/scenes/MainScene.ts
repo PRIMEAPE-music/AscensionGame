@@ -32,6 +32,7 @@ import { RunSaveManager } from "../systems/RunSaveManager";
 import type { RunSaveData } from "../systems/RunSaveManager";
 import { GamepadManager } from "../systems/GamepadManager";
 import { TutorialManager } from "../systems/TutorialManager";
+import { ReplayManager } from "../systems/ReplayManager";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -611,6 +612,9 @@ export class MainScene extends Phaser.Scene {
     );
     PersistentStats.setAltitude(altitude);
     EventBus.emit("altitude-change", { altitude });
+
+    // Replay recording — capture player state at fixed intervals
+    ReplayManager.recordFrame(this.player, delta, altitude);
 
     // Tutorial hint checks
     const selectedClassType: string = (window as any).__selectedClass || 'MONK';

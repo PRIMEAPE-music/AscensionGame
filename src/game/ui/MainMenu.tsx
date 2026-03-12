@@ -16,6 +16,7 @@ interface MainMenuProps {
   onCosmetics: () => void;
   onDailyChallenge: () => void;
   onLeaderboard: () => void;
+  onReplay?: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -54,6 +55,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onCosmetics,
   onDailyChallenge,
   onLeaderboard,
+  onReplay,
 }) => {
   const [hoveredButton, setHoveredButton] = useState<string | null>(null);
   const [titleVisible, setTitleVisible] = useState(false);
@@ -397,6 +399,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         >
           Statistics
         </button>
+        {onReplay && (
+          <button
+            style={getButtonStyle("replays")}
+            onMouseEnter={() => setHoveredButton("replays")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={onReplay}
+          >
+            Replays
+          </button>
+        )}
         <button
           style={getButtonStyle("settings")}
           onMouseEnter={() => setHoveredButton("settings")}

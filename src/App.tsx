@@ -37,6 +37,8 @@ import { LeaderboardManager } from "./game/systems/LeaderboardManager";
 import { TutorialManager } from "./game/systems/TutorialManager";
 import { TutorialOverlay } from "./game/ui/TutorialOverlay";
 import { LeaderboardScreen } from "./game/ui/LeaderboardScreen";
+import { ReplayManager } from "./game/systems/ReplayManager";
+import { ReplayScreen, PlaybackControls } from "./game/ui/ReplayScreen";
 import "./App.css";
 
 type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
@@ -52,7 +54,8 @@ interface DeathStats {
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null);
   const [gameState, setGameState] = useState<GameState>("MAIN_MENU");
-  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics" | "daily" | "leaderboard">("main");
+  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics" | "daily" | "leaderboard" | "replay">("main");
+  const [replayPlaying, setReplayPlaying] = useState(false);
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [health, setHealth] = useState(3);
@@ -110,6 +113,7 @@ function App() {
     TutorialManager.load();
     TutorialManager.onShowHint = (hint) => setTutorialHint(hint);
     TutorialManager.onHideHint = () => setTutorialHint(null);
+    ReplayManager.load();
 
     // Check for saved run
     setHasSavedRun(RunSaveManager.hasSave());
@@ -193,6 +197,7 @@ function App() {
     setSavedRunInfo(null);
 
     // Skip class select/equip/modifiers — go directly to PLAYING
+    ReplayManager.startRecording(saveData.classType);
     setGameState("PLAYING");
     startTimeRef.current = Date.now() - saveData.elapsedTimeMs;
     elapsedTimeRef.current = saveData.elapsedTimeMs;
@@ -222,12 +227,30 @@ function App() {
     setMenuScreen("leaderboard");
   }, []);
 
+  const handleShowReplay = useCallback(() => {
+    setMenuScreen("replay");
+  }, []);
+
+  const handleWatchReplay = useCallback((replayIndex: number) => {
+    const replay = ReplayManager.loadReplay(replayIndex);
+    if (replay) {
+      ReplayManager.startPlayback(replay);
+      setReplayPlaying(true);
+    }
+  }, []);
+
+  const handleStopPlayback = useCallback(() => {
+    ReplayManager.stopPlayback();
+    setReplayPlaying(false);
+  }, []);
+
   const handleStartDailyChallenge = useCallback((challengeData: { class: string; modifiers: string[]; seed: number }) => {
     setSelectedClass(challengeData.class as ClassType);
     (window as any).__selectedClass = challengeData.class;
     (window as any).__dailyChallengeSeed = challengeData.seed;
     (window as any).__isDailyChallenge = true;
     ActiveModifiers.setModifiers(challengeData.modifiers);
+    ReplayManager.startRecording(challengeData.class);
     setGameState("PLAYING");
     startTimeRef.current = Date.now();
     elapsedTimeRef.current = 0;
@@ -240,6 +263,7 @@ function App() {
     (window as any).__isWeeklyChallenge = true;
     (window as any).__weeklySpecialRule = challengeData.specialRule;
     ActiveModifiers.setModifiers(challengeData.modifiers);
+    ReplayManager.startRecording(challengeData.class);
     setGameState("PLAYING");
     startTimeRef.current = Date.now();
     elapsedTimeRef.current = 0;
@@ -266,6 +290,7 @@ function App() {
     setHasSavedRun(false);
     setSavedRunInfo(null);
     ActiveModifiers.setModifiers(modifierIds);
+    ReplayManager.startRecording((window as any).__selectedClass || "MONK");
     setGameState("PLAYING");
     startTimeRef.current = Date.now();
     elapsedTimeRef.current = 0;
@@ -605,6 +630,13 @@ function App() {
 
     const handleDeathScreen = (e: CustomEvent) => {
       const stats = e.detail;
+      // Stop replay recording and auto-save as "last run"
+      ReplayManager.stopRecording({
+        altitude: stats.altitude,
+        kills: stats.kills,
+        bossesDefeated: stats.bossesDefeated,
+        timeMs: stats.timeMs,
+      });
       // Expose max combo for leaderboard submission in DeathScreen
       (window as any).__maxComboThisRun = maxComboRef.current;
       setDeathStats(stats);
@@ -825,6 +857,7 @@ function App() {
           onCosmetics={handleShowCosmetics}
           onDailyChallenge={handleDailyChallenge}
           onLeaderboard={handleShowLeaderboard}
+          onReplay={handleShowReplay}
         />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "stats" && (
@@ -841,6 +874,12 @@ function App() {
       )}
       {gameState === "MAIN_MENU" && menuScreen === "leaderboard" && (
         <LeaderboardScreen onBack={handleBackToMenu} />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "replay" && (
+        <ReplayScreen
+          onBack={handleBackToMenu}
+          onWatch={handleWatchReplay}
+        />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "daily" && (
         <DailyChallengeScreen
@@ -930,6 +969,9 @@ function App() {
             />
           )}
         </>
+      )}
+      {replayPlaying && (
+        <PlaybackControls onStop={handleStopPlayback} />
       )}
       <AchievementPopup
         achievement={achievementPopup}
