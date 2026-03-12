@@ -104,6 +104,54 @@ export class LegionMaster extends Boss {
           }
         },
       })
+      .addState('CHARGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performChargeAttack(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
+      .addState('SLAM', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performSlamAttack(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
+      .addState('BARRAGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performProjectileBarrage(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
       .addState('RECOVERY', {
         onEnter: (ctx) => {
           ctx.stateTimer = 0;
@@ -129,8 +177,8 @@ export class LegionMaster extends Boss {
 
     const attacks: string[] = [];
 
-    // Always allow dark bolt
-    attacks.push('DARK_BOLT');
+    // Always allow dark bolt and charge
+    attacks.push('DARK_BOLT', 'CHARGE');
 
     // Summon if under cap
     if (this.summonedMinions.length < this.maxMinions) {
@@ -140,6 +188,11 @@ export class LegionMaster extends Boss {
     // Buff if minions exist
     if (this.summonedMinions.length > 0) {
       attacks.push('BUFF_CIRCLE');
+    }
+
+    // Slam and barrage from phase 2+
+    if (this.phase >= 2) {
+      attacks.push('SLAM', 'BARRAGE');
     }
 
     const choice = attacks[Math.floor(Math.random() * attacks.length)];
@@ -275,6 +328,7 @@ export class LegionMaster extends Boss {
 
   update(time: number, delta: number) {
     if (this.isDead) return;
+    this.updateBoss(delta);
     this.stateMachine.update(time, delta);
   }
 
@@ -293,6 +347,7 @@ export class LegionMaster extends Boss {
     }
     this.projectiles.length = 0;
 
+    this.cleanupSharedAttacks();
     super.die();
   }
 }

@@ -52,13 +52,15 @@ export class VoidWingArchon extends Boss {
 
           // Choose attack after hovering for a bit
           if (ctx.stateTimer >= 2000) {
-            const roll = Math.random();
-            if (roll < 0.5) {
-              ctx.currentDive = 0;
-              ctx.stateMachine.transition('DIVE_BOMB');
-            } else {
-              ctx.stateMachine.transition('FEATHER_STORM');
+            const attacks = ['DIVE_BOMB', 'FEATHER_STORM', 'CHARGE'];
+            if (ctx.phase >= 2) {
+              attacks.push('BARRAGE');
             }
+            const choice = attacks[Math.floor(Math.random() * attacks.length)];
+            if (choice === 'DIVE_BOMB') {
+              ctx.currentDive = 0;
+            }
+            ctx.stateMachine.transition(choice);
           }
         },
       })
@@ -109,6 +111,38 @@ export class VoidWingArchon extends Boss {
         onUpdate: (ctx, _time, delta) => {
           ctx.stateTimer += delta;
           if (ctx.stateTimer >= 1500) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
+      .addState('CHARGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performChargeAttack(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
+      .addState('BARRAGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performProjectileBarrage(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
             ctx.stateMachine.transition('RECOVERY');
           }
         },
@@ -184,6 +218,7 @@ export class VoidWingArchon extends Boss {
 
   update(time: number, delta: number) {
     if (this.isDead) return;
+    this.updateBoss(delta);
     this.stateMachine.update(time, delta);
   }
 
@@ -193,6 +228,7 @@ export class VoidWingArchon extends Boss {
     }
     this.feathers.length = 0;
 
+    this.cleanupSharedAttacks();
     super.die();
   }
 }

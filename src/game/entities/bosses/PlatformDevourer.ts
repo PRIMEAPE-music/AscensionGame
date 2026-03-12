@@ -114,6 +114,63 @@ export class PlatformDevourer extends Boss {
           }
         },
       })
+      .addState('CHARGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.setAlpha(1);
+          const arenaCenter = ctx.arena ? ctx.arena.centerY : ctx.y;
+          ctx.setPosition(WORLD.WIDTH / 2, arenaCenter);
+          ctx.performChargeAttack(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('BURROW');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('BURROW');
+          }
+        },
+      })
+      .addState('SLAM', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.setAlpha(1);
+          const arenaCenter = ctx.arena ? ctx.arena.centerY : ctx.y;
+          ctx.setPosition(WORLD.WIDTH / 2, arenaCenter);
+          ctx.performSlamAttack(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('BURROW');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('BURROW');
+          }
+        },
+      })
+      .addState('BARRAGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.setAlpha(1);
+          const arenaCenter = ctx.arena ? ctx.arena.centerY : ctx.y;
+          ctx.setPosition(WORLD.WIDTH / 2, arenaCenter);
+          ctx.performProjectileBarrage(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('BURROW');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('BURROW');
+          }
+        },
+      })
       .addState('RECOVERY', {
         onEnter: (ctx) => {
           ctx.stateTimer = 0;
@@ -134,7 +191,10 @@ export class PlatformDevourer extends Boss {
   }
 
   private pickRandomAttack() {
-    const attacks = ['EMERGE', 'PLATFORM_BITE', 'SPIKE_WALL'];
+    const attacks = ['EMERGE', 'PLATFORM_BITE', 'SPIKE_WALL', 'CHARGE'];
+    if (this.phase >= 2) {
+      attacks.push('SLAM', 'BARRAGE');
+    }
     const choice = attacks[Math.floor(Math.random() * attacks.length)];
     this.stateMachine.transition(choice);
   }
@@ -296,6 +356,7 @@ export class PlatformDevourer extends Boss {
 
   update(time: number, delta: number) {
     if (this.isDead) return;
+    this.updateBoss(delta);
     this.stateMachine.update(time, delta);
   }
 
@@ -320,6 +381,7 @@ export class PlatformDevourer extends Boss {
     }
     this.spikes.length = 0;
 
+    this.cleanupSharedAttacks();
     super.die();
   }
 }

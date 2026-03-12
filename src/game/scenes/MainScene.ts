@@ -529,6 +529,20 @@ export class MainScene extends Phaser.Scene {
     EventBus.on("boss-spawn", () => AudioManager.setBossState(true));
     EventBus.on("boss-defeated", () => AudioManager.setBossState(false));
 
+    // Boss arena visual effects
+    EventBus.on("boss-arena-start", (_data) => {
+      // Darken ambient lighting during boss fight
+      this.cameras.main.setBackgroundColor(0x000011);
+    });
+    EventBus.on("boss-arena-end", () => {
+      // Restore ambient lighting after boss fight
+      this.cameras.main.setBackgroundColor(0x000000);
+    });
+    EventBus.on("boss-enrage", () => {
+      // Screen effect for boss entering enrage (phase 3)
+      AudioManager.playHitHeavy();
+    });
+
     // Music state: low health
     EventBus.on("health-change", (data) => AudioManager.setLowHealth(data.health <= 1));
 
