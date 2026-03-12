@@ -1,11 +1,40 @@
 import React, { useState, useEffect } from "react";
 import { PersistentStats } from "../systems/PersistentStats";
-import type { LifetimeStats } from "../systems/PersistentStats";
+import type { LifetimeStats, PerClassStats, RunHistoryEntry } from "../systems/PersistentStats";
 import { AchievementManager } from "../systems/AchievementManager";
 import type { Achievement, AchievementCategory, AchievementCheckStats } from "../systems/AchievementManager";
 
 interface StatsScreenProps {
   onBack: () => void;
+}
+
+type TabId = "overview" | "classes" | "history" | "combat" | "achievements";
+
+const CATEGORY_LABELS: Record<AchievementCategory, { name: string; color: string }> = {
+  combat: { name: "Combat", color: "#ff4444" },
+  exploration: { name: "Exploration", color: "#44aaff" },
+  collection: { name: "Collection", color: "#ffaa44" },
+  meta: { name: "Meta", color: "#aa44ff" },
+};
+
+const CLASS_COLORS: Record<string, string> = {
+  PALADIN: "#ffd700",
+  MONK: "#44ff44",
+  PRIEST: "#aa66ff",
+};
+
+const CLASS_ICONS: Record<string, string> = {
+  PALADIN: "\u2694",
+  MONK: "\u262F",
+  PRIEST: "\u2721",
+};
+
+function getClassColor(cls: string): string {
+  return CLASS_COLORS[cls.toUpperCase()] || "#aaa";
+}
+
+function getClassIcon(cls: string): string {
+  return CLASS_ICONS[cls.toUpperCase()] || "?";
 }
 
 function formatTime(ms: number): string {
@@ -15,25 +44,26 @@ function formatTime(ms: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatPlayTime(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
 function formatDate(isoDate: string): string {
   try {
-    const date = new Date(isoDate);
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+    const d = new Date(isoDate);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   } catch {
-    return "Unknown";
+    return "---";
   }
 }
 
-const CATEGORY_LABELS: Record<AchievementCategory, { name: string; color: string }> = {
-  combat: { name: "Combat", color: "#ff4444" },
-  exploration: { name: "Exploration", color: "#44aaff" },
-  collection: { name: "Collection", color: "#ffaa44" },
-  meta: { name: "Meta", color: "#aa44ff" },
-};
+// ─── Shared Styles ──────────────────────────────────────────────────
 
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: "18px",
@@ -60,144 +90,529 @@ const statValueStyle: React.CSSProperties = {
   textShadow: "0 0 6px rgba(255, 255, 255, 0.15)",
 };
 
-/** Single achievement card component */
-const AchievementCard: React.FC<{
-  achievement: Achievement & { unlocked: boolean; unlockDate?: string };
-  progress: { current: number; target: number } | null;
-}> = ({ achievement, progress }) => {
-  const [hover, setHover] = useState(false);
-  const isUnlocked = achievement.unlocked;
+const cardStyle: React.CSSProperties = {
+  padding: "16px",
+  background: "rgba(255, 255, 255, 0.03)",
+  borderRadius: "8px",
+  border: "1px solid rgba(255, 255, 255, 0.06)",
+};
 
+// ─── Stat Card Component ────────────────────────────────────────────
+
+function StatCard({ label, value, valueColor, valueGlow }: {
+  label: string;
+  value: string | number;
+  valueColor?: string;
+  valueGlow?: string;
+}) {
   return (
-    <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: "14px",
-        padding: "14px 16px",
-        background: isUnlocked
-          ? hover
-            ? "rgba(255, 215, 0, 0.08)"
-            : "rgba(255, 215, 0, 0.04)"
-          : hover
-            ? "rgba(255, 255, 255, 0.04)"
-            : "rgba(255, 255, 255, 0.02)",
-        borderRadius: "8px",
-        border: isUnlocked
-          ? "1px solid rgba(255, 215, 0, 0.2)"
-          : "1px solid rgba(255, 255, 255, 0.06)",
-        transition: "all 0.2s ease",
-        opacity: isUnlocked ? 1 : 0.6,
-        cursor: "default",
-      }}
-    >
-      {/* Icon */}
-      <div
-        style={{
-          fontSize: "28px",
-          lineHeight: 1,
-          minWidth: "36px",
-          textAlign: "center",
-          filter: isUnlocked
-            ? "drop-shadow(0 0 4px rgba(255, 215, 0, 0.4))"
-            : "grayscale(1) brightness(0.5)",
-          marginTop: "2px",
-        }}
-      >
-        {isUnlocked ? achievement.icon : "\u{1F512}"}
-      </div>
-
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: "15px",
-            fontWeight: "bold",
-            color: isUnlocked ? "#e0d0a0" : "#666",
-            marginBottom: "2px",
-          }}
-        >
-          {achievement.name}
-        </div>
-        <div
-          style={{
-            fontSize: "12px",
-            color: isUnlocked
-              ? "rgba(200, 200, 220, 0.7)"
-              : "rgba(200, 200, 220, 0.35)",
-            lineHeight: 1.4,
-          }}
-        >
-          {isUnlocked
-            ? achievement.description
-            : achievement.hint || "???"}
-        </div>
-
-        {/* Progress bar for numeric goals (only shown when locked) */}
-        {!isUnlocked && progress && progress.target > 0 && (
-          <div style={{ marginTop: "8px" }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: "10px",
-                color: "rgba(200, 200, 220, 0.4)",
-                marginBottom: "4px",
-              }}
-            >
-              <span>Progress</span>
-              <span>
-                {progress.current} / {progress.target}
-              </span>
-            </div>
-            <div
-              style={{
-                width: "100%",
-                height: "6px",
-                backgroundColor: "rgba(255, 255, 255, 0.06)",
-                borderRadius: "3px",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${Math.min(100, (progress.current / progress.target) * 100)}%`,
-                  height: "100%",
-                  background:
-                    "linear-gradient(90deg, rgba(255, 215, 0, 0.4) 0%, rgba(255, 215, 0, 0.6) 100%)",
-                  borderRadius: "3px",
-                  transition: "width 0.5s ease",
-                }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Unlock date */}
-        {isUnlocked && achievement.unlockDate && (
-          <div
-            style={{
-              fontSize: "10px",
-              color: "rgba(255, 215, 0, 0.4)",
-              marginTop: "4px",
-            }}
-          >
-            Unlocked {formatDate(achievement.unlockDate)}
-          </div>
-        )}
+    <div style={cardStyle}>
+      <div style={statLabelStyle}>{label}</div>
+      <div style={{
+        ...statValueStyle,
+        color: valueColor || "#fff",
+        textShadow: valueGlow ? `0 0 8px ${valueGlow}` : statValueStyle.textShadow,
+      }}>
+        {value}
       </div>
     </div>
   );
-};
+}
+
+// ─── Tab Components ─────────────────────────────────────────────────
+
+function OverviewTab({ stats }: { stats: LifetimeStats }) {
+  const overallHighest = Math.max(0, ...Object.values(stats.highestAltitude), 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "28px", animation: "fadeIn 0.3s ease" }}>
+      {/* Primary Stats */}
+      <div>
+        <div style={sectionTitleStyle}>Summary</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px" }}>
+          <StatCard label="Total Runs" value={stats.totalRuns} />
+          <StatCard
+            label="Total Play Time"
+            value={formatPlayTime(stats.totalPlayTimeMs || stats.totalPlayTime)}
+          />
+          <StatCard
+            label="Favorite Class"
+            value={stats.favoriteClass || "---"}
+            valueColor={getClassColor(stats.favoriteClass)}
+            valueGlow={`${getClassColor(stats.favoriteClass)}50`}
+          />
+        </div>
+      </div>
+
+      {/* Records */}
+      <div>
+        <div style={sectionTitleStyle}>Records</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px" }}>
+          <div style={{
+            ...cardStyle,
+            background: "linear-gradient(135deg, rgba(255, 215, 0, 0.06) 0%, rgba(255, 215, 0, 0.02) 100%)",
+            border: "1px solid rgba(255, 215, 0, 0.15)",
+          }}>
+            <div style={statLabelStyle}>Best Altitude</div>
+            <div style={{
+              ...statValueStyle,
+              fontSize: "26px",
+              color: "#ffd700",
+              textShadow: "0 0 12px rgba(255, 215, 0, 0.3)",
+            }}>
+              {overallHighest}m
+            </div>
+          </div>
+          <StatCard
+            label="Fastest 5000m"
+            value={stats.fastest5000m > 0 ? formatTime(stats.fastest5000m) : "---"}
+            valueColor="#e0d0a0"
+          />
+          <StatCard
+            label="Most Kills (Single Run)"
+            value={stats.bestSingleRunKills || 0}
+            valueColor="#ff6644"
+          />
+        </div>
+      </div>
+
+      {/* Streaks & Totals */}
+      <div>
+        <div style={sectionTitleStyle}>Streaks & Totals</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "16px" }}>
+          <StatCard label="Current Streak" value={stats.currentStreak || 0} valueColor="#44ff44" />
+          <StatCard label="Best Streak" value={stats.bestStreak || 0} valueColor="#44ff44" />
+          <StatCard
+            label="Total Essence"
+            value={stats.totalEssenceEarned || 0}
+            valueColor="#ffd700"
+            valueGlow="rgba(255, 215, 0, 0.3)"
+          />
+          <StatCard
+            label="Bosses Defeated"
+            value={stats.totalBossesDefeated}
+            valueColor="#ff4444"
+          />
+        </div>
+      </div>
+
+      {/* Averages */}
+      {stats.totalRuns > 0 && (
+        <div>
+          <div style={sectionTitleStyle}>Averages</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px" }}>
+            <StatCard
+              label="Avg Altitude / Run"
+              value={`${Math.floor(stats.totalAltitude / stats.totalRuns)}m`}
+            />
+            <StatCard
+              label="Avg Kills / Run"
+              value={Math.floor((stats.totalKills || 0) / stats.totalRuns)}
+            />
+            <StatCard
+              label="Avg Run Time"
+              value={formatTime(Math.floor((stats.totalPlayTimeMs || stats.totalPlayTime) / stats.totalRuns))}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClassesTab({ stats }: { stats: LifetimeStats }) {
+  const classes = ["PALADIN", "MONK", "PRIEST"];
+
+  return (
+    <div style={{ animation: "fadeIn 0.3s ease" }}>
+      <div style={sectionTitleStyle}>Per-Class Breakdown</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "20px" }}>
+        {classes.map((cls) => {
+          const pcs: PerClassStats = stats.perClassStats[cls] || {
+            runs: 0,
+            bestAltitude: 0,
+            totalKills: 0,
+            bestTime: 0,
+            bossesDefeated: 0,
+          };
+          const color = getClassColor(cls);
+          const icon = getClassIcon(cls);
+
+          return (
+            <div
+              key={cls}
+              style={{
+                padding: "20px",
+                background: `linear-gradient(135deg, ${color}10 0%, ${color}04 100%)`,
+                borderRadius: "10px",
+                border: `1px solid ${color}30`,
+                display: "flex",
+                flexDirection: "column",
+                gap: "14px",
+              }}
+            >
+              {/* Class Header */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                paddingBottom: "10px",
+                borderBottom: `1px solid ${color}20`,
+              }}>
+                <span style={{
+                  fontSize: "28px",
+                  filter: `drop-shadow(0 0 6px ${color}60)`,
+                }}>
+                  {icon}
+                </span>
+                <span style={{
+                  fontSize: "18px",
+                  fontWeight: "bold",
+                  color: color,
+                  textTransform: "capitalize",
+                  letterSpacing: "2px",
+                  textShadow: `0 0 10px ${color}40`,
+                }}>
+                  {cls}
+                </span>
+              </div>
+
+              {/* Stats */}
+              {pcs.runs === 0 ? (
+                <div style={{
+                  color: "rgba(200, 200, 220, 0.3)",
+                  fontSize: "13px",
+                  textAlign: "center",
+                  padding: "20px 0",
+                }}>
+                  No runs yet
+                </div>
+              ) : (
+                <>
+                  <ClassStatRow label="Runs Played" value={String(pcs.runs)} color={color} />
+                  <ClassStatRow label="Best Altitude" value={`${pcs.bestAltitude}m`} color={color} />
+                  <ClassStatRow label="Total Kills" value={String(pcs.totalKills)} color={color} />
+                  <ClassStatRow label="Bosses Defeated" value={String(pcs.bossesDefeated)} color={color} />
+                  <ClassStatRow
+                    label="Longest Run"
+                    value={pcs.bestTime > 0 ? formatTime(pcs.bestTime) : "---"}
+                    color={color}
+                  />
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Class Distribution Bar */}
+      {stats.totalRuns > 0 && (
+        <div style={{ marginTop: "28px" }}>
+          <div style={{
+            fontSize: "13px",
+            color: "rgba(200, 200, 220, 0.4)",
+            textTransform: "uppercase",
+            letterSpacing: "1px",
+            marginBottom: "10px",
+          }}>
+            Class Distribution
+          </div>
+          <div style={{
+            display: "flex",
+            height: "16px",
+            borderRadius: "8px",
+            overflow: "hidden",
+            background: "rgba(255, 255, 255, 0.04)",
+          }}>
+            {classes.map((cls) => {
+              const count = stats.classRunCounts[cls] || 0;
+              const pct = stats.totalRuns > 0 ? (count / stats.totalRuns) * 100 : 0;
+              if (pct === 0) return null;
+              return (
+                <div
+                  key={cls}
+                  style={{
+                    width: `${pct}%`,
+                    background: getClassColor(cls),
+                    opacity: 0.7,
+                    transition: "width 0.5s ease",
+                  }}
+                  title={`${cls}: ${count} runs (${Math.round(pct)}%)`}
+                />
+              );
+            })}
+          </div>
+          <div style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: "24px",
+            marginTop: "8px",
+          }}>
+            {classes.map((cls) => {
+              const count = stats.classRunCounts[cls] || 0;
+              if (count === 0) return null;
+              return (
+                <span key={cls} style={{
+                  fontSize: "12px",
+                  color: getClassColor(cls),
+                  opacity: 0.7,
+                }}>
+                  {cls}: {count}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClassStatRow({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <span style={{ fontSize: "12px", color: "rgba(200, 200, 220, 0.45)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        {label}
+      </span>
+      <span style={{ fontSize: "16px", fontWeight: "bold", color, textShadow: `0 0 6px ${color}30` }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function HistoryTab({ stats }: { stats: LifetimeStats }) {
+  const history = stats.runHistory || [];
+  const sortedHistory = [...history].reverse(); // Most recent first
+
+  // Find the best run by altitude
+  let bestIdx = -1;
+  let bestAlt = -1;
+  sortedHistory.forEach((entry, i) => {
+    if (entry.altitude > bestAlt) {
+      bestAlt = entry.altitude;
+      bestIdx = i;
+    }
+  });
+
+  if (sortedHistory.length === 0) {
+    return (
+      <div style={{
+        textAlign: "center",
+        color: "rgba(200, 200, 220, 0.4)",
+        fontSize: "14px",
+        padding: "40px 0",
+        animation: "fadeIn 0.3s ease",
+      }}>
+        No run history yet. Complete a run to see it here!
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ animation: "fadeIn 0.3s ease" }}>
+      <div style={sectionTitleStyle}>Recent Runs</div>
+      <div style={{
+        maxHeight: "440px",
+        overflowY: "auto",
+        borderRadius: "8px",
+        border: "1px solid rgba(255, 255, 255, 0.06)",
+      }}>
+        {/* Table Header */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "80px 100px 1fr 100px 80px",
+          gap: "8px",
+          padding: "10px 16px",
+          background: "rgba(255, 255, 255, 0.04)",
+          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+          fontSize: "11px",
+          color: "rgba(200, 200, 220, 0.4)",
+          textTransform: "uppercase",
+          letterSpacing: "1px",
+          position: "sticky",
+          top: 0,
+        }}>
+          <span>Date</span>
+          <span>Class</span>
+          <span>Altitude</span>
+          <span>Time</span>
+          <span>Kills</span>
+        </div>
+
+        {/* Table Rows */}
+        {sortedHistory.map((entry, i) => {
+          const isBest = i === bestIdx;
+          const classColor = getClassColor(entry.class);
+
+          return (
+            <div
+              key={i}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "80px 100px 1fr 100px 80px",
+                gap: "8px",
+                padding: "10px 16px",
+                background: isBest
+                  ? "rgba(255, 215, 0, 0.06)"
+                  : i % 2 === 0
+                    ? "rgba(255, 255, 255, 0.015)"
+                    : "transparent",
+                borderLeft: isBest ? "3px solid #ffd700" : "3px solid transparent",
+                borderBottom: "1px solid rgba(255, 255, 255, 0.03)",
+                alignItems: "center",
+                fontSize: "13px",
+                transition: "background 0.15s ease",
+              }}
+            >
+              <span style={{ color: "rgba(200, 200, 220, 0.5)" }}>
+                {formatDate(entry.date)}
+              </span>
+              <span style={{
+                color: classColor,
+                fontWeight: "bold",
+                textTransform: "capitalize",
+              }}>
+                {getClassIcon(entry.class)} {entry.class}
+              </span>
+              <span style={{
+                color: isBest ? "#ffd700" : "#fff",
+                fontWeight: isBest ? "bold" : "normal",
+              }}>
+                {entry.altitude}m {isBest ? " (BEST)" : ""}
+              </span>
+              <span style={{ color: "rgba(200, 200, 220, 0.7)" }}>
+                {formatTime(entry.time)}
+              </span>
+              <span style={{ color: "rgba(200, 200, 220, 0.7)" }}>
+                {entry.kills}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CombatTab({ stats }: { stats: LifetimeStats }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "28px", animation: "fadeIn 0.3s ease" }}>
+      {/* Combat Totals */}
+      <div>
+        <div style={sectionTitleStyle}>Combat Totals</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px" }}>
+          <StatCard
+            label="Total Kills"
+            value={stats.totalKills || 0}
+            valueColor="#ff6644"
+          />
+          <StatCard
+            label="Total Parries"
+            value={stats.totalParries || 0}
+            valueColor="#44aaff"
+          />
+          <StatCard
+            label="Perfect Dodges"
+            value={stats.totalPerfectDodges || 0}
+            valueColor="#44ff44"
+          />
+        </div>
+      </div>
+
+      {/* Damage Stats */}
+      <div>
+        <div style={sectionTitleStyle}>Damage</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+          <div style={{
+            ...cardStyle,
+            background: "linear-gradient(135deg, rgba(255, 68, 68, 0.06) 0%, rgba(255, 68, 68, 0.02) 100%)",
+            border: "1px solid rgba(255, 68, 68, 0.15)",
+          }}>
+            <div style={statLabelStyle}>Total Damage Dealt</div>
+            <div style={{
+              ...statValueStyle,
+              fontSize: "26px",
+              color: "#ff6644",
+              textShadow: "0 0 10px rgba(255, 68, 68, 0.3)",
+            }}>
+              {(stats.totalDamageDealt || 0).toLocaleString()}
+            </div>
+          </div>
+          <div style={{
+            ...cardStyle,
+            background: "linear-gradient(135deg, rgba(255, 170, 0, 0.06) 0%, rgba(255, 170, 0, 0.02) 100%)",
+            border: "1px solid rgba(255, 170, 0, 0.15)",
+          }}>
+            <div style={statLabelStyle}>Total Damage Taken</div>
+            <div style={{
+              ...statValueStyle,
+              fontSize: "26px",
+              color: "#ffaa00",
+              textShadow: "0 0 10px rgba(255, 170, 0, 0.3)",
+            }}>
+              {(stats.totalDamageTaken || 0).toLocaleString()}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Averages */}
+      {stats.totalRuns > 0 && (
+        <div>
+          <div style={sectionTitleStyle}>Per-Run Averages</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "16px" }}>
+            <StatCard
+              label="Avg Kills / Run"
+              value={Math.floor((stats.totalKills || 0) / stats.totalRuns)}
+            />
+            <StatCard
+              label="Avg Altitude / Run"
+              value={`${Math.floor(stats.totalAltitude / stats.totalRuns)}m`}
+            />
+            <StatCard
+              label="Avg Dmg Dealt / Run"
+              value={Math.floor((stats.totalDamageDealt || 0) / stats.totalRuns).toLocaleString()}
+            />
+            <StatCard
+              label="Avg Dmg Taken / Run"
+              value={Math.floor((stats.totalDamageTaken || 0) / stats.totalRuns).toLocaleString()}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Misc Stats */}
+      <div>
+        <div style={sectionTitleStyle}>Exploration</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px" }}>
+          <StatCard
+            label="Portals Used"
+            value={stats.totalPortalsUsed || 0}
+            valueColor="#9933ff"
+            valueGlow="rgba(153, 51, 255, 0.3)"
+          />
+          <StatCard
+            label="Total Deaths"
+            value={stats.totalDeaths}
+            valueColor="#ff4444"
+          />
+          <StatCard
+            label="Total Altitude Climbed"
+            value={`${(stats.totalAltitude || 0).toLocaleString()}m`}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Stats Screen ──────────────────────────────────────────────
 
 export const StatsScreen: React.FC<StatsScreenProps> = ({ onBack }) => {
   const [stats, setStats] = useState<LifetimeStats | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [backHover, setBackHover] = useState(false);
-  const [activeTab, setActiveTab] = useState<"stats" | "achievements">(
-    "stats",
-  );
 
   useEffect(() => {
     try {
@@ -208,67 +623,17 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ onBack }) => {
     }
   }, []);
 
-  // Get achievement data
+  const tabs: { id: TabId; label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "classes", label: "Classes" },
+    { id: "history", label: "History" },
+    { id: "combat", label: "Combat" },
+    { id: "achievements", label: "Achievements" },
+  ];
+
+  // Achievement data
   const achievementsByCategory = AchievementManager.getAllByCategory();
-  const counts = AchievementManager.getCounts();
-
-  // Build stats for progress display
-  const buildCheckStats = (): AchievementCheckStats => {
-    const lifetime = stats || {
-      totalBossesDefeated: 0,
-      totalDeaths: 0,
-      highestAltitude: {} as Record<string, number>,
-      totalRuns: 0,
-    };
-    const goldItemCount = PersistentStats.getUnlockedGoldItems().length;
-    return {
-      lifetime: {
-        totalBossesDefeated: lifetime.totalBossesDefeated,
-        totalDeaths: lifetime.totalDeaths,
-        highestAltitude: lifetime.highestAltitude,
-        totalRuns: lifetime.totalRuns,
-      },
-      run: { altitude: 0, kills: 0, bossesDefeated: 0, essenceEarned: 0 },
-      currentClass: "",
-      goldItemCount,
-      maxComboThisRun: AchievementManager.getMaxCombo(),
-      totalKills: AchievementManager.getTotalKills(),
-    };
-  };
-
-  const checkStats = buildCheckStats();
-
-  // Get overall highest altitude
-  const overallHighest = stats
-    ? Math.max(0, ...Object.values(stats.highestAltitude))
-    : 0;
-
-  // Class run counts sorted by count descending
-  const classEntries = stats
-    ? Object.entries(stats.classRunCounts).sort(([, a], [, b]) => b - a)
-    : [];
-  const maxClassRuns =
-    classEntries.length > 0 ? classEntries[0][1] : 1;
-
-  const tabStyle = (isActive: boolean): React.CSSProperties => ({
-    padding: "10px 24px",
-    fontSize: "14px",
-    fontFamily: "monospace",
-    fontWeight: "bold",
-    letterSpacing: "2px",
-    textTransform: "uppercase",
-    background: isActive
-      ? "rgba(224, 208, 160, 0.12)"
-      : "rgba(255, 255, 255, 0.03)",
-    color: isActive ? "#e0d0a0" : "rgba(200, 200, 220, 0.4)",
-    border: isActive
-      ? "1px solid rgba(224, 208, 160, 0.3)"
-      : "1px solid rgba(255, 255, 255, 0.06)",
-    borderRadius: "6px",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    outline: "none",
-  });
+  const achievementCounts = AchievementManager.getCounts();
 
   return (
     <div
@@ -288,526 +653,167 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ onBack }) => {
         overflowY: "auto",
       }}
     >
+      {/* Inject fadeIn animation */}
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
       {/* Header */}
       <div
         style={{
           width: "100%",
-          maxWidth: "900px",
-          padding: "40px 40px 0",
+          maxWidth: "960px",
+          padding: "36px 40px 0",
           boxSizing: "border-box",
         }}
       >
         <h1
           style={{
-            fontSize: "48px",
+            fontSize: "44px",
             fontWeight: "bold",
             letterSpacing: "4px",
             textTransform: "uppercase",
             color: "#e0d0a0",
             textShadow: "0 0 20px rgba(224, 208, 160, 0.3)",
-            marginBottom: "8px",
+            marginBottom: "6px",
             textAlign: "center",
           }}
         >
-          {activeTab === "stats" ? "Statistics" : "Achievements"}
+          Statistics
         </h1>
         <p
           style={{
-            fontSize: "14px",
-            color: "#666",
+            fontSize: "13px",
+            color: "#555",
             textAlign: "center",
             marginBottom: "24px",
           }}
         >
-          {activeTab === "stats"
-            ? "Your lifetime journey through the ascent"
-            : `${counts.unlocked} / ${counts.total} Unlocked`}
+          Your lifetime journey through the ascent
         </p>
 
-        {/* Tab switcher */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: "12px",
-            marginBottom: "32px",
-          }}
-        >
-          <button
-            onClick={() => setActiveTab("stats")}
-            style={tabStyle(activeTab === "stats")}
+        {/* Tabs */}
+        {stats && stats.totalRuns > 0 && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: "4px",
+              marginBottom: "28px",
+              borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+              paddingBottom: "0",
+            }}
           >
-            Stats
-          </button>
-          <button
-            onClick={() => setActiveTab("achievements")}
-            style={tabStyle(activeTab === "achievements")}
-          >
-            Achievements ({counts.unlocked}/{counts.total})
-          </button>
-        </div>
+            {tabs.map((tab) => (
+              <TabButton
+                key={tab.id}
+                label={tab.label}
+                active={activeTab === tab.id}
+                onClick={() => setActiveTab(tab.id)}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Stats Tab */}
-      {activeTab === "stats" && (
-        <>
-          {!stats || stats.totalRuns === 0 ? (
-            <div
-              style={{
-                padding: "60px 40px",
-                textAlign: "center",
-                color: "#666",
-                fontSize: "16px",
-              }}
-            >
-              No runs completed yet. Start your first run to begin tracking
-              statistics!
-            </div>
-          ) : (
-            <div
-              style={{
-                width: "100%",
-                maxWidth: "900px",
-                padding: "0 40px 40px",
-                boxSizing: "border-box",
-                display: "flex",
-                flexDirection: "column",
-                gap: "36px",
-              }}
-            >
-              {/* Lifetime Stats Section */}
-              <div>
-                <div style={sectionTitleStyle}>Lifetime Stats</div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr 1fr",
-                    gap: "20px",
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: "16px",
-                      background: "rgba(255, 255, 255, 0.03)",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(255, 255, 255, 0.06)",
-                    }}
-                  >
-                    <div style={statLabelStyle}>Total Runs</div>
-                    <div style={statValueStyle}>{stats.totalRuns}</div>
-                  </div>
-                  <div
-                    style={{
-                      padding: "16px",
-                      background: "rgba(255, 255, 255, 0.03)",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(255, 255, 255, 0.06)",
-                    }}
-                  >
-                    <div style={statLabelStyle}>Total Deaths</div>
-                    <div style={statValueStyle}>{stats.totalDeaths}</div>
-                  </div>
-                  <div
-                    style={{
-                      padding: "16px",
-                      background: "rgba(255, 255, 255, 0.03)",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(255, 255, 255, 0.06)",
-                    }}
-                  >
-                    <div style={statLabelStyle}>Total Play Time</div>
-                    <div style={statValueStyle}>{formatTime(stats.totalPlayTime)}</div>
-                  </div>
-                  <div
-                    style={{
-                      padding: "16px",
-                      background: "rgba(255, 255, 255, 0.03)",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(255, 255, 255, 0.06)",
-                    }}
-                  >
-                    <div style={statLabelStyle}>Total Altitude</div>
-                    <div style={statValueStyle}>{stats.totalAltitude}m</div>
-                  </div>
-                  <div
-                    style={{
-                      padding: "16px",
-                      background: "rgba(255, 255, 255, 0.03)",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(255, 255, 255, 0.06)",
-                    }}
-                  >
-                    <div style={statLabelStyle}>Bosses Defeated</div>
-                    <div style={statValueStyle}>{stats.totalBossesDefeated}</div>
-                  </div>
-                  <div
-                    style={{
-                      padding: "16px",
-                      background: "rgba(255, 255, 255, 0.03)",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(255, 255, 255, 0.06)",
-                    }}
-                  >
-                    <div style={statLabelStyle}>Favorite Class</div>
-                    <div
-                      style={{
-                        ...statValueStyle,
-                        color: "#ffd700",
-                        textShadow: "0 0 8px rgba(255, 215, 0, 0.3)",
-                      }}
-                    >
-                      {stats.favoriteClass || "---"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Records Section */}
-              <div>
-                <div style={sectionTitleStyle}>Records</div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "20px",
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: "20px",
-                      background:
-                        "linear-gradient(135deg, rgba(255, 215, 0, 0.06) 0%, rgba(255, 215, 0, 0.02) 100%)",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(255, 215, 0, 0.15)",
-                    }}
-                  >
-                    <div style={statLabelStyle}>Highest Altitude (Overall)</div>
-                    <div
-                      style={{
-                        ...statValueStyle,
-                        fontSize: "28px",
-                        color: "#ffd700",
-                        textShadow: "0 0 12px rgba(255, 215, 0, 0.3)",
-                      }}
-                    >
-                      {overallHighest}m
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      padding: "20px",
-                      background:
-                        "linear-gradient(135deg, rgba(224, 208, 160, 0.06) 0%, rgba(224, 208, 160, 0.02) 100%)",
-                      borderRadius: "8px",
-                      border: "1px solid rgba(224, 208, 160, 0.15)",
-                    }}
-                  >
-                    <div style={statLabelStyle}>Fastest 5000m</div>
-                    <div
-                      style={{
-                        ...statValueStyle,
-                        fontSize: "28px",
-                        color: "#e0d0a0",
-                        textShadow: "0 0 12px rgba(224, 208, 160, 0.3)",
-                      }}
-                    >
-                      {stats.fastest5000m > 0 ? formatTime(stats.fastest5000m) : "---"}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Per-class highest altitude */}
-                {Object.keys(stats.highestAltitude).length > 0 && (
-                  <div style={{ marginTop: "16px" }}>
-                    <div
-                      style={{
-                        fontSize: "13px",
-                        color: "rgba(200, 200, 220, 0.4)",
-                        textTransform: "uppercase",
-                        letterSpacing: "1px",
-                        marginBottom: "10px",
-                      }}
-                    >
-                      Highest Altitude by Class
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                      {Object.entries(stats.highestAltitude)
-                        .sort(([, a], [, b]) => b - a)
-                        .map(([cls, alt]) => (
-                          <div
-                            key={cls}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "12px",
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: "13px",
-                                color: "#aaa",
-                                width: "100px",
-                                textAlign: "right",
-                                textTransform: "capitalize",
-                              }}
-                            >
-                              {cls}
-                            </span>
-                            <div
-                              style={{
-                                flex: 1,
-                                height: "8px",
-                                backgroundColor: "rgba(255, 255, 255, 0.06)",
-                                borderRadius: "4px",
-                                overflow: "hidden",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: `${overallHighest > 0 ? (alt / overallHighest) * 100 : 0}%`,
-                                  height: "100%",
-                                  backgroundColor: "#e0d0a0",
-                                  borderRadius: "4px",
-                                  transition: "width 0.5s ease",
-                                }}
-                              />
-                            </div>
-                            <span
-                              style={{
-                                fontSize: "13px",
-                                color: "#e0d0a0",
-                                width: "60px",
-                              }}
-                            >
-                              {alt}m
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Class Stats Section */}
-              {classEntries.length > 0 && (
-                <div>
-                  <div style={sectionTitleStyle}>Class Stats</div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "10px",
-                    }}
-                  >
-                    {classEntries.map(([cls, count]) => (
-                      <div
-                        key={cls}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                          padding: "10px 16px",
-                          background: "rgba(255, 255, 255, 0.02)",
-                          borderRadius: "6px",
-                          border: "1px solid rgba(255, 255, 255, 0.04)",
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: "14px",
-                            color: "#ccc",
-                            width: "100px",
-                            textAlign: "right",
-                            fontWeight: "bold",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {cls}
-                        </span>
-                        <div
-                          style={{
-                            flex: 1,
-                            height: "12px",
-                            backgroundColor: "rgba(255, 255, 255, 0.06)",
-                            borderRadius: "6px",
-                            overflow: "hidden",
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: `${(count / maxClassRuns) * 100}%`,
-                              height: "100%",
-                              background:
-                                "linear-gradient(90deg, rgba(204, 68, 255, 0.6) 0%, rgba(204, 68, 255, 0.3) 100%)",
-                              borderRadius: "6px",
-                              transition: "width 0.5s ease",
-                            }}
-                          />
-                        </div>
-                        <span
-                          style={{
-                            fontSize: "14px",
-                            color: "#cc44ff",
-                            width: "50px",
-                            fontWeight: "bold",
-                          }}
-                        >
-                          {count} {count === 1 ? "run" : "runs"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Achievements Tab */}
-      {activeTab === "achievements" && (
+      {!stats || stats.totalRuns === 0 ? (
+        <div
+          style={{
+            padding: "60px 40px",
+            textAlign: "center",
+            color: "#666",
+            fontSize: "16px",
+          }}
+        >
+          No runs completed yet. Start your first run to begin tracking
+          statistics!
+        </div>
+      ) : (
         <div
           style={{
             width: "100%",
-            maxWidth: "900px",
-            padding: "0 40px 40px",
+            maxWidth: "960px",
+            padding: "0 40px 20px",
             boxSizing: "border-box",
-            display: "flex",
-            flexDirection: "column",
-            gap: "32px",
           }}
         >
-          {/* Overall progress bar */}
-          <div
-            style={{
-              padding: "16px 20px",
-              background: "rgba(255, 215, 0, 0.04)",
-              borderRadius: "8px",
-              border: "1px solid rgba(255, 215, 0, 0.15)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "8px",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "14px",
-                  fontWeight: "bold",
-                  color: "#e0d0a0",
-                  textTransform: "uppercase",
-                  letterSpacing: "2px",
-                }}
-              >
-                Total Progress
-              </span>
-              <span
-                style={{
-                  fontSize: "16px",
-                  fontWeight: "bold",
-                  color: "#ffd700",
-                }}
-              >
-                {counts.unlocked} / {counts.total}
-              </span>
-            </div>
-            <div
-              style={{
-                width: "100%",
-                height: "10px",
-                backgroundColor: "rgba(255, 255, 255, 0.06)",
-                borderRadius: "5px",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${counts.total > 0 ? (counts.unlocked / counts.total) * 100 : 0}%`,
-                  height: "100%",
-                  background:
-                    "linear-gradient(90deg, #ffd700 0%, #ffaa00 100%)",
-                  borderRadius: "5px",
-                  transition: "width 0.5s ease",
-                  boxShadow: "0 0 8px rgba(255, 215, 0, 0.3)",
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Achievement categories */}
-          {(
-            Object.entries(achievementsByCategory) as [
-              AchievementCategory,
-              (Achievement & { unlocked: boolean; unlockDate?: string })[],
-            ][]
-          ).map(([category, achievements]) => {
-            const categoryInfo = CATEGORY_LABELS[category];
-            const categoryUnlocked = achievements.filter(
-              (a) => a.unlocked,
-            ).length;
-
-            return (
-              <div key={category}>
-                <div
-                  style={{
-                    ...sectionTitleStyle,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    borderBottomColor: `${categoryInfo.color}33`,
-                  }}
-                >
-                  <span style={{ color: categoryInfo.color }}>
-                    {categoryInfo.name}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: "normal",
-                      color: "rgba(200, 200, 220, 0.4)",
-                      letterSpacing: "1px",
-                    }}
-                  >
-                    {categoryUnlocked} / {achievements.length}
+          {activeTab === "overview" && <OverviewTab stats={stats} />}
+          {activeTab === "classes" && <ClassesTab stats={stats} />}
+          {activeTab === "history" && <HistoryTab stats={stats} />}
+          {activeTab === "combat" && <CombatTab stats={stats} />}
+          {activeTab === "achievements" && (
+            <div>
+              {/* Progress bar */}
+              <div style={{ marginBottom: "24px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                  <span style={{ ...statLabelStyle }}>Total Progress</span>
+                  <span style={{ fontSize: "16px", fontWeight: "bold", color: "#ffd700" }}>
+                    {achievementCounts.unlocked} / {achievementCounts.total}
                   </span>
                 </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "10px",
-                  }}
-                >
-                  {achievements.map((achievement) => {
-                    const progress = AchievementManager.getProgress(
-                      achievement.id,
-                      checkStats,
-                    );
-                    return (
-                      <AchievementCard
-                        key={achievement.id}
-                        achievement={achievement}
-                        progress={progress}
-                      />
-                    );
-                  })}
+                <div style={{ width: "100%", height: "10px", backgroundColor: "rgba(255,255,255,0.06)", borderRadius: "5px", overflow: "hidden" }}>
+                  <div style={{
+                    width: `${achievementCounts.total > 0 ? (achievementCounts.unlocked / achievementCounts.total) * 100 : 0}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #ffd700, #ffaa00)",
+                    borderRadius: "5px",
+                    transition: "width 0.5s ease",
+                    boxShadow: "0 0 8px rgba(255,215,0,0.3)",
+                  }} />
                 </div>
               </div>
-            );
-          })}
+
+              {/* Achievement categories */}
+              {(Object.entries(achievementsByCategory) as [AchievementCategory, (Achievement & { unlocked: boolean; unlockDate?: string })[]][]).map(([category, achievements]) => {
+                const categoryInfo = CATEGORY_LABELS[category];
+                const catUnlocked = achievements.filter(a => a.unlocked).length;
+                return (
+                  <div key={category} style={{ marginBottom: "24px" }}>
+                    <div style={{ ...sectionTitleStyle, display: "flex", justifyContent: "space-between", borderBottomColor: `${categoryInfo.color}33` }}>
+                      <span style={{ color: categoryInfo.color }}>{categoryInfo.name}</span>
+                      <span style={{ fontSize: "13px", fontWeight: "normal", color: "rgba(200,200,220,0.4)" }}>{catUnlocked} / {achievements.length}</span>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                      {achievements.map(a => (
+                        <div key={a.id} style={{
+                          padding: "12px 14px",
+                          background: a.unlocked ? "rgba(255,215,0,0.04)" : "rgba(255,255,255,0.02)",
+                          borderRadius: "8px",
+                          border: a.unlocked ? "1px solid rgba(255,215,0,0.2)" : "1px solid rgba(255,255,255,0.06)",
+                          opacity: a.unlocked ? 1 : 0.6,
+                        }}>
+                          <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+                            <span style={{ fontSize: "24px", filter: a.unlocked ? "none" : "grayscale(1) brightness(0.5)" }}>
+                              {a.unlocked ? a.icon : "\u{1F512}"}
+                            </span>
+                            <div>
+                              <div style={{ fontSize: "14px", fontWeight: "bold", color: a.unlocked ? "#e0d0a0" : "#666" }}>{a.name}</div>
+                              <div style={{ fontSize: "11px", color: a.unlocked ? "rgba(200,200,220,0.7)" : "rgba(200,200,220,0.35)", marginTop: "2px" }}>
+                                {a.unlocked ? a.description : (a.hint || "???")}
+                              </div>
+                              {a.unlocked && a.unlockDate && (
+                                <div style={{ fontSize: "10px", color: "rgba(255,215,0,0.4)", marginTop: "4px" }}>
+                                  Unlocked {new Date(a.unlockDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {/* Back button */}
-      <div
-        style={{
-          padding: "30px 0 40px",
-        }}
-      >
+      <div style={{ padding: "24px 0 36px" }}>
         <button
           onClick={onBack}
           onMouseEnter={() => setBackHover(true)}
@@ -837,5 +843,44 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ onBack }) => {
     </div>
   );
 };
+
+// ─── Tab Button Component ───────────────────────────────────────────
+
+function TabButton({ label, active, onClick }: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: "10px 24px",
+        fontSize: "13px",
+        fontFamily: "monospace",
+        fontWeight: "bold",
+        letterSpacing: "1.5px",
+        textTransform: "uppercase",
+        background: active
+          ? "rgba(224, 208, 160, 0.1)"
+          : hover
+            ? "rgba(255, 255, 255, 0.04)"
+            : "transparent",
+        color: active ? "#e0d0a0" : hover ? "rgba(200, 200, 220, 0.7)" : "rgba(200, 200, 220, 0.4)",
+        border: "none",
+        borderBottom: active ? "2px solid #e0d0a0" : "2px solid transparent",
+        cursor: "pointer",
+        transition: "all 0.2s ease",
+        outline: "none",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
 
 export default StatsScreen;

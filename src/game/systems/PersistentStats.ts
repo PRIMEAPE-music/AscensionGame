@@ -13,6 +13,22 @@ export interface RunStats {
   essenceEarned: number;
 }
 
+export interface PerClassStats {
+  runs: number;
+  bestAltitude: number;
+  totalKills: number;
+  bestTime: number;
+  bossesDefeated: number;
+}
+
+export interface RunHistoryEntry {
+  date: string;
+  class: string;
+  altitude: number;
+  time: number;
+  kills: number;
+}
+
 export interface LifetimeStats {
   totalAltitude: number;
   totalBossesDefeated: number;
@@ -23,6 +39,21 @@ export interface LifetimeStats {
   totalRuns: number;
   favoriteClass: string;
   classRunCounts: Record<string, number>;
+  // New extended stats
+  totalPlayTimeMs: number;
+  perClassStats: Record<string, PerClassStats>;
+  currentStreak: number;
+  bestStreak: number;
+  totalEssenceEarned: number;
+  totalPortalsUsed: number;
+  totalParries: number;
+  totalPerfectDodges: number;
+  totalKills: number;
+  totalDamageDealt: number;
+  totalDamageTaken: number;
+  bestSingleRunKills: number;
+  bestSingleRunTime: number;
+  runHistory: RunHistoryEntry[];
 }
 
 interface GoldItemCollection {
@@ -33,6 +64,16 @@ interface GoldItemCollection {
 interface StoredData {
   lifetime: LifetimeStats;
   goldItems: GoldItemCollection;
+}
+
+function defaultPerClassStats(): PerClassStats {
+  return {
+    runs: 0,
+    bestAltitude: 0,
+    totalKills: 0,
+    bestTime: 0,
+    bossesDefeated: 0,
+  };
 }
 
 function defaultLifetime(): LifetimeStats {
@@ -46,6 +87,21 @@ function defaultLifetime(): LifetimeStats {
     totalRuns: 0,
     favoriteClass: "",
     classRunCounts: {},
+    // New extended stats
+    totalPlayTimeMs: 0,
+    perClassStats: {},
+    currentStreak: 0,
+    bestStreak: 0,
+    totalEssenceEarned: 0,
+    totalPortalsUsed: 0,
+    totalParries: 0,
+    totalPerfectDodges: 0,
+    totalKills: 0,
+    totalDamageDealt: 0,
+    totalDamageTaken: 0,
+    bestSingleRunKills: 0,
+    bestSingleRunTime: 0,
+    runHistory: [],
   };
 }
 
@@ -85,6 +141,9 @@ export const PersistentStats = {
       if (raw) {
         const parsed: StoredData = JSON.parse(raw);
         lifetime = { ...defaultLifetime(), ...parsed.lifetime };
+        // Ensure perClassStats and runHistory are properly initialized even from old saves
+        if (!lifetime.perClassStats) lifetime.perClassStats = {};
+        if (!lifetime.runHistory) lifetime.runHistory = [];
         goldItems = { ...defaultGoldItems(), ...parsed.goldItems };
       } else {
         lifetime = defaultLifetime();
@@ -122,7 +181,24 @@ export const PersistentStats = {
     lifetime.totalBossesDefeated += run.bossesDefeated;
     lifetime.totalDeaths++;
     lifetime.totalPlayTime += run.timeMs;
+    lifetime.totalPlayTimeMs += run.timeMs;
     lifetime.totalRuns++;
+
+    // Aggregate combat stats
+    lifetime.totalKills += run.kills;
+    lifetime.totalDamageDealt += run.damageDealt;
+    lifetime.totalDamageTaken += run.damageTaken;
+    lifetime.totalParries += run.perfectParries;
+    lifetime.totalPerfectDodges += run.perfectDodges;
+    lifetime.totalEssenceEarned += run.essenceEarned;
+
+    // Best single-run records
+    if (run.kills > lifetime.bestSingleRunKills) {
+      lifetime.bestSingleRunKills = run.kills;
+    }
+    if (run.timeMs > 0 && (lifetime.bestSingleRunTime === 0 || run.timeMs > lifetime.bestSingleRunTime)) {
+      lifetime.bestSingleRunTime = run.timeMs;
+    }
 
     // Per-class highest altitude
     if (runClassType) {
@@ -137,6 +213,33 @@ export const PersistentStats = {
       if (lifetime.fastest5000m === 0 || run.timeMs < lifetime.fastest5000m) {
         lifetime.fastest5000m = run.timeMs;
       }
+    }
+
+    // Per-class detailed stats
+    if (runClassType) {
+      if (!lifetime.perClassStats[runClassType]) {
+        lifetime.perClassStats[runClassType] = defaultPerClassStats();
+      }
+      const pcs = lifetime.perClassStats[runClassType];
+      pcs.runs++;
+      pcs.totalKills += run.kills;
+      pcs.bossesDefeated += run.bossesDefeated;
+      if (run.altitude > pcs.bestAltitude) {
+        pcs.bestAltitude = run.altitude;
+      }
+      if (run.timeMs > 0 && (pcs.bestTime === 0 || run.timeMs > pcs.bestTime)) {
+        pcs.bestTime = run.timeMs;
+      }
+    }
+
+    // Streak tracking (altitude > 1000m counts as a good run)
+    if (run.altitude > 1000) {
+      lifetime.currentStreak++;
+      if (lifetime.currentStreak > lifetime.bestStreak) {
+        lifetime.bestStreak = lifetime.currentStreak;
+      }
+    } else {
+      lifetime.currentStreak = 0;
     }
 
     // Class run counts and favorite class
@@ -156,8 +259,56 @@ export const PersistentStats = {
       lifetime.favoriteClass = favorite;
     }
 
+    // Run history (keep last 20)
+    const historyEntry: RunHistoryEntry = {
+      date: new Date().toISOString(),
+      class: runClassType,
+      altitude: Math.floor(run.altitude),
+      time: run.timeMs,
+      kills: run.kills,
+    };
+    lifetime.runHistory.push(historyEntry);
+    if (lifetime.runHistory.length > 20) {
+      lifetime.runHistory = lifetime.runHistory.slice(-20);
+    }
+
     // Essence
     run.essenceEarned = run.essenceEarned; // already tracked incrementally
+  },
+
+  /** Record a run ending with full data (alternative to endRun for external callers). */
+  recordRunEnd(data: {
+    classType: string;
+    altitude: number;
+    kills: number;
+    bossesDefeated: number;
+    timeMs: number;
+    essence: number;
+  }): void {
+    // This is a convenience method that sets run data and calls endRun.
+    // If endRun was already called (which it normally is from MainScene),
+    // this should NOT be called as well to avoid double-counting.
+    // Only use if endRun was not called.
+    run.altitude = data.altitude;
+    run.kills = data.kills;
+    run.bossesDefeated = data.bossesDefeated;
+    run.essenceEarned = data.essence;
+    runClassType = data.classType;
+    run.timeMs = data.timeMs;
+    // Skip the timeMs calculation in endRun by setting runStartTimestamp
+    runStartTimestamp = Date.now() - data.timeMs;
+    PersistentStats.endRun();
+  },
+
+  /** Increment total play time (for periodic saves during gameplay). */
+  addPlayTime(ms: number): void {
+    lifetime.totalPlayTimeMs += ms;
+    lifetime.totalPlayTime += ms;
+  },
+
+  /** Track a portal usage. */
+  addPortalUsed(): void {
+    lifetime.totalPortalsUsed++;
   },
 
   // ─── Per-Run Stat Tracking ─────────────────────────────────────────
@@ -224,7 +375,7 @@ export const PersistentStats = {
   // ─── Getters ───────────────────────────────────────────────────────
 
   getLifetimeStats(): LifetimeStats {
-    return { ...lifetime };
+    return { ...lifetime, perClassStats: { ...lifetime.perClassStats }, runHistory: [...lifetime.runHistory] };
   },
 
   getRunStats(): RunStats {
@@ -241,5 +392,15 @@ export const PersistentStats = {
       if (alt > max) max = alt;
     }
     return max;
+  },
+
+  getPerClassStats(classType: string): PerClassStats {
+    return lifetime.perClassStats[classType]
+      ? { ...lifetime.perClassStats[classType] }
+      : defaultPerClassStats();
+  },
+
+  getRunHistory(): RunHistoryEntry[] {
+    return [...lifetime.runHistory];
   },
 };
