@@ -25,12 +25,14 @@ import { PersistentStats } from "../systems/PersistentStats";
 import { GameSettings } from "../systems/GameSettings";
 import { CosmeticManager } from "../systems/CosmeticManager";
 import { GamepadManager } from "../systems/GamepadManager";
+import { TouchControls } from "../systems/TouchControls";
 import { KeyBindings } from "../systems/KeyBindings";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private touchControls: TouchControls | null = null;
 
   // Combat Keys
   private attackBKey!: Phaser.Input.Keyboard.Key;
@@ -343,6 +345,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  public setTouchControls(tc: TouchControls): void {
+    this.touchControls = tc;
+  }
+
   private initInput() {
     const bindings = KeyBindings.get();
     const kb = this.scene.input.keyboard!;
@@ -390,9 +396,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const gp = GamepadManager.state;
 
     // Cache JustDown once per frame — Phaser consumes it on first read
-    // OR with gamepad inputs so both keyboard and controller work simultaneously
-    this.jumpJustPressed = Phaser.Input.Keyboard.JustDown(this.cursors.space!) || gp.jumpJustPressed;
-    this.dodgeJustPressed = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed;
+    // OR with gamepad and touch inputs so keyboard, controller, and touch all work simultaneously
+    const tc = this.touchControls;
+    this.jumpJustPressed = Phaser.Input.Keyboard.JustDown(this.cursors.space!) || gp.jumpJustPressed || (tc?.isButtonJustPressed('A') ?? false);
+    this.dodgeJustPressed = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed || (tc?.isButtonJustPressed('X') ?? false);
     this.grappleJustPressed = Phaser.Input.Keyboard.JustDown(this.grappleKey) || gp.grappleJustPressed;
 
     this.updateTimers(delta);
@@ -626,8 +633,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     const { left, right } = this.cursors;
     const gpState = GamepadManager.state;
-    const moveLeft = left.isDown || gpState.moveX < -0.2;
-    const moveRight = right.isDown || gpState.moveX > 0.2;
+    const tcMove = this.touchControls?.getMovement();
+    const moveLeft = left.isDown || gpState.moveX < -0.2 || (tcMove != null && tcMove.x < -0.2);
+    const moveRight = right.isDown || gpState.moveX > 0.2 || (tcMove != null && tcMove.x > 0.2);
     const onGround = this.onGround || this.onSlope;
     const platType = this.currentPlatformType;
 
@@ -768,7 +776,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     // Variable jump height (hold button): apply additional upward force while held
-    const jumpHeld = this.cursors.space?.isDown || GamepadManager.state.jump;
+    const jumpHeld = this.cursors.space?.isDown || GamepadManager.state.jump || (this.touchControls?.isButtonPressed('A') ?? false);
     if (this.isJumping && jumpHeld && !this.isWallSliding) {
       this.jumpTimer += delta;
       if (this.jumpTimer < PHYSICS.JUMP_HOLD_DURATION) {
@@ -810,9 +818,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       const onLeftWall = body.blocked.left || body.touching.left;
       const onRightWall = body.blocked.right || body.touching.right;
       const gpWall = GamepadManager.state;
+      const tcWall = this.touchControls?.getMovement();
       const holdingTowardWall =
-        (onLeftWall && (this.cursors.left.isDown || gpWall.moveX < -0.2)) ||
-        (onRightWall && (this.cursors.right.isDown || gpWall.moveX > 0.2));
+        (onLeftWall && (this.cursors.left.isDown || gpWall.moveX < -0.2 || (tcWall != null && tcWall.x < -0.2))) ||
+        (onRightWall && (this.cursors.right.isDown || gpWall.moveX > 0.2 || (tcWall != null && tcWall.x > 0.2)));
 
       if (
         this.abilities.has("wall_climb") &&
@@ -904,11 +913,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         if (timeUntilEnd <= COMBO_BUFFER && !this.comboBufferedInput) {
           const gpBuf = GamepadManager.state;
-          if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpBuf.attackBJustPressed) {
+          const tcBuf = this.touchControls;
+          if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpBuf.attackBJustPressed || (tcBuf?.isButtonJustPressed('B') ?? false)) {
             this.comboBufferedInput = 'B';
           } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpBuf.attackXJustPressed) {
             this.comboBufferedInput = 'X';
-          } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpBuf.attackYJustPressed) {
+          } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpBuf.attackYJustPressed || (tcBuf?.isButtonJustPressed('Y') ?? false)) {
             this.comboBufferedInput = 'Y';
           }
         }
@@ -922,14 +932,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const canAttack = !this.isAttacking || this.attackState === "RECOVERY";
 
     const gpCombat = GamepadManager.state;
+    const tcCombat = this.touchControls;
     if (canAttack && !this.isWallSliding) {
-      if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpCombat.attackBJustPressed) {
+      if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpCombat.attackBJustPressed || (tcCombat?.isButtonJustPressed('B') ?? false)) {
         this.handleComboInput('B');
         this.tryAttack(AttackType.LIGHT);
       } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpCombat.attackXJustPressed) {
         this.handleComboInput('X');
         this.tryAttack(AttackType.HEAVY);
-      } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpCombat.attackYJustPressed) {
+      } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpCombat.attackYJustPressed || (tcCombat?.isButtonJustPressed('Y') ?? false)) {
         // Priest ground SPECIAL: Sacred Ground instead of normal attack
         if (
           this.classType === ClassType.PRIEST &&
@@ -1806,7 +1817,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleCataclysm(): void {
     if (!this.abilities.has('cataclysm')) return;
     if (this.cataclysmCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.cataclysmKey) && !GamepadManager.state.cataclysmJustPressed) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.cataclysmKey) && !GamepadManager.state.cataclysmJustPressed && !(this.touchControls?.wasSwipeDetected('up') ?? false)) return;
 
     this.cataclysmCooldown = this.CATACLYSM_COOLDOWN;
 
@@ -1846,7 +1857,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleTemporalRift(): void {
     if (!this.abilities.has('temporal_rift')) return;
     if (this.temporalCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.temporalKey) && !GamepadManager.state.temporalRiftJustPressed) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.temporalKey) && !GamepadManager.state.temporalRiftJustPressed && !(this.touchControls?.wasSwipeDetected('up') ?? false)) return;
 
     this.temporalCooldown = this.TEMPORAL_COOLDOWN;
 
@@ -1885,7 +1896,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleDivineIntervention(): void {
     if (!this.abilities.has('divine_intervention')) return;
     if (this.divineCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.divineKey) && !GamepadManager.state.divineInterventionJustPressed) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.divineKey) && !GamepadManager.state.divineInterventionJustPressed && !(this.touchControls?.wasSwipeDetected('up') ?? false)) return;
 
     this.divineCooldown = this.DIVINE_COOLDOWN;
     this.invincibilityTimer = this.DIVINE_DURATION;
@@ -1903,7 +1914,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleEssenceBurst(): void {
     if (!this.abilities.has('essence_burst')) return;
     if (this.essenceBurstActive) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.essenceBurstKey) && !GamepadManager.state.essenceBurstJustPressed) return;
+    if (!Phaser.Input.Keyboard.JustDown(this.essenceBurstKey) && !GamepadManager.state.essenceBurstJustPressed && !(this.touchControls?.wasSwipeDetected('up') ?? false)) return;
 
     // Get current essence from MainScene
     const mainScene = this.scene as any;
