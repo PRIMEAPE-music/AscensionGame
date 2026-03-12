@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { CosmeticManager } from "../systems/CosmeticManager";
-import { DailyChallenge } from "../systems/DailyChallenge";
+import { DailyChallenge, WEEKLY_RULES } from "../systems/DailyChallenge";
 import { RUN_MODIFIERS } from "../config/RunModifiers";
 
 interface DeathScreenProps {
@@ -180,13 +180,30 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
     return { seed: challenge.seed, modifiers: modNames };
   });
 
+  // Capture weekly challenge state at mount time (before cleanup)
+  const [isWeeklyChallenge] = useState(() => !!(window as any).__isWeeklyChallenge);
+  const [isWeeklyNewBest] = useState(() => !!(window as any).__weeklyChallengeNewBest);
+  const [weeklyInfo] = useState(() => {
+    if (!(window as any).__isWeeklyChallenge) return null;
+    const weekly = DailyChallenge.getWeeklyChallenge();
+    if (!weekly) return null;
+    const modNames = weekly.modifiers.map((id) => {
+      const mod = RUN_MODIFIERS.find((m) => m.id === id);
+      return mod ? mod.name : id;
+    });
+    const rule = WEEKLY_RULES.find((r) => r.id === weekly.specialRule);
+    const ruleName = rule ? rule.name : weekly.specialRule;
+    return { seed: weekly.seed, modifiers: modNames, specialRuleName: ruleName };
+  });
+
   useEffect(() => {
     const titleTimer = setTimeout(() => setTitleVisible(true), 200);
     const buttonsTimer = setTimeout(() => setButtonsVisible(true), 1400);
 
-    // Clean up daily challenge flags
+    // Clean up daily/weekly challenge flags
     return () => {
       delete (window as any).__dailyChallengeNewBest;
+      delete (window as any).__weeklyChallengeNewBest;
       clearTimeout(titleTimer);
       clearTimeout(buttonsTimer);
     };
@@ -241,6 +258,72 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
               }}
             >
               Seed #{challengeInfo.seed} | {challengeInfo.modifiers.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Weekly Challenge Header */}
+      {isWeeklyChallenge && (
+        <div
+          style={{
+            opacity: titleVisible ? 1 : 0,
+            transition: "opacity 0.5s ease",
+            textAlign: "center",
+            marginBottom: "8px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "20px",
+              fontWeight: "bold",
+              color: "#e87020",
+              letterSpacing: "6px",
+              textTransform: "uppercase",
+              textShadow: "0 0 20px rgba(232, 112, 32, 0.5)",
+            }}
+          >
+            Weekly Challenge
+          </div>
+          {weeklyInfo && (
+            <div
+              style={{
+                fontSize: "15px",
+                fontWeight: "bold",
+                color: "#e87020",
+                letterSpacing: "2px",
+                marginTop: "6px",
+                textShadow: "0 0 12px rgba(232, 112, 32, 0.4)",
+              }}
+            >
+              {weeklyInfo.specialRuleName}
+            </div>
+          )}
+          {isWeeklyNewBest && (
+            <div
+              style={{
+                fontSize: "16px",
+                fontWeight: "bold",
+                color: "#ffd700",
+                letterSpacing: "3px",
+                textTransform: "uppercase",
+                marginTop: "6px",
+                textShadow: "0 0 16px rgba(255, 215, 0, 0.6)",
+              }}
+            >
+              New Personal Best!
+            </div>
+          )}
+          {weeklyInfo && (
+            <div
+              style={{
+                fontSize: "11px",
+                color: "rgba(232, 112, 32, 0.5)",
+                marginTop: "6px",
+                letterSpacing: "1px",
+              }}
+            >
+              Seed #{weeklyInfo.seed} | {weeklyInfo.modifiers.join(", ")}
             </div>
           )}
         </div>
