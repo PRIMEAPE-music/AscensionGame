@@ -2,8 +2,9 @@ import Phaser from "phaser";
 import { Player } from "../entities/Player";
 import { Enemy } from "../entities/Enemy";
 import { ItemDrop } from "../entities/ItemDrop";
+import { PortalPlatform } from "../entities/PortalPlatform";
 import { ITEMS } from "../config/ItemDatabase";
-import { SPAWNING } from "../config/GameConfig";
+import { SPAWNING, WORLD } from "../config/GameConfig";
 import type { ItemData, ItemQuality, ItemRarity } from "../config/ItemConfig";
 import {
   ENEMY_REGISTRY,
@@ -13,6 +14,18 @@ import {
 } from "../config/EnemyConfig";
 import { EventBus } from "./EventBus";
 
+// Portal spawn configuration
+const BLUE_PORTAL_MIN_ALTITUDE = 500;
+const ORANGE_PORTAL_MIN_ALTITUDE = 2000;
+const PORTAL_SPAWN_MIN_INTERVAL = 800;  // meters between portal pairs
+const PORTAL_SPAWN_MAX_INTERVAL = 1200;
+
+// Teleport offset ranges (in altitude meters)
+const BLUE_TELEPORT_MIN = 200;
+const BLUE_TELEPORT_MAX = 500;
+const ORANGE_TELEPORT_MIN = 100;
+const ORANGE_TELEPORT_MAX = 300;
+
 export class SpawnManager {
   private scene: Phaser.Scene;
   private enemies: Phaser.Physics.Arcade.Group;
@@ -21,6 +34,12 @@ export class SpawnManager {
   private spawnTimer: number = 0;
   private nextSpawnInterval: number;
   private staticPlatforms: Phaser.Physics.Arcade.StaticGroup;
+
+  // Portal spawning state
+  private portals: Phaser.Physics.Arcade.Group | null = null;
+  private portalSpawnTimer: number = 0;
+  private nextPortalSpawnInterval: number;
+  private lastPortalSpawnAltitude: number = 0;
 
   constructor(
     scene: Phaser.Scene,
@@ -35,6 +54,20 @@ export class SpawnManager {
     this.player = player;
     this.staticPlatforms = staticPlatforms;
     this.nextSpawnInterval = this.getSpawnInterval(0);
+    this.nextPortalSpawnInterval = Phaser.Math.Between(
+      PORTAL_SPAWN_MIN_INTERVAL,
+      PORTAL_SPAWN_MAX_INTERVAL,
+    );
+  }
+
+  /** Set the portal physics group (created in MainScene). */
+  setPortalGroup(group: Phaser.Physics.Arcade.Group): void {
+    this.portals = group;
+  }
+
+  /** Get the portal physics group. */
+  getPortalGroup(): Phaser.Physics.Arcade.Group | null {
+    return this.portals;
   }
 
   update(altitude: number, delta: number): void {
@@ -49,6 +82,12 @@ export class SpawnManager {
         this.spawnEnemyNearPlayer(altitude);
       }
     }
+
+    // Portal pair spawning (altitude-based)
+    this.updatePortalSpawning(altitude);
+
+    // Update all active portals (cooldown timers, particle animation)
+    this.updatePortals(delta);
 
     this.cleanup(this.player.y);
   }
@@ -333,6 +372,94 @@ export class SpawnManager {
     return weightedPool[weightedPool.length - 1].item;
   }
 
+  // ─── Portal Spawning ──────────────────────────────────────────────────
+
+  private updatePortalSpawning(altitude: number): void {
+    if (!this.portals) return;
+
+    // Determine if we should spawn a portal pair based on altitude thresholds
+    const canSpawnBlue = altitude >= BLUE_PORTAL_MIN_ALTITUDE;
+    const canSpawnOrange = altitude >= ORANGE_PORTAL_MIN_ALTITUDE;
+    if (!canSpawnBlue) return;
+
+    // Check if we've traveled enough altitude since last portal
+    const altitudeSinceLastPortal = altitude - this.lastPortalSpawnAltitude;
+    if (altitudeSinceLastPortal < this.nextPortalSpawnInterval) return;
+
+    // Decide portal type: blue only below 2000m, weighted random above
+    let portalType: "blue" | "orange";
+    if (!canSpawnOrange) {
+      portalType = "blue";
+    } else {
+      // 60% blue, 40% orange at higher altitudes
+      portalType = Math.random() < 0.6 ? "blue" : "orange";
+    }
+
+    this.spawnPortalPair(portalType);
+
+    this.lastPortalSpawnAltitude = altitude;
+    this.nextPortalSpawnInterval = Phaser.Math.Between(
+      PORTAL_SPAWN_MIN_INTERVAL,
+      PORTAL_SPAWN_MAX_INTERVAL,
+    );
+  }
+
+  private spawnPortalPair(portalType: "blue" | "orange"): void {
+    if (!this.portals) return;
+
+    // Place the entry portal near the player's current altitude
+    const camY = this.scene.cameras.main.scrollY;
+    const camH = this.scene.cameras.main.height;
+
+    // Entry portal: spawn above the current camera view so the player encounters it naturally
+    const entryX = Phaser.Math.Between(200, WORLD.WIDTH - 200);
+    const entryY = camY - Phaser.Math.Between(100, 300);
+
+    // Calculate exit offset based on portal type
+    let exitOffsetY: number;
+    if (portalType === "blue") {
+      // Blue: exit is ABOVE entry (y decreases = higher altitude)
+      const altitudeOffset = Phaser.Math.Between(BLUE_TELEPORT_MIN, BLUE_TELEPORT_MAX);
+      exitOffsetY = -(altitudeOffset * WORLD.ALTITUDE_SCALE);
+    } else {
+      // Orange: exit is BELOW entry (y increases = lower altitude, for shortcuts down)
+      const altitudeOffset = Phaser.Math.Between(ORANGE_TELEPORT_MIN, ORANGE_TELEPORT_MAX);
+      exitOffsetY = altitudeOffset * WORLD.ALTITUDE_SCALE;
+    }
+
+    const exitX = Phaser.Math.Between(200, WORLD.WIDTH - 200);
+    const exitY = entryY + exitOffsetY;
+
+    // Create the portal pair
+    const entryPortal = new PortalPlatform(this.scene, entryX, entryY, portalType);
+    const exitPortal = new PortalPlatform(
+      this.scene,
+      exitX,
+      exitY,
+      portalType,
+    );
+
+    // Link them
+    entryPortal.setLinkedPortal(exitPortal);
+    exitPortal.setLinkedPortal(entryPortal);
+
+    // Add to physics group
+    this.portals.add(entryPortal);
+    this.portals.add(exitPortal);
+  }
+
+  private updatePortals(delta: number): void {
+    if (!this.portals) return;
+
+    this.portals.children.each((child: any) => {
+      const portal = child as PortalPlatform;
+      if (portal.active && portal.update) {
+        portal.update(delta);
+      }
+      return true;
+    });
+  }
+
   private cleanup(playerY: number): void {
     this.enemies.children.each((child: any) => {
       if (child.y > playerY + SPAWNING.CLEANUP_BUFFER) {
@@ -347,5 +474,15 @@ export class SpawnManager {
       }
       return true;
     });
+
+    // Clean up portal platforms that are far below the camera
+    if (this.portals) {
+      this.portals.children.each((child: any) => {
+        if (child.y > playerY + SPAWNING.CLEANUP_BUFFER) {
+          this.portals!.remove(child, true, true);
+        }
+        return true;
+      });
+    }
   }
 }
