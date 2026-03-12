@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { Player } from "../entities/Player";
 import { LevelGenerator } from "../systems/LevelGenerator";
 import { SpawnManager } from "../systems/SpawnManager";
+import { PortalPlatform } from "../entities/PortalPlatform";
 import { CombatManager } from "../systems/CombatManager";
 import { SlopeManager } from "../systems/SlopeManager";
 import { StyleManager } from "../systems/StyleManager";
@@ -45,6 +46,7 @@ export class MainScene extends Phaser.Scene {
   private movingPlatforms!: Phaser.Physics.Arcade.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
   private items!: Phaser.Physics.Arcade.Group;
+  private portals!: Phaser.Physics.Arcade.Group;
   private levelGenerator!: LevelGenerator;
   private spawnManager!: SpawnManager;
   private combatManager!: CombatManager;
@@ -117,6 +119,7 @@ export class MainScene extends Phaser.Scene {
     });
     this.enemies = this.physics.add.group({ runChildUpdate: true });
     this.items = this.physics.add.group();
+    this.portals = this.physics.add.group({ allowGravity: false });
 
     // Systems (order matters: background layers first)
     this.biomeRenderer = new BiomeRenderer(this);
@@ -215,6 +218,7 @@ export class MainScene extends Phaser.Scene {
       this.player,
       this.staticPlatforms,
     );
+    this.spawnManager.setPortalGroup(this.portals);
     this.combatManager = new CombatManager(this, this.player, this.enemies);
     this.combatManager.setDamageNumberManager(new DamageNumberManager(this));
     this.combatManager.setParticleManager(this.particleManager);
@@ -267,6 +271,15 @@ export class MainScene extends Phaser.Scene {
       this.player,
       this.hazardManager.getStalactites(),
       (_p, s) => this.hazardManager.handleStalactitePlayerOverlap(_p, s),
+      undefined,
+      this,
+    );
+
+    // Portal platform overlap — teleport player when touching a portal
+    this.physics.add.overlap(
+      this.player,
+      this.portals,
+      (_p, portal) => this.handlePortalOverlap(portal as PortalPlatform),
       undefined,
       this,
     );
@@ -807,6 +820,18 @@ export class MainScene extends Phaser.Scene {
     if (rightBody) rightBody.updateFromGameObject();
   }
 
+  private handlePortalOverlap(portal: PortalPlatform): void {
+    if (portal.cooldownTimer > 0) return;
+    if (!portal.getLinkedPortal()) return;
+
+    portal.teleportPlayer(this.player);
+
+    // Update highest Y tracker so death plane doesn't punish the teleport
+    if (this.player.y < this.highestY) {
+      this.highestY = this.player.y;
+    }
+  }
+
   shutdown(): void {
     AudioManager.stopMusic();
     this.tweens.killAll();
@@ -818,6 +843,11 @@ export class MainScene extends Phaser.Scene {
     this.platformEffectsManager?.destroy?.();
     this.hazardManager?.destroy?.();
     this.risingDarkness?.destroy?.();
+
+    // Clean up portal platforms
+    if (this.portals) {
+      this.portals.clear(true, true);
+    }
 
     // Clean up Sacred Ground instances and listener
     this.sacredGrounds.forEach((sg) => sg.destroy());
