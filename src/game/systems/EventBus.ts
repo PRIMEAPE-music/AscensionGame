@@ -63,6 +63,12 @@ export interface GameEvents {
   };
   "wind-zone-enter": { windType: string; strength: number };
   "wind-zone-exit": {};
+  "achievement-unlocked": {
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+  };
 }
 
 export const EventBus = {
