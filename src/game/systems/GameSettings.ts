@@ -22,6 +22,11 @@ export interface GameSettingsData {
   colorblindMode: "NONE" | "DEUTERANOPIA" | "PROTANOPIA" | "TRITANOPIA";
   enemyOutlines: boolean;
   largerUI: boolean;
+  // Touch Controls
+  touchControlsEnabled: boolean;
+  touchButtonSize: "SMALL" | "MEDIUM" | "LARGE";
+  touchButtonOpacity: number;
+  touchJoystickSide: "LEFT" | "RIGHT";
 }
 
 const DEFAULTS: GameSettingsData = {
@@ -46,6 +51,11 @@ const DEFAULTS: GameSettingsData = {
   colorblindMode: "NONE",
   enemyOutlines: false,
   largerUI: false,
+  // Touch Controls — auto-detect touch devices by default
+  touchControlsEnabled: ("ontouchstart" in globalThis || (typeof navigator !== "undefined" && navigator.maxTouchPoints > 0)),
+  touchButtonSize: "MEDIUM",
+  touchButtonOpacity: 0.6,
+  touchJoystickSide: "LEFT",
 };
 
 export const GameSettings = {
@@ -86,6 +96,10 @@ export const GameSettings = {
           colorblindMode: (parsed.colorblindMode as GameSettingsData["colorblindMode"]) ?? DEFAULTS.colorblindMode,
           enemyOutlines: (parsed.enemyOutlines as boolean) ?? DEFAULTS.enemyOutlines,
           largerUI: (parsed.largerUI as boolean) ?? DEFAULTS.largerUI,
+          touchControlsEnabled: (parsed.touchControlsEnabled as boolean) ?? DEFAULTS.touchControlsEnabled,
+          touchButtonSize: (parsed.touchButtonSize as GameSettingsData["touchButtonSize"]) ?? DEFAULTS.touchButtonSize,
+          touchButtonOpacity: (parsed.touchButtonOpacity as number) ?? DEFAULTS.touchButtonOpacity,
+          touchJoystickSide: (parsed.touchJoystickSide as GameSettingsData["touchJoystickSide"]) ?? DEFAULTS.touchJoystickSide,
         };
       }
     } catch {

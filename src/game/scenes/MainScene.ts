@@ -31,6 +31,7 @@ import { AudioManager } from "../systems/AudioManager";
 import { RunSaveManager } from "../systems/RunSaveManager";
 import type { RunSaveData } from "../systems/RunSaveManager";
 import { GamepadManager } from "../systems/GamepadManager";
+import { TouchControls } from "../systems/TouchControls";
 import { TutorialManager } from "../systems/TutorialManager";
 import { ReplayManager } from "../systems/ReplayManager";
 
@@ -62,6 +63,7 @@ export class MainScene extends Phaser.Scene {
   private bossArenaManager!: BossArenaManager;
   private hazardManager!: HazardManager;
   private risingDarkness!: RisingDarkness;
+  private touchControls: TouchControls | null = null;
   private bossWarningEmitted: boolean = false;
   private lastSpeedEmitTime: number = 0;
   private progressUpdateTimer: number = 0;
@@ -190,6 +192,13 @@ export class MainScene extends Phaser.Scene {
       if (itemData && itemData.type === 'GOLD') {
         this.player.collectItem(itemData);
       }
+    }
+
+    // Touch controls (create if on a touch device)
+    const touchSettings = GameSettings.get();
+    if (touchSettings.touchControlsEnabled && ("ontouchstart" in window || navigator.maxTouchPoints > 0)) {
+      this.touchControls = new TouchControls(this);
+      this.player.setTouchControls(this.touchControls);
     }
 
     // Hazard manager (needs player and staticPlatforms)
@@ -566,6 +575,11 @@ export class MainScene extends Phaser.Scene {
     // Poll gamepad once per frame before any input consumers read it
     GamepadManager.update();
 
+    // Update touch controls each frame
+    if (this.touchControls) {
+      this.touchControls.update();
+    }
+
     // Gamepad pause: simulate Escape keydown so App.tsx's existing handler catches it
     if (GamepadManager.state.pauseJustPressed) {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
@@ -840,6 +854,8 @@ export class MainScene extends Phaser.Scene {
     AudioManager.stopMusic();
     this.tweens.killAll();
     this.time.removeAllEvents();
+    this.touchControls?.destroy();
+    this.touchControls = null;
     this.backgroundRenderer?.destroy?.();
     this.biomeRenderer?.destroy?.();
     this.atmosphereManager?.destroy?.();

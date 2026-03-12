@@ -36,6 +36,7 @@ import { DailyChallenge } from "./game/systems/DailyChallenge";
 import { LeaderboardManager } from "./game/systems/LeaderboardManager";
 import { TutorialManager } from "./game/systems/TutorialManager";
 import { TutorialOverlay } from "./game/ui/TutorialOverlay";
+import { TouchControlsOverlay } from "./game/ui/TouchControlsOverlay";
 import { LeaderboardScreen } from "./game/ui/LeaderboardScreen";
 import { ReplayManager } from "./game/systems/ReplayManager";
 import { ReplayScreen, PlaybackControls } from "./game/ui/ReplayScreen";
@@ -918,6 +919,7 @@ function App() {
                 isShieldGuarding={isShieldGuarding}
                 sacredGroundCooldown={sacredGroundCooldown}
               />
+              <TouchControlsOverlay />
               {isPaused && (
                 <PauseMenu
                   altitude={altitude}
