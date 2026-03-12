@@ -124,6 +124,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   // Synergy bonuses
   const [synergies, setSynergies] = useState<SynergyBonus[]>([]);
 
+  // Combo string name display
+  const [comboName, setComboName] = useState<string | null>(null);
+  const comboNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Essence flash animation
   const [essenceFlash, setEssenceFlash] = useState(false);
   const prevEssenceRef = useRef(essence);
@@ -209,6 +213,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       }
     });
 
+    const unsubComboString = EventBus.on("combo-string", (data) => {
+      setComboName(`${data.name} x${data.multiplier}`);
+      if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current);
+      comboNameTimerRef.current = setTimeout(() => setComboName(null), 1500);
+    });
+
     return () => {
       unsubSpawn();
       unsubHealth();
@@ -218,8 +228,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       unsubSynergy();
       unsubSpeed();
       unsubInventory();
+      unsubComboString();
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
       if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+      if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current);
     };
   }, []);
 
@@ -710,6 +722,27 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           >
             COMBO
           </div>
+        </div>
+      )}
+
+      {/* Combo String Name */}
+      {comboName && (
+        <div
+          style={{
+            position: "absolute",
+            right: 20,
+            top: "40%",
+            color: "#ffd700",
+            fontSize: "18px",
+            fontWeight: "bold",
+            fontFamily: "monospace",
+            textShadow: "0 0 8px #ffa500, 0 0 16px rgba(255, 165, 0, 0.4)",
+            pointerEvents: "none",
+            zIndex: 15,
+            letterSpacing: "1px",
+          }}
+        >
+          {comboName}
         </div>
       )}
 

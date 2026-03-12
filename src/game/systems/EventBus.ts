@@ -52,6 +52,7 @@ export interface GameEvents {
   "player-dodge": { perfect: boolean };
   "player-land": {};
   "item-pickup": {};
+  "combo-string": { name: string; multiplier: number };
 }
 
 export const EventBus = {
