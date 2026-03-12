@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useReducer } from "react";
 import { GameSettings } from "../systems/GameSettings";
 import type { GameSettingsData } from "../systems/GameSettings";
 import { AudioManager } from "../systems/AudioManager";
 import { GamepadManager } from "../systems/GamepadManager";
 import { TutorialManager } from "../systems/TutorialManager";
+import { KeyBindings, ACTION_LABELS, ACTION_GROUPS } from "../systems/KeyBindings";
+import type { KeyBindingMap } from "../systems/KeyBindings";
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -20,20 +22,57 @@ const sectionTitleStyle: React.CSSProperties = {
   borderBottom: "1px solid rgba(224, 208, 160, 0.15)",
 };
 
-const CONTROLS: { key: string; action: string }[] = [
-  { key: "Arrow Keys", action: "Movement" },
-  { key: "SPACE", action: "Jump" },
-  { key: "Z", action: "Attack B" },
-  { key: "X", action: "Attack X" },
-  { key: "C", action: "Attack Y" },
-  { key: "SHIFT", action: "Dodge / Air Dash" },
-  { key: "V", action: "Grappling Hook" },
-  { key: "Q", action: "Cataclysm" },
-  { key: "E", action: "Temporal Rift" },
-  { key: "R", action: "Divine Intervention" },
-  { key: "F", action: "Essence Burst" },
-  { key: "ESC", action: "Pause" },
-];
+/** Convert browser KeyboardEvent.code / .key to Phaser-compatible key string */
+function convertToPhaserKey(code: string, key: string): string {
+  const codeMap: Record<string, string> = {
+    'Space': 'SPACE',
+    'ShiftLeft': 'SHIFT', 'ShiftRight': 'SHIFT',
+    'ControlLeft': 'CTRL', 'ControlRight': 'CTRL',
+    'AltLeft': 'ALT', 'AltRight': 'ALT',
+    'ArrowLeft': 'LEFT', 'ArrowRight': 'RIGHT',
+    'ArrowUp': 'UP', 'ArrowDown': 'DOWN',
+    'Escape': 'ESC',
+    'Enter': 'ENTER',
+    'Tab': 'TAB',
+    'Backspace': 'BACKSPACE',
+    'Delete': 'DELETE',
+    'CapsLock': 'CAPS_LOCK',
+  };
+  if (codeMap[code]) return codeMap[code];
+  // Letter keys: code is "KeyA", "KeyB" etc.
+  if (code.startsWith('Key')) return code.slice(3);
+  // Digit keys: code is "Digit0" etc.
+  if (code.startsWith('Digit')) return code.slice(5);
+  // Numpad
+  if (code.startsWith('Numpad')) return 'NUMPAD_' + code.slice(6).toUpperCase();
+  // F-keys
+  if (/^F\d+$/.test(code)) return code;
+  // Single character keys (punctuation etc.)
+  if (key.length === 1) return key.toUpperCase();
+  return code;
+}
+
+/** Format a Phaser key string for display */
+function displayKeyName(phaserKey: string): string {
+  const displayMap: Record<string, string> = {
+    'LEFT': '\u2190 Left',
+    'RIGHT': '\u2192 Right',
+    'UP': '\u2191 Up',
+    'DOWN': '\u2193 Down',
+    'SPACE': 'Space',
+    'SHIFT': 'Shift',
+    'CTRL': 'Ctrl',
+    'ALT': 'Alt',
+    'ESC': 'Esc',
+    'ENTER': 'Enter',
+    'TAB': 'Tab',
+    'BACKSPACE': 'Backspace',
+    'DELETE': 'Delete',
+    'CAPS_LOCK': 'Caps Lock',
+  };
+  if (displayMap[phaserKey]) return displayMap[phaserKey];
+  return phaserKey;
+}
 
 const GAMEPAD_CONTROLS: { key: string; action: string }[] = [
   { key: "Left Stick / D-Pad", action: "Movement" },
@@ -89,12 +128,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   const [gamepadConnected, setGamepadConnected] = useState(false);
   const [resetTutorialHover, setResetTutorialHover] = useState(false);
   const [tutorialResetDone, setTutorialResetDone] = useState(false);
+  const [listeningAction, setListeningAction] = useState<keyof KeyBindingMap | null>(null);
+  const [resetBindingsHover, setResetBindingsHover] = useState(false);
+  const [bindingsResetDone, setBindingsResetDone] = useState(false);
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
     GameSettings.load();
     setSettings(GameSettings.get());
     AudioManager.init();
     setAudioSettings({ ...AudioManager.settings });
+    KeyBindings.load();
   }, []);
 
   useEffect(() => {
@@ -123,6 +167,32 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Key rebinding listener
+  useEffect(() => {
+    if (!listeningAction) return;
+    const handler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        setListeningAction(null);
+        return;
+      }
+      const phaserKey = convertToPhaserKey(e.code, e.key);
+      // Check for conflicts and swap if needed
+      const conflict = KeyBindings.findConflict(phaserKey, listeningAction);
+      if (conflict) {
+        // Swap: give the conflicting action our old key
+        const oldKey = KeyBindings.get()[listeningAction];
+        KeyBindings.set(conflict, oldKey);
+      }
+      KeyBindings.set(listeningAction, phaserKey);
+      setListeningAction(null);
+      forceUpdate();
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [listeningAction]);
 
   const handleVolumeChange = useCallback((category: 'master' | 'music' | 'sfx' | 'ui', value: number) => {
     AudioManager.init();
@@ -917,57 +987,188 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
           </div>
         </div>
 
-        {/* Controls Reference */}
+        {/* Keyboard Controls — Interactive Rebinding */}
         <div>
           <div style={sectionTitleStyle}>Keyboard Controls</div>
+          <p
+            style={{
+              fontSize: "12px",
+              color: "rgba(200, 200, 220, 0.45)",
+              marginBottom: "14px",
+              letterSpacing: "0.5px",
+            }}
+          >
+            Click a key to rebind it. Press ESC to cancel. Changes take effect on next run.
+          </p>
+          {ACTION_GROUPS.map((group) => (
+            <div key={group.label} style={{ marginBottom: "16px" }}>
+              <div
+                style={{
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                  color: "rgba(224, 208, 160, 0.6)",
+                  letterSpacing: "2px",
+                  textTransform: "uppercase",
+                  marginBottom: "6px",
+                  paddingLeft: "4px",
+                }}
+              >
+                {group.label}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "4px",
+                }}
+              >
+                {group.actions.map((action) => {
+                  const currentKey = KeyBindings.get()[action];
+                  const isListening = listeningAction === action;
+                  const isDefault = currentKey === KeyBindings.getDefault(action);
+                  const isHovered = hoveredToggle === `kb-${action}`;
+                  return (
+                    <div
+                      key={action}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "10px 20px",
+                        background: isListening
+                          ? "rgba(224, 208, 160, 0.06)"
+                          : isHovered
+                            ? "rgba(255, 255, 255, 0.04)"
+                            : "rgba(255, 255, 255, 0.02)",
+                        borderRadius: "4px",
+                        borderBottom: "1px solid rgba(255, 255, 255, 0.03)",
+                        transition: "background 0.15s ease",
+                      }}
+                      onMouseEnter={() => setHoveredToggle(`kb-${action}`)}
+                      onMouseLeave={() => setHoveredToggle(null)}
+                    >
+                      <span
+                        style={{
+                          fontSize: "13px",
+                          color: "rgba(200, 200, 220, 0.7)",
+                          letterSpacing: "1px",
+                        }}
+                      >
+                        {ACTION_LABELS[action]}
+                      </span>
+                      <button
+                        onClick={() => setListeningAction(isListening ? null : action)}
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: "bold",
+                          fontFamily: "monospace",
+                          color: isListening
+                            ? "#fff"
+                            : isDefault
+                              ? "#e0d0a0"
+                              : "#88ccff",
+                          padding: "3px 12px",
+                          background: isListening
+                            ? "rgba(224, 208, 160, 0.2)"
+                            : "rgba(224, 208, 160, 0.08)",
+                          border: `1px solid ${
+                            isListening
+                              ? "rgba(224, 208, 160, 0.6)"
+                              : isDefault
+                                ? "rgba(224, 208, 160, 0.15)"
+                                : "rgba(136, 204, 255, 0.3)"
+                          }`,
+                          borderRadius: "4px",
+                          letterSpacing: "1px",
+                          minWidth: "100px",
+                          textAlign: "center",
+                          cursor: "pointer",
+                          outline: "none",
+                          transition: "all 0.2s ease",
+                          animation: isListening ? "pulse-border 1s ease-in-out infinite" : "none",
+                        }}
+                      >
+                        {isListening ? "Press key..." : displayKeyName(currentKey)}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {/* Reset to Defaults */}
           <div
             style={{
               display: "flex",
-              flexDirection: "column",
-              gap: "4px",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "14px 20px",
+              background: "rgba(255, 255, 255, 0.03)",
+              borderRadius: "8px",
+              border: "1px solid rgba(255, 255, 255, 0.06)",
+              marginTop: "4px",
             }}
           >
-            {CONTROLS.map(({ key, action }) => (
-              <div
-                key={key}
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+              <span
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "10px 20px",
-                  background: "rgba(255, 255, 255, 0.02)",
-                  borderRadius: "4px",
-                  borderBottom: "1px solid rgba(255, 255, 255, 0.03)",
+                  fontSize: "15px",
+                  color: "rgba(200, 200, 220, 0.85)",
+                  letterSpacing: "1px",
                 }}
               >
-                <span
-                  style={{
-                    fontSize: "13px",
-                    color: "rgba(200, 200, 220, 0.7)",
-                    letterSpacing: "1px",
-                  }}
-                >
-                  {action}
-                </span>
-                <span
-                  style={{
-                    fontSize: "13px",
-                    fontWeight: "bold",
-                    color: "#e0d0a0",
-                    padding: "3px 12px",
-                    background: "rgba(224, 208, 160, 0.08)",
-                    border: "1px solid rgba(224, 208, 160, 0.15)",
-                    borderRadius: "4px",
-                    letterSpacing: "1px",
-                    minWidth: "80px",
-                    textAlign: "center",
-                  }}
-                >
-                  {key}
-                </span>
-              </div>
-            ))}
+                Reset Key Bindings
+              </span>
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: "rgba(200, 200, 220, 0.45)",
+                  letterSpacing: "0.5px",
+                }}
+              >
+                Restore all keys to their default values
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                KeyBindings.resetToDefaults();
+                setBindingsResetDone(true);
+                forceUpdate();
+                setTimeout(() => setBindingsResetDone(false), 2000);
+              }}
+              onMouseEnter={() => setResetBindingsHover(true)}
+              onMouseLeave={() => setResetBindingsHover(false)}
+              style={{
+                padding: "6px 18px",
+                fontSize: "12px",
+                fontFamily: "monospace",
+                fontWeight: "bold",
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+                border: `1px solid ${bindingsResetDone ? "rgba(80, 200, 80, 0.5)" : resetBindingsHover ? "rgba(224, 208, 160, 0.5)" : "rgba(224, 208, 160, 0.2)"}`,
+                borderRadius: "4px",
+                background: bindingsResetDone
+                  ? "rgba(80, 200, 80, 0.15)"
+                  : resetBindingsHover
+                    ? "rgba(224, 208, 160, 0.15)"
+                    : "rgba(224, 208, 160, 0.05)",
+                color: bindingsResetDone ? "#50c850" : "#e0d0a0",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                outline: "none",
+                minWidth: "80px",
+              }}
+            >
+              {bindingsResetDone ? "Done!" : "Reset"}
+            </button>
           </div>
+          {/* CSS animation for pulsing border */}
+          <style>{`
+            @keyframes pulse-border {
+              0%, 100% { border-color: rgba(224, 208, 160, 0.3); }
+              50% { border-color: rgba(224, 208, 160, 0.8); }
+            }
+          `}</style>
         </div>
 
         {/* Gamepad Controls */}

@@ -18,6 +18,7 @@ import { PersistentStats } from "../systems/PersistentStats";
 import { GameSettings } from "../systems/GameSettings";
 import { CosmeticManager } from "../systems/CosmeticManager";
 import { GamepadManager } from "../systems/GamepadManager";
+import { KeyBindings } from "../systems/KeyBindings";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
@@ -302,50 +303,36 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   private initInput() {
-    this.cursors = this.scene.input.keyboard!.createCursorKeys();
-    this.attackBKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.Z,
-    );
-    this.attackXKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.X,
-    );
-    this.attackYKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.C,
-    );
-    this.dodgeKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.SHIFT,
-    );
-    this.grappleKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.V,
-    );
+    const bindings = KeyBindings.get();
+    const kb = this.scene.input.keyboard!;
+
+    // Build cursor keys from configurable bindings instead of createCursorKeys()
+    this.cursors = {
+      left: kb.addKey(bindings.moveLeft),
+      right: kb.addKey(bindings.moveRight),
+      up: kb.addKey(bindings.moveUp),
+      down: kb.addKey(bindings.moveDown),
+      space: kb.addKey(bindings.jump),
+      shift: kb.addKey(bindings.dodge),
+    } as Phaser.Types.Input.Keyboard.CursorKeys;
+
+    this.attackBKey = kb.addKey(bindings.attackB);
+    this.attackXKey = kb.addKey(bindings.attackX);
+    this.attackYKey = kb.addKey(bindings.attackY);
+    this.dodgeKey = kb.addKey(bindings.dodge);
+    this.grappleKey = kb.addKey(bindings.grapple);
 
     // Ultimate/Combat Ability Keys
-    this.cataclysmKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.Q,
-    );
-    this.temporalKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.E,
-    );
-    this.divineKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.R,
-    );
-    this.essenceBurstKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.F,
-    );
+    this.cataclysmKey = kb.addKey(bindings.cataclysm);
+    this.temporalKey = kb.addKey(bindings.temporalRift);
+    this.divineKey = kb.addKey(bindings.divineIntervention);
+    this.essenceBurstKey = kb.addKey(bindings.essenceBurst);
 
     // Gold Attack Ability Keys
-    this.counterKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.G,
-    );
-    this.groundSlamKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.T,
-    );
-    this.projectileKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.Y,
-    );
-    this.chargeKey = this.scene.input.keyboard!.addKey(
-      Phaser.Input.Keyboard.KeyCodes.H,
-    );
+    this.counterKey = kb.addKey(bindings.counterSlash);
+    this.groundSlamKey = kb.addKey(bindings.groundSlam);
+    this.projectileKey = kb.addKey(bindings.projectile);
+    this.chargeKey = kb.addKey(bindings.chargedAttack);
   }
 
   private getStat(
