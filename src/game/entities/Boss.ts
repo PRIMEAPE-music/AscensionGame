@@ -393,7 +393,7 @@ export abstract class Boss extends Enemy {
         this.activeDebris.push(debris);
 
         // Overlap with player for damage
-        this.scene.physics.add.overlap(this.player, debris, () => {
+        const debrisOverlap = this.scene.physics.add.overlap(this.player, debris, () => {
           if (!(this.player as any).isInvincible && debris.active) {
             (this.player as any).takeDamage(1);
           }
@@ -401,6 +401,9 @@ export abstract class Boss extends Enemy {
 
         // Destroy debris after it has fallen well past
         this.scene.time.delayedCall(2000, () => {
+          if (debrisOverlap) {
+            this.scene.physics.world.removeCollider(debrisOverlap);
+          }
           const dIdx = this.activeDebris.indexOf(debris);
           if (dIdx !== -1) this.activeDebris.splice(dIdx, 1);
           if (debris.active) debris.destroy();
@@ -505,12 +508,14 @@ export abstract class Boss extends Enemy {
         this.sharedShockwaves.push(shockLeft, shockRight);
 
         // Overlap with player
+        const waveOverlaps: Phaser.Physics.Arcade.Collider[] = [];
         for (const wave of [shockLeft, shockRight]) {
-          this.scene.physics.add.overlap(this.player, wave, () => {
+          const waveOverlap = this.scene.physics.add.overlap(this.player, wave, () => {
             if (!(this.player as any).isInvincible && wave.active) {
               (this.player as any).takeDamage(this.baseDamage);
             }
           });
+          waveOverlaps.push(waveOverlap);
         }
 
         // Expand outward
@@ -522,6 +527,9 @@ export abstract class Boss extends Enemy {
           duration: 800,
           ease: 'Quad.easeOut',
           onComplete: () => {
+            if (waveOverlaps[0]) {
+              this.scene.physics.world.removeCollider(waveOverlaps[0]);
+            }
             const idx = this.sharedShockwaves.indexOf(shockLeft);
             if (idx !== -1) this.sharedShockwaves.splice(idx, 1);
             shockLeft.destroy();
@@ -536,6 +544,9 @@ export abstract class Boss extends Enemy {
           duration: 800,
           ease: 'Quad.easeOut',
           onComplete: () => {
+            if (waveOverlaps[1]) {
+              this.scene.physics.world.removeCollider(waveOverlaps[1]);
+            }
             const idx = this.sharedShockwaves.indexOf(shockRight);
             if (idx !== -1) this.sharedShockwaves.splice(idx, 1);
             shockRight.destroy();
@@ -608,9 +619,12 @@ export abstract class Boss extends Enemy {
         this.sharedProjectiles.push(proj);
 
         // Overlap with player
-        this.scene.physics.add.overlap(this.player, proj, () => {
+        const projOverlap = this.scene.physics.add.overlap(this.player, proj, () => {
           if (!(this.player as any).isInvincible && proj.active) {
             (this.player as any).takeDamage(this.baseDamage);
+            if (projOverlap) {
+              this.scene.physics.world.removeCollider(projOverlap);
+            }
             const idx = this.sharedProjectiles.indexOf(proj);
             if (idx !== -1) this.sharedProjectiles.splice(idx, 1);
             proj.destroy();
@@ -619,6 +633,9 @@ export abstract class Boss extends Enemy {
 
         // Destroy after 3s
         this.scene.time.delayedCall(3000, () => {
+          if (projOverlap) {
+            this.scene.physics.world.removeCollider(projOverlap);
+          }
           const idx = this.sharedProjectiles.indexOf(proj);
           if (idx !== -1) this.sharedProjectiles.splice(idx, 1);
           if (proj.active) proj.destroy();

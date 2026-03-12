@@ -180,8 +180,6 @@ export const PersistentStats = {
     lifetime.totalAltitude += run.altitude;
     lifetime.totalBossesDefeated += run.bossesDefeated;
     lifetime.totalDeaths++;
-    lifetime.totalPlayTime += run.timeMs;
-    lifetime.totalPlayTimeMs += run.timeMs;
     lifetime.totalRuns++;
 
     // Aggregate combat stats
@@ -196,7 +194,7 @@ export const PersistentStats = {
     if (run.kills > lifetime.bestSingleRunKills) {
       lifetime.bestSingleRunKills = run.kills;
     }
-    if (run.timeMs > 0 && (lifetime.bestSingleRunTime === 0 || run.timeMs > lifetime.bestSingleRunTime)) {
+    if (run.timeMs > 0 && (lifetime.bestSingleRunTime === 0 || run.timeMs < lifetime.bestSingleRunTime)) {
       lifetime.bestSingleRunTime = run.timeMs;
     }
 
@@ -227,7 +225,7 @@ export const PersistentStats = {
       if (run.altitude > pcs.bestAltitude) {
         pcs.bestAltitude = run.altitude;
       }
-      if (run.timeMs > 0 && (pcs.bestTime === 0 || run.timeMs > pcs.bestTime)) {
+      if (run.timeMs > 0 && (pcs.bestTime === 0 || run.timeMs < pcs.bestTime)) {
         pcs.bestTime = run.timeMs;
       }
     }
@@ -272,8 +270,6 @@ export const PersistentStats = {
       lifetime.runHistory = lifetime.runHistory.slice(-20);
     }
 
-    // Essence
-    run.essenceEarned = run.essenceEarned; // already tracked incrementally
   },
 
   /** Record a run ending with full data (alternative to endRun for external callers). */
