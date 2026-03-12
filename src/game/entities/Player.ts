@@ -29,6 +29,7 @@ import { GamepadManager } from "../systems/GamepadManager";
 import { TouchControls } from "../systems/TouchControls";
 import { KeyBindings } from "../systems/KeyBindings";
 import { MouseManager } from "../systems/MouseManager";
+import { CoopManager } from "../systems/CoopManager";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
@@ -172,6 +173,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private wasOnSlope: boolean = false;
   private pendingLaunchVector: { x: number; y: number } | null = null;
 
+  // Co-op player index (0 = solo/P1, 1 = P2)
+  public playerIndex: number = 0;
+
   // Stats & Inventory
   public health: number;
   public maxHealth: number;
@@ -301,6 +305,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return this.invincibilityTimer > 0 || this.parryInvincibilityTimer > 0;
   }
 
+  /** Trigger temporary invincibility (used for co-op respawn, etc.) */
+  public makeInvincible(durationMs: number): void {
+    this.invincibilityTimer = Math.max(this.invincibilityTimer, durationMs);
+    this.flashTimer = 0;
+    // Flash effect to show invincibility
+    this.setAlpha(0.6);
+  }
+
   get isDodgeActive(): boolean {
     return this.dodgeTimer > 0;
   }
@@ -324,12 +336,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     x: number,
     y: number,
     classType: ClassType = ClassType.MONK,
+    playerIndex: number = 0,
   ) {
     super(scene, x, y, "monk_idle");
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
+    this.playerIndex = playerIndex;
     this.classType = classType;
     // Copy classStats so ascension boosts don't mutate the shared config
     this.classStats = { ...CLASSES[classType] };
@@ -381,6 +395,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.defaultTint = skinDef.previewColor;
       }
     }
+
+    // Visual differentiation for Player 2 in co-op
+    if (this.playerIndex === 1) {
+      this.setTint(0xaaddff); // Light blue tint for P2
+      this.defaultTint = 0xaaddff;
+    }
   }
 
   public setTouchControls(tc: TouchControls): void {
@@ -430,15 +450,31 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   update(time: number, delta: number) {
+    // Determine input source gating for co-op mode
+    // Each player gets their own gamepad via GamepadManager.getStateForPlayer(playerIndex)
+    // With 2 gamepads: P1 gets gamepad 0, P2 gets gamepad 1
+    // With 1 gamepad: P2 gets it, P1 uses keyboard only
+    // In solo: P1 gets everything (keyboard + first gamepad)
+    const isCoopActive = CoopManager.isActive();
+    const useKeyboard = this.playerIndex === 0; // P1 always has keyboard/touch/mouse
+    const useGamepad = true; // Always — GamepadManager routes per playerIndex
+    const useTouchMouse = this.playerIndex === 0; // Only P1
+
     // Gamepad state is polled once per frame in MainScene.update() before this call
-    const gp = GamepadManager.state;
+    const gp = GamepadManager.getStateForPlayer(this.playerIndex);
 
     // Cache JustDown once per frame — Phaser consumes it on first read
     // OR with gamepad, touch, and mouse inputs so all input methods work simultaneously
-    const tc = this.touchControls;
-    const rawJump = Phaser.Input.Keyboard.JustDown(this.cursors.space!) || gp.jumpJustPressed || (tc?.isButtonJustPressed('A') ?? false);
-    let rawDodge = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed || (tc?.isButtonJustPressed('X') ?? false) || (GameSettings.get().mouseAttackEnabled && MouseManager.isRightClicked());
-    const rawGrapple = Phaser.Input.Keyboard.JustDown(this.grappleKey) || gp.grappleJustPressed;
+    const tc = useTouchMouse ? this.touchControls : null;
+    const rawJump = (useKeyboard ? Phaser.Input.Keyboard.JustDown(this.cursors.space!) : false)
+      || (useGamepad ? gp.jumpJustPressed : false)
+      || (tc?.isButtonJustPressed('A') ?? false);
+    let rawDodge = (useKeyboard ? Phaser.Input.Keyboard.JustDown(this.dodgeKey) : false)
+      || (useGamepad ? gp.dodgeJustPressed : false)
+      || (tc?.isButtonJustPressed('X') ?? false)
+      || (useTouchMouse && GameSettings.get().mouseAttackEnabled && MouseManager.isRightClicked());
+    const rawGrapple = (useKeyboard ? Phaser.Input.Keyboard.JustDown(this.grappleKey) : false)
+      || (useGamepad ? gp.grappleJustPressed : false);
 
     // Toggle dodge: pressing dodge toggles the dodge state on/off
     const settings = GameSettings.get();
@@ -758,10 +794,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     const { left, right } = this.cursors;
-    const gpState = GamepadManager.state;
-    const tcMove = this.touchControls?.getMovement();
-    const moveLeft = left.isDown || gpState.moveX < -0.2 || (tcMove != null && tcMove.x < -0.2);
-    const moveRight = right.isDown || gpState.moveX > 0.2 || (tcMove != null && tcMove.x > 0.2);
+    const gpState = GamepadManager.getStateForPlayer(this.playerIndex);
+    const isCoopMove = CoopManager.isActive();
+    const useKeyboardMove = this.playerIndex === 0;
+    const useGamepadMove = !isCoopMove || this.playerIndex === 1;
+    const tcMove = useKeyboardMove ? this.touchControls?.getMovement() : null;
+    const moveLeft = (useKeyboardMove && left.isDown) || (useGamepadMove && gpState.moveX < -0.2) || (tcMove != null && tcMove.x < -0.2);
+    const moveRight = (useKeyboardMove && right.isDown) || (useGamepadMove && gpState.moveX > 0.2) || (tcMove != null && tcMove.x > 0.2);
     const onGround = this.onGround || this.onSlope;
     const platType = this.currentPlatformType;
 
@@ -904,7 +943,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     // Variable jump height (hold button): apply additional upward force while held
-    const jumpHeld = this.cursors.space?.isDown || GamepadManager.state.jump || (this.touchControls?.isButtonPressed('A') ?? false);
+    const _gpJump = GamepadManager.getStateForPlayer(this.playerIndex);
+    const isCoopJump = CoopManager.isActive();
+    const useKeyboardJump = this.playerIndex === 0;
+    const useGamepadJump = !isCoopJump || this.playerIndex === 1;
+    const jumpHeld = (useKeyboardJump && (this.cursors.space?.isDown ?? false))
+      || (useGamepadJump && _gpJump.jump)
+      || (useKeyboardJump && (this.touchControls?.isButtonPressed('A') ?? false));
     if (this.isJumping && jumpHeld && !this.isWallSliding) {
       this.jumpTimer += delta;
       if (this.jumpTimer < PHYSICS.JUMP_HOLD_DURATION) {
@@ -945,11 +990,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       // Wall Climb: if the player has the ability and is holding toward the wall
       const onLeftWall = body.blocked.left || body.touching.left;
       const onRightWall = body.blocked.right || body.touching.right;
-      const gpWall = GamepadManager.state;
-      const tcWall = this.touchControls?.getMovement();
+      const gpWall = GamepadManager.getStateForPlayer(this.playerIndex);
+      const isCoopWall = CoopManager.isActive();
+      const useKeyboardWall = this.playerIndex === 0;
+      const useGamepadWall = !isCoopWall || this.playerIndex === 1;
+      const tcWall = useKeyboardWall ? this.touchControls?.getMovement() : null;
       const holdingTowardWall =
-        (onLeftWall && (this.cursors.left.isDown || gpWall.moveX < -0.2 || (tcWall != null && tcWall.x < -0.2))) ||
-        (onRightWall && (this.cursors.right.isDown || gpWall.moveX > 0.2 || (tcWall != null && tcWall.x > 0.2)));
+        (onLeftWall && ((useKeyboardWall && this.cursors.left.isDown) || (useGamepadWall && gpWall.moveX < -0.2) || (tcWall != null && tcWall.x < -0.2))) ||
+        (onRightWall && ((useKeyboardWall && this.cursors.right.isDown) || (useGamepadWall && gpWall.moveX > 0.2) || (tcWall != null && tcWall.x > 0.2)));
 
       if (
         this.abilities.has("wall_climb") &&
@@ -1041,13 +1089,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         const timeUntilEnd = totalAttackTime - this.attackTimer;
 
         if (timeUntilEnd <= COMBO_BUFFER && !this.comboBufferedInput) {
-          const gpBuf = GamepadManager.state;
-          const tcBuf = this.touchControls;
-          if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpBuf.attackBJustPressed || (tcBuf?.isButtonJustPressed('B') ?? false)) {
+          const gpBuf = GamepadManager.getStateForPlayer(this.playerIndex);
+          const isCoopBuf = CoopManager.isActive();
+          const useKeyboardBuf = this.playerIndex === 0;
+          const useGamepadBuf = !isCoopBuf || this.playerIndex === 1;
+          const tcBuf = useKeyboardBuf ? this.touchControls : null;
+          if ((useKeyboardBuf && Phaser.Input.Keyboard.JustDown(this.attackBKey)) || (useGamepadBuf && gpBuf.attackBJustPressed) || (tcBuf?.isButtonJustPressed('B') ?? false)) {
             this.comboBufferedInput = 'B';
-          } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpBuf.attackXJustPressed) {
+          } else if ((useKeyboardBuf && Phaser.Input.Keyboard.JustDown(this.attackXKey)) || (useGamepadBuf && gpBuf.attackXJustPressed)) {
             this.comboBufferedInput = 'X';
-          } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpBuf.attackYJustPressed || (tcBuf?.isButtonJustPressed('Y') ?? false)) {
+          } else if ((useKeyboardBuf && Phaser.Input.Keyboard.JustDown(this.attackYKey)) || (useGamepadBuf && gpBuf.attackYJustPressed) || (tcBuf?.isButtonJustPressed('Y') ?? false)) {
             this.comboBufferedInput = 'Y';
           }
         }
@@ -1060,17 +1111,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     const canAttack = !this.isAttacking || this.attackState === "RECOVERY";
 
-    const gpCombat = GamepadManager.state;
-    const tcCombat = this.touchControls;
-    const mouseAttack = GameSettings.get().mouseAttackEnabled;
+    const gpCombat = GamepadManager.getStateForPlayer(this.playerIndex);
+    const isCoopCombat = CoopManager.isActive();
+    const useKeyboardCombat = this.playerIndex === 0;
+    const useGamepadCombat = !isCoopCombat || this.playerIndex === 1;
+    const tcCombat = useKeyboardCombat ? this.touchControls : null;
+    const mouseAttack = useKeyboardCombat && GameSettings.get().mouseAttackEnabled;
     if (canAttack && !this.isWallSliding) {
-      if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpCombat.attackBJustPressed || (tcCombat?.isButtonJustPressed('B') ?? false) || (mouseAttack && MouseManager.isLeftClicked())) {
+      if ((useKeyboardCombat && Phaser.Input.Keyboard.JustDown(this.attackBKey)) || (useGamepadCombat && gpCombat.attackBJustPressed) || (tcCombat?.isButtonJustPressed('B') ?? false) || (mouseAttack && MouseManager.isLeftClicked())) {
         this.handleComboInput('B');
         this.tryAttack(AttackType.LIGHT);
-      } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpCombat.attackXJustPressed || (mouseAttack && MouseManager.isMiddleClicked())) {
+      } else if ((useKeyboardCombat && Phaser.Input.Keyboard.JustDown(this.attackXKey)) || (useGamepadCombat && gpCombat.attackXJustPressed) || (mouseAttack && MouseManager.isMiddleClicked())) {
         this.handleComboInput('X');
         this.tryAttack(AttackType.HEAVY);
-      } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpCombat.attackYJustPressed || (tcCombat?.isButtonJustPressed('Y') ?? false)) {
+      } else if ((useKeyboardCombat && Phaser.Input.Keyboard.JustDown(this.attackYKey)) || (useGamepadCombat && gpCombat.attackYJustPressed) || (tcCombat?.isButtonJustPressed('Y') ?? false)) {
         // Priest ground SPECIAL: Sacred Ground instead of normal attack
         if (
           this.classType === ClassType.PRIEST &&
@@ -1149,11 +1203,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
       // Horizontal velocity burst based on input direction
       const { left: dodgeLeft, right: dodgeRight } = this.cursors;
-      const gpDodge = GamepadManager.state;
+      const gpDodge = GamepadManager.getStateForPlayer(this.playerIndex);
+      const isCoopDodge = CoopManager.isActive();
+      const useKeyboardDodge = this.playerIndex === 0;
+      const useGamepadDodge = !isCoopDodge || this.playerIndex === 1;
       let dodgeDir: number;
-      if (dodgeLeft.isDown || gpDodge.moveX < -0.2) {
+      if ((useKeyboardDodge && dodgeLeft.isDown) || (useGamepadDodge && gpDodge.moveX < -0.2)) {
         dodgeDir = -1;
-      } else if (dodgeRight.isDown || gpDodge.moveX > 0.2) {
+      } else if ((useKeyboardDodge && dodgeRight.isDown) || (useGamepadDodge && gpDodge.moveX > 0.2)) {
         dodgeDir = 1;
       } else {
         dodgeDir = this.flipX ? -1 : 1;
@@ -1346,10 +1403,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   private tryAttack(type: AttackType) {
-    const gpAttack = GamepadManager.state;
+    const gpAttack = GamepadManager.getStateForPlayer(this.playerIndex);
+    const isCoopAttack = CoopManager.isActive();
+    const useKeyboardAttack = this.playerIndex === 0;
+    const useGamepadAttack = !isCoopAttack || this.playerIndex === 1;
     let direction: AttackDirection = AttackDirection.NEUTRAL;
-    if (this.cursors.up.isDown || gpAttack.moveY < -0.5) direction = AttackDirection.UP;
-    else if (this.cursors.down.isDown || gpAttack.moveY > 0.5) direction = AttackDirection.DOWN;
+    if ((useKeyboardAttack && this.cursors.up.isDown) || (useGamepadAttack && gpAttack.moveY < -0.5)) direction = AttackDirection.UP;
+    else if ((useKeyboardAttack && this.cursors.down.isDown) || (useGamepadAttack && gpAttack.moveY > 0.5)) direction = AttackDirection.DOWN;
 
     const config = COMBAT_CONFIG[this.classType];
     const onGround = this.onGround;
@@ -1835,7 +1895,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
 
     if (this.health <= 0) {
-      EventBus.emit("player-died");
+      EventBus.emit("player-died", { playerIndex: this.playerIndex });
       this.scene.scene.restart();
     }
     return false;
@@ -1948,7 +2008,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleCataclysm(): void {
     if (!this.abilities.has('cataclysm')) return;
     if (this.cataclysmCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.cataclysmKey) && !GamepadManager.state.cataclysmJustPressed && !(this.touchControls?.wasSwipeDetected('up') ?? false)) return;
+    const _gpCataclysm = GamepadManager.getStateForPlayer(this.playerIndex);
+    const _isCoopCataclysm = CoopManager.isActive();
+    const _useKbCataclysm = this.playerIndex === 0;
+    const _useGpCataclysm = !_isCoopCataclysm || this.playerIndex === 1;
+    if (!(_useKbCataclysm && Phaser.Input.Keyboard.JustDown(this.cataclysmKey)) && !(_useGpCataclysm && _gpCataclysm.cataclysmJustPressed) && !(_useKbCataclysm && (this.touchControls?.wasSwipeDetected('up') ?? false))) return;
 
     this.cataclysmCooldown = this.CATACLYSM_COOLDOWN;
 
@@ -1988,7 +2052,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleTemporalRift(): void {
     if (!this.abilities.has('temporal_rift')) return;
     if (this.temporalCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.temporalKey) && !GamepadManager.state.temporalRiftJustPressed && !(this.touchControls?.wasSwipeDetected('up') ?? false)) return;
+    const _gpTemporal = GamepadManager.getStateForPlayer(this.playerIndex);
+    const _isCoopTemporal = CoopManager.isActive();
+    const _useKbTemporal = this.playerIndex === 0;
+    const _useGpTemporal = !_isCoopTemporal || this.playerIndex === 1;
+    if (!(_useKbTemporal && Phaser.Input.Keyboard.JustDown(this.temporalKey)) && !(_useGpTemporal && _gpTemporal.temporalRiftJustPressed) && !(_useKbTemporal && (this.touchControls?.wasSwipeDetected('up') ?? false))) return;
 
     this.temporalCooldown = this.TEMPORAL_COOLDOWN;
 
@@ -2027,7 +2095,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleDivineIntervention(): void {
     if (!this.abilities.has('divine_intervention')) return;
     if (this.divineCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.divineKey) && !GamepadManager.state.divineInterventionJustPressed && !(this.touchControls?.wasSwipeDetected('up') ?? false)) return;
+    const _gpDivine = GamepadManager.getStateForPlayer(this.playerIndex);
+    const _isCoopDivine = CoopManager.isActive();
+    const _useKbDivine = this.playerIndex === 0;
+    const _useGpDivine = !_isCoopDivine || this.playerIndex === 1;
+    if (!(_useKbDivine && Phaser.Input.Keyboard.JustDown(this.divineKey)) && !(_useGpDivine && _gpDivine.divineInterventionJustPressed) && !(_useKbDivine && (this.touchControls?.wasSwipeDetected('up') ?? false))) return;
 
     this.divineCooldown = this.DIVINE_COOLDOWN;
     this.invincibilityTimer = this.DIVINE_DURATION;
@@ -2045,7 +2117,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleEssenceBurst(): void {
     if (!this.abilities.has('essence_burst')) return;
     if (this.essenceBurstActive) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.essenceBurstKey) && !GamepadManager.state.essenceBurstJustPressed && !(this.touchControls?.wasSwipeDetected('up') ?? false)) return;
+    const _gpEssence = GamepadManager.getStateForPlayer(this.playerIndex);
+    const _isCoopEssence = CoopManager.isActive();
+    const _useKbEssence = this.playerIndex === 0;
+    const _useGpEssence = !_isCoopEssence || this.playerIndex === 1;
+    if (!(_useKbEssence && Phaser.Input.Keyboard.JustDown(this.essenceBurstKey)) && !(_useGpEssence && _gpEssence.essenceBurstJustPressed) && !(_useKbEssence && (this.touchControls?.wasSwipeDetected('up') ?? false))) return;
 
     // Get current essence from MainScene
     const mainScene = this.scene as any;
@@ -2088,7 +2164,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (!this.abilities.has('counter_stance')) return;
     if (this.counterCooldown > 0) return;
     if (this.counterStanceActive) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.counterKey) && !GamepadManager.state.counterSlashJustPressed) return;
+    const _gpCounter = GamepadManager.getStateForPlayer(this.playerIndex);
+    const _isCoopCounter = CoopManager.isActive();
+    const _useKbCounter = this.playerIndex === 0;
+    const _useGpCounter = !_isCoopCounter || this.playerIndex === 1;
+    if (!(_useKbCounter && Phaser.Input.Keyboard.JustDown(this.counterKey)) && !(_useGpCounter && _gpCounter.counterSlashJustPressed)) return;
 
     // Activate counter stance
     this.counterStanceActive = true;
@@ -2101,7 +2181,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleGroundSlam(): void {
     if (!this.abilities.has('ground_slam')) return;
     if (this.groundSlamCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.groundSlamKey) && !GamepadManager.state.groundSlamJustPressed) return;
+    const _gpGroundSlam = GamepadManager.getStateForPlayer(this.playerIndex);
+    const _isCoopGroundSlam = CoopManager.isActive();
+    const _useKbGroundSlam = this.playerIndex === 0;
+    const _useGpGroundSlam = !_isCoopGroundSlam || this.playerIndex === 1;
+    if (!(_useKbGroundSlam && Phaser.Input.Keyboard.JustDown(this.groundSlamKey)) && !(_useGpGroundSlam && _gpGroundSlam.groundSlamJustPressed)) return;
 
     if (!this.onGround) {
       // Airborne: slam downward quickly
@@ -2182,7 +2266,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleProjectile(): void {
     if (!this.abilities.has('projectile_shot')) return;
     if (this.projectileCooldown > 0) return;
-    if (!Phaser.Input.Keyboard.JustDown(this.projectileKey) && !GamepadManager.state.groundSlamJustPressed) return;
+    const _gpProjectile = GamepadManager.getStateForPlayer(this.playerIndex);
+    const _isCoopProjectile = CoopManager.isActive();
+    const _useKbProjectile = this.playerIndex === 0;
+    const _useGpProjectile = !_isCoopProjectile || this.playerIndex === 1;
+    if (!(_useKbProjectile && Phaser.Input.Keyboard.JustDown(this.projectileKey)) && !(_useGpProjectile && _gpProjectile.groundSlamJustPressed)) return;
 
     this.projectileCooldown = this.PROJECTILE_COOLDOWN;
 
@@ -2284,7 +2372,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private handleChargedAttack(delta: number): void {
     if (!this.abilities.has('charged_attack')) return;
 
-    if (this.chargeKey.isDown || GamepadManager.state.counterSlash) {
+    const _gpCharge = GamepadManager.getStateForPlayer(this.playerIndex);
+    const _isCoopCharge = CoopManager.isActive();
+    const _useKbCharge = this.playerIndex === 0;
+    const _useGpCharge = !_isCoopCharge || this.playerIndex === 1;
+    if ((_useKbCharge && this.chargeKey.isDown) || (_useGpCharge && _gpCharge.counterSlash)) {
       if (!this.isCharging) {
         // Start charging
         this.isCharging = true;

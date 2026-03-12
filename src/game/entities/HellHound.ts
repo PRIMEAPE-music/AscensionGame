@@ -17,7 +17,7 @@ export class HellHound extends Enemy {
   private readonly RECOVERY_DURATION = 800;
   private readonly PATROL_TURN_INTERVAL = 1500;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+  constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
     super(scene, x, y, "dude", player, 4, 1, 250); // 4 HP, 1 Dmg, 250 Speed
     this.enemyType = 'hound';
     this.tier = 'basic';

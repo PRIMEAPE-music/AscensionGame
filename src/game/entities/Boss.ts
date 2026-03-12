@@ -39,7 +39,7 @@ export abstract class Boss extends Enemy {
     scene: Phaser.Scene,
     x: number,
     y: number,
-    player: Player,
+    player: Player | Player[],
     bossNumber: number,
     bossName: string,
   ) {
@@ -274,14 +274,14 @@ export abstract class Boss extends Enemy {
     ringBody.setAllowGravity(false);
     ringBody.setCircle(30);
 
-    let hasHitPlayer = false;
+    const hitPlayers = new Set<any>();
 
-    // Overlap with player for damage (only hits once)
-    const overlap = this.scene.physics.add.overlap(this.player, ring, () => {
-      if (hasHitPlayer) return;
-      if (!(this.player as any).isInvincible && ring.active) {
-        hasHitPlayer = true;
-        (this.player as any).takeDamage(this.baseDamage);
+    // Overlap with all players for damage (each player only hit once)
+    const overlap = this.scene.physics.add.overlap(this._players, ring, (p: any) => {
+      if (hitPlayers.has(p)) return;
+      if (!p.isInvincible && ring.active) {
+        hitPlayers.add(p);
+        p.takeDamage(this.baseDamage);
       }
     });
 
@@ -348,7 +348,7 @@ export abstract class Boss extends Enemy {
 
     for (let i = 0; i < count; i++) {
       const targetX = viewLeft + Phaser.Math.Between(100, viewWidth - 100);
-      const targetY = this.player.y + Phaser.Math.Between(-50, 100);
+      const targetY = this.player.y + Phaser.Math.Between(-50, 100); // targets nearest player
       const startY = viewTop - 50;
 
       // Telegraph: shadow on the ground
@@ -392,10 +392,10 @@ export abstract class Boss extends Enemy {
 
         this.activeDebris.push(debris);
 
-        // Overlap with player for damage
-        const debrisOverlap = this.scene.physics.add.overlap(this.player, debris, () => {
-          if (!(this.player as any).isInvincible && debris.active) {
-            (this.player as any).takeDamage(1);
+        // Overlap with all players for damage
+        const debrisOverlap = this.scene.physics.add.overlap(this._players, debris, (p: any) => {
+          if (!p.isInvincible && debris.active) {
+            p.takeDamage(1);
           }
         });
 
@@ -507,12 +507,12 @@ export abstract class Boss extends Enemy {
 
         this.sharedShockwaves.push(shockLeft, shockRight);
 
-        // Overlap with player
+        // Overlap with all players
         const waveOverlaps: Phaser.Physics.Arcade.Collider[] = [];
         for (const wave of [shockLeft, shockRight]) {
-          const waveOverlap = this.scene.physics.add.overlap(this.player, wave, () => {
-            if (!(this.player as any).isInvincible && wave.active) {
-              (this.player as any).takeDamage(this.baseDamage);
+          const waveOverlap = this.scene.physics.add.overlap(this._players, wave, (p: any) => {
+            if (!p.isInvincible && wave.active) {
+              p.takeDamage(this.baseDamage);
             }
           });
           waveOverlaps.push(waveOverlap);
@@ -618,10 +618,10 @@ export abstract class Boss extends Enemy {
 
         this.sharedProjectiles.push(proj);
 
-        // Overlap with player
-        const projOverlap = this.scene.physics.add.overlap(this.player, proj, () => {
-          if (!(this.player as any).isInvincible && proj.active) {
-            (this.player as any).takeDamage(this.baseDamage);
+        // Overlap with all players
+        const projOverlap = this.scene.physics.add.overlap(this._players, proj, (p: any) => {
+          if (!p.isInvincible && proj.active) {
+            p.takeDamage(this.baseDamage);
             if (projOverlap) {
               this.scene.physics.world.removeCollider(projOverlap);
             }

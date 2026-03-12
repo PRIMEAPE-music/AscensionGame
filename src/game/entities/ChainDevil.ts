@@ -25,7 +25,7 @@ export class ChainDevil extends Enemy {
     private readonly WHIP_DURATION = 200;
     private readonly RECOVERY_DURATION = 1500;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 10, 2, 0);
         this.enemyType = 'chain_devil';
         this.tier = 'advanced';
@@ -45,10 +45,11 @@ export class ChainDevil extends Enemy {
         // Whip group for overlap detection
         this.whipGroup = scene.physics.add.group({ allowGravity: false });
 
+        const playerList = Array.isArray(player) ? player : [player];
         this.whipCollider = scene.physics.add.overlap(
-            player,
+            playerList,
             this.whipGroup,
-            () => this.onWhipHitPlayer(),
+            (p: any) => this.onWhipHitPlayer(p),
             undefined,
             this,
         );
@@ -223,20 +224,20 @@ export class ChainDevil extends Enemy {
         });
     }
 
-    private onWhipHitPlayer(): void {
-        if ((this.player as any).isInvincible) return;
+    private onWhipHitPlayer(hitPlayer: any): void {
+        if (hitPlayer.isInvincible) return;
 
-        (this.player as any).takeDamage(this.damage);
+        hitPlayer.takeDamage(this.damage);
 
         EventBus.emit('health-change', {
-            health: (this.player as any).health,
-            maxHealth: (this.player as any).maxHealth,
+            health: hitPlayer.health,
+            maxHealth: hitPlayer.maxHealth,
         });
 
         // Knockback player away
-        const direction = this.player.x > this.x ? 1 : -1;
-        this.player.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
-        this.player.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
+        const direction = hitPlayer.x > this.x ? 1 : -1;
+        hitPlayer.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
+        hitPlayer.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
     }
 
     update(time: number, delta: number) {

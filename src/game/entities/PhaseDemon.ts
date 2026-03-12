@@ -19,7 +19,7 @@ export class PhaseDemon extends Enemy {
     private readonly INCORPOREAL_TINT = 0x5500aa;
     private readonly FLICKER_INTERVAL = 50;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 8, 1, 180);
         this.enemyType = 'phase_demon';
         this.tier = 'advanced';

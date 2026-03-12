@@ -43,6 +43,7 @@ import { TouchControlsOverlay } from "./game/ui/TouchControlsOverlay";
 import { LeaderboardScreen } from "./game/ui/LeaderboardScreen";
 import { ReplayManager } from "./game/systems/ReplayManager";
 import { ReplayScreen, PlaybackControls } from "./game/ui/ReplayScreen";
+import { CoopManager } from "./game/systems/CoopManager";
 import "./App.css";
 
 type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
@@ -100,6 +101,11 @@ function App() {
   >([]);
   const [hasSavedRun, setHasSavedRun] = useState(false);
   const [savedRunInfo, setSavedRunInfo] = useState<{ classType: string; altitude: number; timestamp: number } | null>(null);
+  const [isCoopMode, setIsCoopMode] = useState(false);
+  const [coopSelectingPlayer, setCoopSelectingPlayer] = useState<1 | 2>(1);
+  const [selectedClass2, setSelectedClass2] = useState<ClassType | null>(null);
+  const [health2, setHealth2] = useState(3);
+  const [maxHealth2, setMaxHealth2] = useState(3);
   const [tutorialHint, setTutorialHint] = useState<{ title: string; text: string } | null>(null);
   const [fps, setFps] = useState(0);
   const maxComboRef = useRef<number>(0);
@@ -195,6 +201,12 @@ function App() {
   }, [achievementPopup, achievementQueue]);
 
   const handleStartRun = useCallback(() => {
+    setGameState("CLASS_SELECT");
+  }, []);
+
+  const handleCoopStart = useCallback(() => {
+    setIsCoopMode(true);
+    setCoopSelectingPlayer(1);
     setGameState("CLASS_SELECT");
   }, []);
 
@@ -302,10 +314,24 @@ function App() {
   }, []);
 
   const handleClassSelect = useCallback((classType: ClassType) => {
-    setSelectedClass(classType);
-    (window as any).__selectedClass = classType;
-    setGameState("EQUIP");
-  }, []);
+    if (isCoopMode && coopSelectingPlayer === 1) {
+      // P1 selected, now P2 selects
+      setSelectedClass(classType);
+      (window as any).__selectedClass = classType;
+      setCoopSelectingPlayer(2);
+      // Stay in CLASS_SELECT for P2
+    } else if (isCoopMode && coopSelectingPlayer === 2) {
+      // P2 selected — activate co-op and proceed
+      setSelectedClass2(classType);
+      CoopManager.activate(classType);
+      setGameState("EQUIP");
+    } else {
+      // Solo mode — existing behavior
+      setSelectedClass(classType);
+      (window as any).__selectedClass = classType;
+      setGameState("EQUIP");
+    }
+  }, [isCoopMode, coopSelectingPlayer]);
 
   const handleGoldEquipConfirm = useCallback((equippedIds: string[]) => {
     (window as any).__equippedGoldItems = equippedIds;
@@ -384,6 +410,12 @@ function App() {
     gameRef.current = null;
     setHasSavedRun(false);
     setSavedRunInfo(null);
+    setIsCoopMode(false);
+    setCoopSelectingPlayer(1);
+    setSelectedClass2(null);
+    setHealth2(3);
+    setMaxHealth2(3);
+    CoopManager.deactivate();
     setGameState("MAIN_MENU");
     setMenuScreen("main");
     setSelectedClass(null);
@@ -430,6 +462,12 @@ function App() {
     delete (window as any).__dailyChallengeSeed;
     delete (window as any).__isWeeklyChallenge;
     delete (window as any).__weeklySpecialRule;
+    setIsCoopMode(false);
+    setCoopSelectingPlayer(1);
+    setSelectedClass2(null);
+    setHealth2(3);
+    setMaxHealth2(3);
+    CoopManager.deactivate();
     setGameState("MAIN_MENU");
     setMenuScreen("main");
     setSelectedClass(null);
@@ -465,6 +503,12 @@ function App() {
     delete (window as any).__dailyChallengeSeed;
     delete (window as any).__isWeeklyChallenge;
     delete (window as any).__weeklySpecialRule;
+    setIsCoopMode(false);
+    setCoopSelectingPlayer(1);
+    setSelectedClass2(null);
+    setHealth2(3);
+    setMaxHealth2(3);
+    CoopManager.deactivate();
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("PLAYING"); // Triggers game recreation with same class
@@ -622,8 +666,14 @@ function App() {
 
     // Event Listeners
     const handleHealthChange = (e: CustomEvent) => {
-      setHealth(e.detail.health);
-      if (e.detail.maxHealth) setMaxHealth(e.detail.maxHealth);
+      const idx = e.detail.playerIndex ?? 0;
+      if (idx === 0) {
+        setHealth(e.detail.health);
+        if (e.detail.maxHealth) setMaxHealth(e.detail.maxHealth);
+      } else {
+        setHealth2(e.detail.health);
+        if (e.detail.maxHealth) setMaxHealth2(e.detail.maxHealth);
+      }
     };
 
     const handleAltitudeChange = (e: CustomEvent) => {
@@ -923,6 +973,7 @@ function App() {
           onDailyChallenge={handleDailyChallenge}
           onLeaderboard={handleShowLeaderboard}
           onReplay={handleShowReplay}
+          onCoopStart={handleCoopStart}
         />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "stats" && (
@@ -954,7 +1005,10 @@ function App() {
         />
       )}
       {gameState === "CLASS_SELECT" && (
-        <ClassSelect onSelect={handleClassSelect} />
+        <ClassSelect
+          onSelect={handleClassSelect}
+          playerLabel={isCoopMode ? (coopSelectingPlayer === 1 ? "PLAYER 1" : "PLAYER 2") : undefined}
+        />
       )}
       {gameState === "EQUIP" && (
         <GoldItemEquip onConfirm={handleGoldEquipConfirm} />
@@ -994,6 +1048,9 @@ function App() {
                 flowMaxFlow={flowMaxFlow}
                 isShieldGuarding={isShieldGuarding}
                 sacredGroundCooldown={sacredGroundCooldown}
+                player2Health={isCoopMode ? health2 : undefined}
+                player2MaxHealth={isCoopMode ? maxHealth2 : undefined}
+                player2ClassName={isCoopMode && selectedClass2 ? CLASSES[selectedClass2].name : undefined}
               />
               <TouchControlsOverlay />
               {isPaused && (

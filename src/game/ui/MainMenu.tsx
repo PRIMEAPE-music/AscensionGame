@@ -17,6 +17,7 @@ interface MainMenuProps {
   onDailyChallenge: () => void;
   onLeaderboard: () => void;
   onReplay?: () => void;
+  onCoopStart?: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -56,6 +57,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onDailyChallenge,
   onLeaderboard,
   onReplay,
+  onCoopStart,
 }) => {
   const [hoveredButton, setHoveredButton] = useState<string | null>(null);
   const [titleVisible, setTitleVisible] = useState(false);
@@ -158,6 +160,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     }
     return {
       ...menuButtonStyle,
+      width: "auto",
       fontSize: "18px",
       padding: "14px 36px",
       background: isHovered
@@ -315,6 +318,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           transition: "opacity 0.5s ease, transform 0.5s ease",
         }}
       >
+        {/* Row 1: Primary actions */}
         {hasSavedRun && onResumeRun && (
           <button
             style={getButtonStyle("resume")}
@@ -338,14 +342,26 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             )}
           </button>
         )}
-        <button
-          style={getButtonStyle("start")}
-          onMouseEnter={() => setHoveredButton("start")}
-          onMouseLeave={() => setHoveredButton(null)}
-          onClick={onStartRun}
-        >
-          {hasSavedRun ? "New Run" : "Start Run"}
-        </button>
+        <div style={{ display: "flex", gap: "16px", justifyContent: "center" }}>
+          <button
+            style={getButtonStyle("start")}
+            onMouseEnter={() => setHoveredButton("start")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={onStartRun}
+          >
+            {hasSavedRun ? "New Run" : "Start Run"}
+          </button>
+          {onCoopStart && (
+            <button
+              style={getButtonStyle("coop")}
+              onMouseEnter={() => setHoveredButton("coop")}
+              onMouseLeave={() => setHoveredButton(null)}
+              onClick={onCoopStart}
+            >
+              LOCAL CO-OP
+            </button>
+          )}
+        </div>
         <button
           style={getButtonStyle("daily")}
           onMouseEnter={() => setHoveredButton("daily")}
@@ -367,56 +383,66 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             </div>
           )}
         </button>
-        <button
-          style={getButtonStyle("collection")}
-          onMouseEnter={() => setHoveredButton("collection")}
-          onMouseLeave={() => setHoveredButton(null)}
-          onClick={onCollection}
-        >
-          Collection
-        </button>
-        <button
-          style={getButtonStyle("leaderboard")}
-          onMouseEnter={() => setHoveredButton("leaderboard")}
-          onMouseLeave={() => setHoveredButton(null)}
-          onClick={onLeaderboard}
-        >
-          Leaderboards
-        </button>
-        <button
-          style={getButtonStyle("cosmetics")}
-          onMouseEnter={() => setHoveredButton("cosmetics")}
-          onMouseLeave={() => setHoveredButton(null)}
-          onClick={onCosmetics}
-        >
-          Cosmetics
-        </button>
-        <button
-          style={getButtonStyle("statistics")}
-          onMouseEnter={() => setHoveredButton("statistics")}
-          onMouseLeave={() => setHoveredButton(null)}
-          onClick={onStatistics}
-        >
-          Statistics
-        </button>
-        {onReplay && (
+
+        {/* Row 2: Secondary buttons in a 2-column grid */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "12px",
+          width: "100%",
+          maxWidth: "660px",
+        }}>
           <button
-            style={getButtonStyle("replays")}
-            onMouseEnter={() => setHoveredButton("replays")}
+            style={getButtonStyle("collection")}
+            onMouseEnter={() => setHoveredButton("collection")}
             onMouseLeave={() => setHoveredButton(null)}
-            onClick={onReplay}
+            onClick={onCollection}
           >
-            Replays
+            Collection
           </button>
-        )}
-        <button
-          style={getButtonStyle("settings")}
-          onMouseEnter={() => setHoveredButton("settings")}
-          onMouseLeave={() => setHoveredButton(null)}
-          onClick={onSettings}
-        >
-          Settings
-        </button>
+          <button
+            style={getButtonStyle("leaderboard")}
+            onMouseEnter={() => setHoveredButton("leaderboard")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={onLeaderboard}
+          >
+            Leaderboards
+          </button>
+          <button
+            style={getButtonStyle("cosmetics")}
+            onMouseEnter={() => setHoveredButton("cosmetics")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={onCosmetics}
+          >
+            Cosmetics
+          </button>
+          <button
+            style={getButtonStyle("statistics")}
+            onMouseEnter={() => setHoveredButton("statistics")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={onStatistics}
+          >
+            Statistics
+          </button>
+          {onReplay && (
+            <button
+              style={getButtonStyle("replays")}
+              onMouseEnter={() => setHoveredButton("replays")}
+              onMouseLeave={() => setHoveredButton(null)}
+              onClick={onReplay}
+            >
+              Replays
+            </button>
+          )}
+          <button
+            style={getButtonStyle("settings")}
+            onMouseEnter={() => setHoveredButton("settings")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={onSettings}
+          >
+            Settings
+          </button>
+        </div>
       </div>
 
       {/* Lifetime stats summary at bottom */}

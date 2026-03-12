@@ -30,7 +30,7 @@ export class DemonGeneral extends Enemy {
     private readonly HITBOX_WIDTH = 100;
     private readonly HITBOX_HEIGHT = 60;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 30, 2, 100);
         this.enemyType = 'demon_general';
         this.tier = 'elite';
@@ -45,10 +45,11 @@ export class DemonGeneral extends Enemy {
         // Hitbox group for combo attack overlap
         this.hitboxGroup = scene.physics.add.group({ allowGravity: false });
 
+        const playerList = Array.isArray(player) ? player : [player];
         this.hitboxCollider = scene.physics.add.overlap(
-            player,
+            playerList,
             this.hitboxGroup,
-            () => this.onComboHitPlayer(),
+            (p: any) => this.onComboHitPlayer(p),
             undefined,
             this,
         );
@@ -353,20 +354,20 @@ export class DemonGeneral extends Enemy {
         return null;
     }
 
-    private onComboHitPlayer(): void {
-        if ((this.player as any).isInvincible) return;
+    private onComboHitPlayer(hitPlayer: any): void {
+        if (hitPlayer.isInvincible) return;
 
-        (this.player as any).takeDamage(this.damage);
+        hitPlayer.takeDamage(this.damage);
 
         EventBus.emit('health-change', {
-            health: (this.player as any).health,
-            maxHealth: (this.player as any).maxHealth,
+            health: hitPlayer.health,
+            maxHealth: hitPlayer.maxHealth,
         });
 
         // Knockback player
-        const direction = this.player.x > this.x ? 1 : -1;
-        this.player.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
-        this.player.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
+        const direction = hitPlayer.x > this.x ? 1 : -1;
+        hitPlayer.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
+        hitPlayer.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
     }
 
     update(time: number, delta: number) {

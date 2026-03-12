@@ -9,11 +9,12 @@ export interface ShopOffering {
 }
 
 export interface GameEvents {
-  "health-change": { health: number; maxHealth: number };
+  "health-change": { health: number; maxHealth: number; playerIndex?: number };
   "altitude-change": { altitude: number };
   "inventory-change": { inventory: ItemData[]; maxSlots?: number };
   "enemy-killed": { enemyType: string; x: number; y: number };
-  "player-died": void;
+  "player-died": { playerIndex?: number };
+  "coop-respawn": { playerIndex: number; timeRemaining: number };
   "boss-warning": { distance: number };
   "boss-spawn": { name: string; maxHealth: number; bossNumber: number };
   "boss-health-change": { health: number; maxHealth: number; phase: number };

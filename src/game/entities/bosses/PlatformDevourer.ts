@@ -26,7 +26,7 @@ export class PlatformDevourer extends Boss {
   // Emerge direction tracking
   private emergeFromLeft: boolean = true;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, player: Player, bossNumber: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[], bossNumber: number) {
     super(scene, x, y, player, bossNumber, 'Platform Devourer');
 
     this.setTint(0x664422);
@@ -319,11 +319,11 @@ export class PlatformDevourer extends Boss {
     (rightSpike.body as Phaser.Physics.Arcade.Body).setImmovable(true);
     this.spikes.push(rightSpike);
 
-    // Overlap with player for damage
+    // Overlap with all players for damage
     for (const spike of [leftSpike, rightSpike]) {
-      this.scene.physics.add.overlap(this.player, spike, () => {
-        if (!(this.player as any).isInvincible && spike.active) {
-          (this.player as any).takeDamage(1);
+      this.scene.physics.add.overlap(this._players, spike, (p: any) => {
+        if (!p.isInvincible && spike.active) {
+          p.takeDamage(1);
         }
       });
     }

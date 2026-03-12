@@ -11,7 +11,7 @@ export class ShadowBat extends Enemy {
   private readonly SINE_SPEED = 0.003;
   private readonly DIVE_SPEED = 400;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+  constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
     super(scene, x, y, "dude", player, 2, 1, 100); // 2 HP, 1 Dmg, 100 Speed
     this.enemyType = 'bat';
     this.tier = 'basic';

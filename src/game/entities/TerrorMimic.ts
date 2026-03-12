@@ -26,7 +26,7 @@ export class TerrorMimic extends Enemy {
     private readonly FLICKER_DURATION = 50;
     private readonly CHASE_RANGE = 500;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 15, 2, 200);
         this.enemyType = 'terror_mimic';
         this.tier = 'elite';

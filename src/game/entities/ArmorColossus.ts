@@ -23,7 +23,7 @@ export class ArmorColossus extends Enemy {
     private readonly SHOCKWAVE_HEIGHT = 20;
     private readonly SHOCKWAVE_DURATION = 300;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 25, 2, 40);
         this.enemyType = 'armor_colossus';
         this.tier = 'advanced';
@@ -42,10 +42,11 @@ export class ArmorColossus extends Enemy {
         // Shockwave group for overlap detection
         this.shockwaveGroup = scene.physics.add.group({ allowGravity: false });
 
+        const playerList = Array.isArray(player) ? player : [player];
         this.shockwaveCollider = scene.physics.add.overlap(
-            player,
+            playerList,
             this.shockwaveGroup,
-            () => this.onShockwaveHitPlayer(),
+            (p: any) => this.onShockwaveHitPlayer(p),
             undefined,
             this,
         );
@@ -238,20 +239,20 @@ export class ArmorColossus extends Enemy {
         });
     }
 
-    private onShockwaveHitPlayer(): void {
-        if ((this.player as any).isInvincible) return;
+    private onShockwaveHitPlayer(hitPlayer: any): void {
+        if (hitPlayer.isInvincible) return;
 
-        (this.player as any).takeDamage(this.damage);
+        hitPlayer.takeDamage(this.damage);
 
         EventBus.emit('health-change', {
-            health: (this.player as any).health,
-            maxHealth: (this.player as any).maxHealth,
+            health: hitPlayer.health,
+            maxHealth: hitPlayer.maxHealth,
         });
 
         // Knockback player
-        const direction = this.player.x > this.x ? 1 : -1;
-        this.player.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
-        this.player.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
+        const direction = hitPlayer.x > this.x ? 1 : -1;
+        hitPlayer.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
+        hitPlayer.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
     }
 
     update(time: number, delta: number) {

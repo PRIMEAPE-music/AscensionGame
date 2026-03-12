@@ -12,7 +12,7 @@ import { GameSettings } from "./GameSettings";
 
 export class CombatManager {
   private scene: Phaser.Scene;
-  private player: Player;
+  private players: Player[];
   private enemies: Phaser.Physics.Arcade.Group;
   private damageNumbers: DamageNumberManager | null = null;
   private particleManager: ParticleManager | null = null;
@@ -22,13 +22,18 @@ export class CombatManager {
   private comboTimer: number = 0;
   private readonly COMBO_TIMEOUT = 3000; // 3 seconds to chain next hit
 
+  // Backwards-compat getter: primary player
+  private get player(): Player {
+    return this.players[0];
+  }
+
   constructor(
     scene: Phaser.Scene,
-    player: Player,
+    player: Player | Player[],
     enemies: Phaser.Physics.Arcade.Group,
   ) {
     this.scene = scene;
-    this.player = player;
+    this.players = Array.isArray(player) ? player : [player];
     this.enemies = enemies;
   }
 
@@ -62,68 +67,71 @@ export class CombatManager {
       EventBus.emit("combo-update", { count: 0, multiplier: 1.0, timer: 0 });
     }
 
-    if (!this.player.isAttacking || !this.player.attackHitbox) return;
+    // Check attack hitboxes for all players
+    for (const p of this.players) {
+      if (!p.isAttacking || !p.attackHitbox) continue;
 
-    this.scene.physics.overlap(
-      this.player.attackHitbox,
-      this.enemies,
-      (_hitbox: any, enemy: any) => this.handleAttackHit(enemy),
-      undefined,
-      this,
-    );
+      this.scene.physics.overlap(
+        p.attackHitbox,
+        this.enemies,
+        (_hitbox: any, enemy: any) => this.handleAttackHit(enemy, p),
+        undefined,
+        this,
+      );
+    }
   }
 
-  private handleAttackHit(enemy: any): void {
-    if (this.player.hitEnemies.has(enemy)) return;
+  private handleAttackHit(enemy: any, attackingPlayer: Player): void {
+    if (attackingPlayer.hitEnemies.has(enemy)) return;
 
     // Piercing Attacks ability: don't add to hitEnemies, allowing attack to hit all enemies in range
-    if (!this.player.abilities.has('piercing_attacks')) {
-      this.player.hitEnemies.add(enemy);
+    if (!attackingPlayer.abilities.has('piercing_attacks')) {
+      attackingPlayer.hitEnemies.add(enemy);
     } else {
       // Still track to avoid hitting the same enemy twice per swing
-      this.player.hitEnemies.add(enemy);
+      attackingPlayer.hitEnemies.add(enemy);
     }
 
     if (!(enemy instanceof Enemy)) return;
 
-    const classConfig = COMBAT_CONFIG[this.player.classType];
+    const classConfig = COMBAT_CONFIG[attackingPlayer.classType];
     const attackDef =
-      this.player.currentAttackId && classConfig
-        ? classConfig.attacks[this.player.currentAttackId]
+      attackingPlayer.currentAttackId && classConfig
+        ? classConfig.attacks[attackingPlayer.currentAttackId]
         : null;
 
     // Apply combo multiplier to damage
     const comboMultiplier = 1.0 + Math.min(0.3, this.comboCount * 0.1);
-    let damage = this.calculateDamage((attackDef?.damageMultiplier ?? 1) * comboMultiplier);
+    let damage = this.calculateDamage((attackDef?.damageMultiplier ?? 1) * comboMultiplier, attackingPlayer);
 
     // Critical Strike ability: chance for 2x damage
-    if (this.player.abilities.has('critical_strike')) {
-      const critChance = this.player.stackedAbilities.has('critical_strike') ? 0.35 : 0.20;
+    if (attackingPlayer.abilities.has('critical_strike')) {
+      const critChance = attackingPlayer.stackedAbilities.has('critical_strike') ? 0.35 : 0.20;
       if (Math.random() < critChance) {
         damage = Math.round(damage * 2);
       }
     }
 
     // Berserker Rage ability: bonus damage when at low health
-    if (this.player.abilities.has('berserker_rage') && this.player.health === 1) {
-      const rageMult = this.player.stackedAbilities.has('berserker_rage') ? 2.0 : 1.5;
+    if (attackingPlayer.abilities.has('berserker_rage') && attackingPlayer.health === 1) {
+      const rageMult = attackingPlayer.stackedAbilities.has('berserker_rage') ? 2.0 : 1.5;
       damage = Math.round(damage * rageMult);
     }
 
     // Piercing Attacks stacked: +25% damage bonus
-    if (this.player.stackedAbilities.has('piercing_attacks')) {
+    if (attackingPlayer.stackedAbilities.has('piercing_attacks')) {
       damage = Math.round(damage * 1.25);
     }
 
     // Check if the enemy is blocking from the front
     if (enemy.isBlocking) {
-      const attackFromRight = this.player.x > enemy.x;
+      const attackFromRight = attackingPlayer.x > enemy.x;
       const enemyFacingRight = enemy.facingDirection > 0;
       // Block succeeds if attack comes from the direction the enemy is facing
       if ((attackFromRight && enemyFacingRight) || (!attackFromRight && !enemyFacingRight)) {
         // Blocked — small knockback to player, no damage to enemy
-        const blockDir = this.player.x > enemy.x ? 1 : -1;
-        this.player.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * 0.5 * blockDir);
+        const blockDir = attackingPlayer.x > enemy.x ? 1 : -1;
+        attackingPlayer.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * 0.5 * blockDir);
         return;
       }
     }
@@ -147,7 +155,7 @@ export class CombatManager {
     });
 
     // Monk flow state: increment flow on successful hit
-    this.player.onSuccessfulHit();
+    attackingPlayer.onSuccessfulHit();
 
     // Hit feedback: damage numbers, screen shake, hit-stop
     const isHeavy = (attackDef?.damageMultiplier ?? 1) >= 1.5;
@@ -185,9 +193,9 @@ export class CombatManager {
 
     // Knockback (only if enemy survived — bosses are immune to prevent falling through platforms)
     if (enemy.enemyType !== 'boss') {
-      const direction = enemyX > this.player.x ? 1 : -1;
+      const direction = enemyX > attackingPlayer.x ? 1 : -1;
       const kb = attackDef?.knockback ?? COMBAT.KNOCKBACK_ENEMY;
-      const kbMult = this.player.abilities.has('mega_knockback') ? 1.5 : 1.0;
+      const kbMult = attackingPlayer.abilities.has('mega_knockback') ? 1.5 : 1.0;
       enemy.setVelocityX(kb.x * direction * kbMult);
       enemy.setVelocityY(kb.y * kbMult);
     }
@@ -225,12 +233,13 @@ export class CombatManager {
     });
   }
 
-  handleContactDamage(_player: any, enemy: any): void {
+  handleContactDamage(playerObj: any, enemy: any): void {
     if (!(enemy instanceof Enemy)) return;
-    if (this.player.isDodgeActive) return;
-    if (this.player.isInvincible) return;
+    const p = playerObj as Player;
+    if (p.isDodgeActive) return;
+    if (p.isInvincible) return;
 
-    const parried = this.player.takeDamage(1, enemy.x, enemy);
+    const parried = p.takeDamage(1, enemy.x, enemy);
 
     // If parried, show parry damage number on the enemy and skip knockback/combo reset
     if (parried) {
@@ -238,7 +247,7 @@ export class CombatManager {
     }
 
     // Damage Reflection ability: reflect 30% of damage back to the attacker
-    if (this.player.abilities.has('damage_reflect') && enemy.active) {
+    if (p.abilities.has('damage_reflect') && enemy.active) {
       const reflectDamage = Math.max(1, Math.round(1 * 0.3));
       enemy.takeDamage(reflectDamage);
     }
@@ -249,28 +258,29 @@ export class CombatManager {
     EventBus.emit("combo-update", { count: 0, multiplier: 1.0, timer: 0 });
 
     EventBus.emit("health-change", {
-      health: this.player.health,
-      maxHealth: this.player.maxHealth,
+      health: p.health,
+      maxHealth: p.maxHealth,
     });
 
     // Knockback player away from enemy
-    const direction = this.player.x > enemy.x ? 1 : -1;
-    this.player.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
-    this.player.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
+    const direction = p.x > enemy.x ? 1 : -1;
+    p.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
+    p.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
   }
 
-  handleItemCollision(_player: any, item: any): void {
+  handleItemCollision(playerObj: any, item: any): void {
     if (item instanceof ItemDrop) {
-      this.player.collectItem(item.itemData);
+      const p = playerObj as Player;
+      p.collectItem(item.itemData);
       item.destroy();
     }
   }
 
-  private calculateDamage(multiplier: number): number {
+  private calculateDamage(multiplier: number, attackingPlayer: Player): number {
     const baseDamage = COMBAT.BASE_DAMAGE;
-    const classMult = this.player.classStats.attackDamage;
-    const itemMod = this.player.statModifiers.get("attackDamage") ?? 0;
-    const dodgeBuff = this.player.perfectDodgeBuff ? 1.5 : 1;
+    const classMult = attackingPlayer.classStats.attackDamage;
+    const itemMod = attackingPlayer.statModifiers.get("attackDamage") ?? 0;
+    const dodgeBuff = attackingPlayer.perfectDodgeBuff ? 1.5 : 1;
     return Math.round(baseDamage * multiplier * classMult * (1 + itemMod) * dodgeBuff);
   }
 }

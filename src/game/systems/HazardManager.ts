@@ -24,8 +24,13 @@ const WIND_PARTICLE_SPEED = 120;
 
 export class HazardManager {
   private scene: Phaser.Scene;
-  private player: Player;
+  private players: Player[];
   private staticPlatforms: Phaser.Physics.Arcade.StaticGroup;
+
+  // Backwards-compat getter: primary player
+  private get player(): Player {
+    return this.players[0];
+  }
 
   // Stalactite system
   private stalactites: Phaser.Physics.Arcade.Group;
@@ -39,11 +44,11 @@ export class HazardManager {
 
   constructor(
     scene: Phaser.Scene,
-    player: Player,
+    player: Player | Player[],
     staticPlatforms: Phaser.Physics.Arcade.StaticGroup,
   ) {
     this.scene = scene;
-    this.player = player;
+    this.players = Array.isArray(player) ? player : [player];
     this.staticPlatforms = staticPlatforms;
 
     this.stalactites = scene.physics.add.group({
@@ -207,11 +212,12 @@ export class HazardManager {
   }
 
   handleStalactitePlayerOverlap(
-    _player: any,
+    playerObj: any,
     stalactite: any,
   ): void {
     if (!stalactite.active) return;
-    this.player.takeDamage(STALACTITE_DAMAGE);
+    const p = playerObj as Player;
+    p.takeDamage(STALACTITE_DAMAGE);
 
     // Destroy stalactite
     this.stalactites.remove(stalactite, true, true);
@@ -260,14 +266,14 @@ export class HazardManager {
     const directionIndex = Math.floor(altitude / 500) % 2;
     const windDirection = directionIndex === 0 ? 1 : -1; // 1 = right, -1 = left
 
-    // Apply wind force to player when airborne
-    const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
-    const isAirborne =
-      !playerBody.touching.down && !playerBody.blocked.down;
-
-    if (isAirborne) {
-      const windPush = WIND_FORCE * windDirection * (delta / 1000);
-      this.player.setVelocityX(playerBody.velocity.x + windPush);
+    // Apply wind force to all players when airborne
+    for (const p of this.players) {
+      const body = p.body as Phaser.Physics.Arcade.Body;
+      const isAirborne = !body.touching.down && !body.blocked.down;
+      if (isAirborne) {
+        const windPush = WIND_FORCE * windDirection * (delta / 1000);
+        p.setVelocityX(body.velocity.x + windPush);
+      }
     }
 
     // Initialize wind particles if not yet created

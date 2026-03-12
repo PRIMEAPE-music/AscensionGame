@@ -17,7 +17,7 @@ export class CursedKnight extends Enemy {
     private readonly TELEGRAPH_DURATION = 400;
     private readonly RECOVERY_DURATION = 600;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 10, 2, 60);
         this.enemyType = 'cursed_knight';
         this.tier = 'intermediate';

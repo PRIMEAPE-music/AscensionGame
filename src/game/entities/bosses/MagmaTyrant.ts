@@ -20,7 +20,7 @@ export class MagmaTyrant extends Boss {
   // Telegraph indicator
   private telegraph: Phaser.GameObjects.Rectangle | null = null;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, player: Player, bossNumber: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[], bossNumber: number) {
     super(scene, x, y, player, bossNumber, 'Magma Tyrant');
 
     this.setTint(0xff4400);
@@ -181,10 +181,10 @@ export class MagmaTyrant extends Boss {
 
       this.lavaPools.push(pool);
 
-      // Overlap with player for damage
-      this.scene.physics.add.overlap(this.player, pool, () => {
-        if (!(this.player as any).isInvincible && pool.active) {
-          (this.player as any).takeDamage(1);
+      // Overlap with all players for damage
+      this.scene.physics.add.overlap(this._players, pool, (p: any) => {
+        if (!p.isInvincible && pool.active) {
+          p.takeDamage(1);
         }
       });
 
@@ -225,10 +225,10 @@ export class MagmaTyrant extends Boss {
 
         this.flameWaves.push(wave);
 
-        // Overlap with player
-        this.scene.physics.add.overlap(this.player, wave, () => {
-          if (!(this.player as any).isInvincible && wave.active) {
-            (this.player as any).takeDamage(1);
+        // Overlap with all players
+        this.scene.physics.add.overlap(this._players, wave, (p: any) => {
+          if (!p.isInvincible && wave.active) {
+            p.takeDamage(1);
           }
         });
 
@@ -264,10 +264,10 @@ export class MagmaTyrant extends Boss {
 
       this.boulders.push(boulder);
 
-      // Overlap with player
-      this.scene.physics.add.overlap(this.player, boulder, () => {
-        if (!(this.player as any).isInvincible && boulder.active) {
-          (this.player as any).takeDamage(1);
+      // Overlap with all players
+      this.scene.physics.add.overlap(this._players, boulder, (p: any) => {
+        if (!p.isInvincible && boulder.active) {
+          p.takeDamage(1);
           const idx = this.boulders.indexOf(boulder);
           if (idx !== -1) this.boulders.splice(idx, 1);
           boulder.destroy();

@@ -8,6 +8,7 @@ import { VoidWingArchon } from "../entities/bosses/VoidWingArchon";
 import { ChronoDemon } from "../entities/bosses/ChronoDemon";
 import { LegionMaster } from "../entities/bosses/LegionMaster";
 import { PlatformDevourer } from "../entities/bosses/PlatformDevourer";
+import { CoopManager } from "./CoopManager";
 
 export interface BossArena {
   centerX: number;
@@ -24,6 +25,7 @@ export interface BossArena {
 export class BossArenaManager {
   private scene: Phaser.Scene;
   private staticPlatforms: Phaser.Physics.Arcade.StaticGroup;
+  private players: Player[] = [];
 
   private bossInterval: number = 1000;
   private nextBossAltitude: number = 1000;
@@ -40,6 +42,11 @@ export class BossArenaManager {
   ) {
     this.scene = scene;
     this.staticPlatforms = staticPlatforms;
+  }
+
+  /** Set the players array for co-op support. */
+  setPlayers(players: Player[]): void {
+    this.players = players;
   }
 
   shouldSpawnArena(altitude: number): boolean {
@@ -156,27 +163,31 @@ export class BossArenaManager {
       .body as Phaser.Physics.Arcade.StaticBody;
     bottomBody.enable = true;
 
-    // Add player-barrier colliders
-    const player = (scene as any).player;
-    if (player) {
-      scene.physics.add.collider(player, arena.topBarrier);
-      scene.physics.add.collider(player, arena.bottomBarrier);
+    // Add player-barrier colliders for all players
+    const sceneAny = scene as any;
+    const playersToCollide: Player[] = this.players.length > 0
+      ? this.players
+      : (sceneAny.player ? [sceneAny.player] : []);
+    for (const p of playersToCollide) {
+      scene.physics.add.collider(p, arena.topBarrier);
+      scene.physics.add.collider(p, arena.bottomBarrier);
     }
 
     // Spawn the boss (Boss constructor emits boss-spawn event)
-    const enemies = (scene as any).enemies as Phaser.Physics.Arcade.Group;
-    if (player && enemies) {
-      this.currentBoss = this.spawnBoss(scene, player, enemies);
+    const enemies = sceneAny.enemies as Phaser.Physics.Arcade.Group;
+    if (playersToCollide.length > 0 && enemies) {
+      this.currentBoss = this.spawnBoss(scene, playersToCollide, enemies);
     }
   }
 
   spawnBoss(
     scene: Phaser.Scene,
-    player: Player,
+    player: Player | Player[],
     enemies: Phaser.Physics.Arcade.Group,
   ): Boss {
     const arena = this.currentArena!;
     const bossNumber = arena.bossNumber;
+    const players = Array.isArray(player) ? player : [player];
 
     // Cycle through 5 boss archetypes
     const bossIndex = ((bossNumber - 1) % 5) + 1;
@@ -184,29 +195,36 @@ export class BossArenaManager {
 
     switch (bossIndex) {
       case 1:
-        boss = new MagmaTyrant(scene, arena.centerX, arena.centerY, player, bossNumber);
+        boss = new MagmaTyrant(scene, arena.centerX, arena.centerY, players, bossNumber);
         break;
       case 2:
-        boss = new VoidWingArchon(scene, arena.centerX, arena.centerY, player, bossNumber);
+        boss = new VoidWingArchon(scene, arena.centerX, arena.centerY, players, bossNumber);
         break;
       case 3:
-        boss = new ChronoDemon(scene, arena.centerX, arena.centerY, player, bossNumber);
+        boss = new ChronoDemon(scene, arena.centerX, arena.centerY, players, bossNumber);
         break;
       case 4: {
-        const legion = new LegionMaster(scene, arena.centerX, arena.centerY, player, bossNumber);
+        const legion = new LegionMaster(scene, arena.centerX, arena.centerY, players, bossNumber);
         legion.setEnemiesGroup(enemies);
         boss = legion;
         break;
       }
       case 5: {
-        const devourer = new PlatformDevourer(scene, arena.centerX, arena.centerY, player, bossNumber);
+        const devourer = new PlatformDevourer(scene, arena.centerX, arena.centerY, players, bossNumber);
         devourer.setArena(arena);
         boss = devourer;
         break;
       }
       default:
-        boss = new MagmaTyrant(scene, arena.centerX, arena.centerY, player, bossNumber);
+        boss = new MagmaTyrant(scene, arena.centerX, arena.centerY, players, bossNumber);
         break;
+    }
+
+    // Apply co-op boss HP scaling
+    if (CoopManager.isActive()) {
+      const mult = CoopManager.getBossHPMultiplier();
+      boss.health = Math.ceil(boss.health * mult);
+      boss.maxHealth = Math.ceil(boss.maxHealth * mult);
     }
 
     enemies.add(boss);
