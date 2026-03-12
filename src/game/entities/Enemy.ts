@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Player } from './Player';
 import type { EnemyTier } from '../config/EnemyConfig';
+import { GameSettings } from '../systems/GameSettings';
 
 export type EnemyAIState = 'PATROL' | 'ALERT' | 'ATTACK' | 'FLEE' | 'STUN' | 'IDLE';
 
@@ -64,6 +65,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     /** Tween reference for flee blink effect, so we can clean it up. */
     private _fleeBlinkTween: Phaser.Tweens.Tween | null = null;
 
+    /** Outline sprite rendered behind this enemy for accessibility. */
+    private _outlineSprite: Phaser.GameObjects.Sprite | null = null;
+
     constructor(scene: Phaser.Scene, x: number, y: number, texture: string, player: Player, health: number, damage: number, speed: number) {
         super(scene, x, y, texture);
         this.player = player;
@@ -76,6 +80,15 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         scene.physics.add.existing(this);
 
         this.setCollideWorldBounds(false); // Enemies can fall off world
+
+        // Accessibility: enemy outlines
+        if (GameSettings.get().enemyOutlines) {
+            this._outlineSprite = scene.add.sprite(x, y, texture);
+            this._outlineSprite.setTint(0xffffff);
+            this._outlineSprite.setScale(this.scaleX * 1.12, this.scaleY * 1.12);
+            this._outlineSprite.setAlpha(0.7);
+            this._outlineSprite.setDepth((this.depth || 0) - 1);
+        }
     }
 
     /** Apply altitude-based stat scaling per the design doc. */
@@ -304,6 +317,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     protected die() {
         this.isDead = true;
         this.stopFleeBlink();
+        if (this._outlineSprite) {
+            this._outlineSprite.destroy();
+            this._outlineSprite = null;
+        }
         this.disableBody(true, true);
         this.destroy();
     }
@@ -313,6 +330,13 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         // Basic AI behavior — subclasses using useBaseAI get the state machine
         if (this.useBaseAI && _delta > 0) {
             this.updateAI(_delta);
+        }
+        // Sync accessibility outline sprite
+        if (this._outlineSprite && this._outlineSprite.active) {
+            this._outlineSprite.setPosition(this.x, this.y);
+            this._outlineSprite.setFlipX(this.flipX);
+            this._outlineSprite.setScale(this.scaleX * 1.12, this.scaleY * 1.12);
+            this._outlineSprite.setVisible(this.visible);
         }
     }
 }
