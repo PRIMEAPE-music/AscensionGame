@@ -446,7 +446,7 @@ export class MainScene extends Phaser.Scene {
     AudioManager.startMusic();
 
     EventBus.on("enemy-killed", () => AudioManager.playHitHeavy());
-    EventBus.on("boss-warning", () => AudioManager.playBossWarning());
+    EventBus.on("boss-warning", () => AudioManager.startBossMusic());
     EventBus.on("boss-defeated", () => AudioManager.playBossDefeat());
     EventBus.on("parry-success", () => AudioManager.playParry());
     EventBus.on("portal-teleport", () => AudioManager.playPortalTeleport());

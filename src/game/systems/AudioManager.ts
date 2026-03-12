@@ -7,30 +7,12 @@ interface AudioSettings {
     uiVolume: number;       // 0-1
 }
 
-// Biome music configuration
-interface BiomeMusicConfig {
-    baseNote: number;  // Root frequency in Hz
-    scale: number[];   // Scale intervals in semitones
-    mood: 'minor' | 'major' | 'diminished';
-    tempo: number;     // BPM
-}
-
-const BIOME_MUSIC: Record<string, BiomeMusicConfig> = {
-    'CAVERNS':  { baseNote: 110, scale: [0, 2, 3, 5, 7, 8, 10], mood: 'minor', tempo: 80 },
-    'TEMPLE':   { baseNote: 130, scale: [0, 2, 4, 5, 7, 9, 11], mood: 'major', tempo: 90 },
-    'SKY':      { baseNote: 165, scale: [0, 2, 3, 5, 7, 8, 11], mood: 'minor', tempo: 100 },
-    'VOID':     { baseNote: 82,  scale: [0, 1, 3, 4, 6, 7, 9, 10], mood: 'diminished', tempo: 70 },
-    'ABYSS':    { baseNote: 98,  scale: [0, 2, 3, 5, 7, 8, 10], mood: 'minor', tempo: 110 },
-};
-
-// Map game biome names to music config keys
-const BIOME_MAP: Record<string, string> = {
-    'HELLFIRE_CAVERNS': 'CAVERNS',
-    'CURSED_TEMPLE': 'TEMPLE',
-    'SKY_FRAGMENTS': 'SKY',
-    'VOID_DEPTHS': 'VOID',
-    'ABYSSAL_THRONE': 'ABYSS',
-};
+// Gameplay track playlist (shuffled per run)
+const GAMEPLAY_TRACKS = ['Warmth', 'gtfu', 'DRIFTIN', 'Bright', 'VIBRATIONS'];
+const BOSS_TRACK = 'GRAYHORSE';
+const DEATH_TRACK = 'SPIRITS';
+const MUSIC_PATH = 'assets/music/';
+const CROSSFADE_MS = 3000;
 
 export const AudioManager = {
     ctx: null as AudioContext | null,
@@ -51,15 +33,18 @@ export const AudioManager = {
 
     // ============ MUSIC STATE ============
     _musicPlaying: false,
-    _currentBiome: 'CAVERNS',
-    _inCombat: false,
     _inBoss: false,
-    _lowHealth: false,
-    _musicLoopTimer: null as ReturnType<typeof setTimeout> | null,
-    // Sequence state for more musical note selection
-    _lastNoteIdx: 0,
-    _phraseStep: 0,
-    _phraseDirection: 1 as 1 | -1,
+    _playlist: [] as string[],
+    _playlistIndex: 0,
+    _currentTrack: null as HTMLAudioElement | null,
+    _currentSource: null as MediaElementAudioSourceNode | null,
+    _bossTrack: null as HTMLAudioElement | null,
+    _bossSource: null as MediaElementAudioSourceNode | null,
+    _fadeInterval: null as ReturnType<typeof setInterval> | null,
+    _trackGain: null as GainNode | null,
+    _bossGain: null as GainNode | null,
+    _deathTrack: null as HTMLAudioElement | null,
+    _deathSource: null as MediaElementAudioSourceNode | null,
 
     init(): void {
         if (this.ctx) return;
@@ -235,10 +220,7 @@ export const AudioManager = {
     },
 
     playBossWarning(): void {
-        // No throttle — event-based
-        // Low ominous horn
-        this.playTone({ freq: 80, endFreq: 60, duration: 0.8, type: 'sawtooth', gain: 0.35, category: 'sfx' });
-        this.playTone({ freq: 120, endFreq: 80, duration: 0.6, type: 'square', gain: 0.2, category: 'sfx', delay: 0.3 });
+        // Boss warning sound replaced by boss music crossfade
     },
 
     playBossDefeat(): void {
@@ -276,220 +258,203 @@ export const AudioManager = {
         });
     },
 
-    // ============ PROCEDURAL MUSIC ============
+    // ============ MP3 MUSIC PLAYBACK ============
 
+    /** Shuffle the playlist and start playing from the first track */
     startMusic(): void {
-        if (this._musicPlaying || !this.ctx) return;
+        if (this._musicPlaying) return;
         this._musicPlaying = true;
-        this._phraseStep = 0;
-        this._lastNoteIdx = 0;
-        this._phraseDirection = 1;
-        this._scheduleNextBar();
+
+        // Shuffle playlist for this run
+        this._playlist = [...GAMEPLAY_TRACKS];
+        for (let i = this._playlist.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this._playlist[i], this._playlist[j]] = [this._playlist[j], this._playlist[i]];
+        }
+        this._playlistIndex = 0;
+        this._inBoss = false;
+
+        this._playTrack(this._playlist[0]);
     },
 
     stopMusic(): void {
         this._musicPlaying = false;
-        if (this._musicLoopTimer) {
-            clearTimeout(this._musicLoopTimer);
-            this._musicLoopTimer = null;
+        this._stopFade();
+        if (this._currentTrack) {
+            this._currentTrack.pause();
+            this._currentTrack.currentTime = 0;
+        }
+        if (this._bossTrack) {
+            this._bossTrack.pause();
+            this._bossTrack.currentTime = 0;
+        }
+        if (this._deathTrack) {
+            this._deathTrack.pause();
+            this._deathTrack.currentTime = 0;
         }
     },
 
-    setBiome(biome: string): void {
-        this._currentBiome = BIOME_MAP[biome] || 'CAVERNS';
-    },
+    /** No-ops kept for API compatibility — these were procedural music layers */
+    setBiome(_biome: string): void { /* no-op */ },
+    setCombatState(_inCombat: boolean): void { /* no-op */ },
+    setLowHealth(_low: boolean): void { /* no-op */ },
 
-    setCombatState(inCombat: boolean): void {
-        this._inCombat = inCombat;
-    },
-
+    /** Crossfade from gameplay music to boss track */
     setBossState(inBoss: boolean): void {
+        if (inBoss === this._inBoss) return;
         this._inBoss = inBoss;
-    },
 
-    setLowHealth(low: boolean): void {
-        this._lowHealth = low;
-    },
-
-    /** Pick the next note index in a musical way — stepwise motion with occasional leaps */
-    _pickNextNote(scale: number[]): number {
-        this._phraseStep++;
-        // Every 8 notes, possibly reverse direction for a natural phrase shape
-        if (this._phraseStep % 8 === 0) {
-            this._phraseDirection = (Math.random() > 0.5 ? 1 : -1) as 1 | -1;
-        }
-        // 70% stepwise motion, 20% small leap, 10% larger leap
-        const roll = Math.random();
-        let step: number;
-        if (roll < 0.7) {
-            step = this._phraseDirection; // move one scale degree
-        } else if (roll < 0.9) {
-            step = this._phraseDirection * 2; // skip one
+        if (inBoss) {
+            this._crossfadeToBoss();
         } else {
-            step = this._phraseDirection * (Math.random() > 0.5 ? 3 : -2); // leap
+            this._crossfadeToGameplay();
         }
-        this._lastNoteIdx = ((this._lastNoteIdx + step) % scale.length + scale.length) % scale.length;
-        return this._lastNoteIdx;
     },
 
-    _scheduleNextBar(): void {
-        if (!this._musicPlaying || !this.ctx) return;
-
-        const biomeConfig = BIOME_MUSIC[this._currentBiome] || BIOME_MUSIC['CAVERNS'];
-        const bpm = biomeConfig.tempo;
-        const beatDuration = 60 / bpm; // seconds per beat
-        const barDuration = beatDuration * 4; // 4/4 time
-        const twoBarDuration = barDuration * 2;
-
-        // === BASE LAYER: Ambient drone/pad ===
-        this._playMusicDrone(biomeConfig.baseNote, twoBarDuration);
-
-        // Add a subtle fifth drone for richness
-        const fifthFreq = biomeConfig.baseNote * 1.5;
-        this._playMusicDrone(fifthFreq, twoBarDuration, 0.025);
-
-        // === MELODY LAYER: Sparse arpeggiated notes ===
-        const scale = biomeConfig.scale;
-        for (let beat = 0; beat < 8; beat++) {
-            const noteTime = beat * beatDuration;
-
-            // Sparse: only ~50% of beats get a note (more sparse = more ambient)
-            if (Math.random() > 0.5) continue;
-
-            const noteIdx = this._pickNextNote(scale);
-            const semitones = scale[noteIdx];
-            // One octave above the base note for the melody
-            const freq = biomeConfig.baseNote * Math.pow(2, (semitones + 12) / 12);
-
-            // Vary note duration and volume slightly for a human feel
-            const noteDur = beatDuration * (0.6 + Math.random() * 0.4);
-            const noteVol = 0.05 + Math.random() * 0.04;
-
-            this._playMusicNote(freq, noteTime, noteDur, noteVol);
-        }
-
-        // === COMBAT LAYER: Rhythmic percussion ===
-        if (this._inCombat || this._inBoss) {
-            for (let beat = 0; beat < 8; beat++) {
-                const noteTime = beat * beatDuration;
-                // Kick on beats 1 and 5
-                if (beat === 0 || beat === 4) {
-                    this._playMusicPercussion(60, noteTime, 0.15, 0.06);
-                }
-                // Hi-hat on every beat (soft)
-                this._playMusicPercussion(8000, noteTime, 0.03, 0.03);
-                // Snare on beats 3 and 7
-                if (beat === 2 || beat === 6) {
-                    this._playMusicPercussion(200, noteTime, 0.08, 0.05);
-                }
-            }
-        }
-
-        // === BOSS LAYER: Heavy bass notes on root and fifth ===
-        if (this._inBoss) {
-            // Sub-bass root for first bar
-            this._playMusicNote(biomeConfig.baseNote / 2, 0, barDuration, 0.10);
-            // Fifth for second bar
-            this._playMusicNote(biomeConfig.baseNote / 2 * 1.5, barDuration, barDuration, 0.08);
-            // Add syncopated low hits for intensity
-            for (let beat = 0; beat < 8; beat++) {
-                if (beat % 3 === 1) {
-                    this._playMusicPercussion(50, beat * beatDuration, 0.2, 0.05);
-                }
-            }
-        }
-
-        // === LOW HEALTH LAYER: Tense high-frequency pulse ===
-        if (this._lowHealth) {
-            for (let i = 0; i < 8; i++) {
-                if (i % 2 === 0) {
-                    this._playMusicNote(
-                        biomeConfig.baseNote * 4,
-                        i * beatDuration,
-                        beatDuration * 0.25,
-                        0.035,
-                    );
-                }
-            }
-        }
-
-        // Schedule the next 2-bar phrase
-        this._musicLoopTimer = setTimeout(() => {
-            this._scheduleNextBar();
-        }, twoBarDuration * 1000);
+    /** Start boss music: fade out gameplay track, fade in GRAYHORSE */
+    startBossMusic(): void {
+        if (this._inBoss) return;
+        this._inBoss = true;
+        this._crossfadeToBoss();
     },
 
-    /** Sustained sine drone that fades in and out gently */
-    _playMusicDrone(freq: number, duration: number, volume: number = 0.05): void {
+    _playTrack(name: string): void {
         if (!this.ctx || !this.musicGain) return;
-        const now = this.ctx.currentTime;
 
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
+        // Create audio element
+        const audio = new Audio(`${MUSIC_PATH}${name}.mp3`);
+        audio.loop = false;
+        audio.preload = 'auto';
 
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now);
+        // Create per-track gain for crossfading
+        const trackGain = this.ctx.createGain();
+        trackGain.gain.value = 1.0;
+        trackGain.connect(this.musicGain!);
 
-        // Gentle fade-in / fade-out envelope
-        const fadeTime = Math.min(0.8, duration * 0.25);
-        gain.gain.setValueAtTime(0.001, now);
-        gain.gain.linearRampToValueAtTime(volume, now + fadeTime);
-        gain.gain.setValueAtTime(volume, now + duration - fadeTime);
-        gain.gain.linearRampToValueAtTime(0.001, now + duration);
+        const source = this.ctx.createMediaElementSource(audio);
+        source.connect(trackGain);
 
-        osc.connect(gain);
-        gain.connect(this.musicGain);
+        // Clean up previous track
+        if (this._currentTrack) {
+            this._currentTrack.pause();
+        }
 
-        osc.start(now);
-        osc.stop(now + duration + 0.02);
-    },
+        this._currentTrack = audio;
+        this._currentSource = source;
+        this._trackGain = trackGain;
 
-    /** Single melodic note with soft attack and exponential decay */
-    _playMusicNote(freq: number, delay: number, duration: number, volume: number): void {
-        if (!this.ctx || !this.musicGain) return;
-        const startTime = this.ctx.currentTime + delay;
-
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-
-        osc.type = 'triangle'; // Soft, warm tone
-        osc.frequency.setValueAtTime(freq, startTime);
-
-        // Soft attack to avoid clicks
-        gain.gain.setValueAtTime(0.001, startTime);
-        gain.gain.linearRampToValueAtTime(volume, startTime + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-
-        osc.connect(gain);
-        gain.connect(this.musicGain);
-
-        osc.start(startTime);
-        osc.stop(startTime + duration + 0.02);
-    },
-
-    /** Percussion hit using playTone routed through the music gain */
-    _playMusicPercussion(freq: number, delay: number, duration: number, volume: number = 0.06): void {
-        this.playTone({
-            freq,
-            endFreq: Math.max(freq * 0.5, 1),
-            duration,
-            type: 'square',
-            gain: volume,
-            category: 'music',
-            delay,
+        // When track ends, advance to next in playlist
+        audio.addEventListener('ended', () => {
+            if (!this._musicPlaying || this._inBoss) return;
+            this._playlistIndex = (this._playlistIndex + 1) % this._playlist.length;
+            this._playTrack(this._playlist[this._playlistIndex]);
         });
+
+        audio.play().catch(() => { /* autoplay blocked — will resume on user gesture */ });
     },
 
-    /** Slow descending notes for death — plays once, does not loop */
+    _crossfadeToBoss(): void {
+        if (!this.ctx || !this.musicGain) return;
+        this._stopFade();
+
+        // Create boss audio
+        const audio = new Audio(`${MUSIC_PATH}${BOSS_TRACK}.mp3`);
+        audio.loop = true;
+        audio.preload = 'auto';
+
+        const bossGain = this.ctx.createGain();
+        bossGain.gain.value = 0;
+        bossGain.connect(this.musicGain!);
+
+        const source = this.ctx.createMediaElementSource(audio);
+        source.connect(bossGain);
+
+        this._bossTrack = audio;
+        this._bossSource = source;
+        this._bossGain = bossGain;
+
+        audio.play().catch(() => {});
+
+        // Crossfade: fade out gameplay, fade in boss over CROSSFADE_MS
+        const steps = 30;
+        const stepMs = CROSSFADE_MS / steps;
+        let step = 0;
+        this._fadeInterval = setInterval(() => {
+            step++;
+            const t = step / steps;
+            if (this._trackGain) this._trackGain.gain.value = Math.max(0, 1 - t);
+            if (this._bossGain) this._bossGain.gain.value = t;
+            if (step >= steps) {
+                this._stopFade();
+                // Pause gameplay track (don't destroy — we'll resume after boss)
+                if (this._currentTrack) this._currentTrack.pause();
+            }
+        }, stepMs);
+    },
+
+    _crossfadeToGameplay(): void {
+        if (!this.ctx || !this.musicGain) return;
+        this._stopFade();
+
+        // Resume gameplay track from where it was, or advance to next
+        if (this._currentTrack && this._trackGain) {
+            this._trackGain.gain.value = 0;
+            this._currentTrack.play().catch(() => {});
+        } else {
+            // No track to resume — start next
+            this._playlistIndex = (this._playlistIndex + 1) % this._playlist.length;
+            this._playTrack(this._playlist[this._playlistIndex]);
+            if (this._trackGain) this._trackGain.gain.value = 0;
+        }
+
+        // Crossfade: fade out boss, fade in gameplay over CROSSFADE_MS
+        const steps = 30;
+        const stepMs = CROSSFADE_MS / steps;
+        let step = 0;
+        this._fadeInterval = setInterval(() => {
+            step++;
+            const t = step / steps;
+            if (this._bossGain) this._bossGain.gain.value = Math.max(0, 1 - t);
+            if (this._trackGain) this._trackGain.gain.value = t;
+            if (step >= steps) {
+                this._stopFade();
+                if (this._bossTrack) {
+                    this._bossTrack.pause();
+                    this._bossTrack.currentTime = 0;
+                }
+            }
+        }, stepMs);
+    },
+
+    _stopFade(): void {
+        if (this._fadeInterval) {
+            clearInterval(this._fadeInterval);
+            this._fadeInterval = null;
+        }
+    },
+
+    /** Play SPIRITS on death — fades out current music, plays death track */
     playDeathMusic(): void {
         if (!this.ctx || !this.musicGain) return;
-        // A4 descending to C4: sad, final
-        const notes = [440, 392, 349, 330, 294, 262];
-        notes.forEach((freq, i) => {
-            this._playMusicNote(freq, i * 0.6, 0.8, 0.08);
-            // Bass octave underneath
-            this._playMusicNote(freq * 0.5, i * 0.6, 1.0, 0.05);
-        });
+        this._stopFade();
+
+        // Stop whatever is playing
+        if (this._currentTrack) this._currentTrack.pause();
+        if (this._bossTrack) this._bossTrack.pause();
+        if (this._trackGain) this._trackGain.gain.value = 0;
+        if (this._bossGain) this._bossGain.gain.value = 0;
+
+        const audio = new Audio(`${MUSIC_PATH}${DEATH_TRACK}.mp3`);
+        audio.loop = false;
+        audio.preload = 'auto';
+
+        const source = this.ctx.createMediaElementSource(audio);
+        source.connect(this.musicGain!);
+
+        this._deathTrack = audio;
+        this._deathSource = source;
+
+        audio.play().catch(() => {});
     },
 
     // ============ LOW-LEVEL HELPERS ============
