@@ -61,6 +61,7 @@ export class MainScene extends Phaser.Scene {
   private risingDarkness!: RisingDarkness;
   private bossWarningEmitted: boolean = false;
   private lastSpeedEmitTime: number = 0;
+  private progressUpdateTimer: number = 0;
   private leftWall!: Phaser.GameObjects.Rectangle;
   private rightWall!: Phaser.GameObjects.Rectangle;
   private highestY: number = WORLD.PLAYER_SPAWN.y;
@@ -627,6 +628,17 @@ export class MainScene extends Phaser.Scene {
       this.lastSpeedEmitTime = time;
       const maxSpeed = 600;
       EventBus.emit('speed-change', { speed: Math.round(speed), maxSpeed });
+    }
+
+    // Throttled progress update for minimap/progress indicator (every 500ms)
+    this.progressUpdateTimer += delta;
+    if (this.progressUpdateTimer >= 500) {
+      this.progressUpdateTimer = 0;
+      EventBus.emit('progress-update', {
+        altitude,
+        nextBossAltitude: this.bossArenaManager.getNextBossAltitude(),
+        biome: this.biomeRenderer.getCurrentBiomeInfo().biome,
+      });
     }
 
     // Biome visuals

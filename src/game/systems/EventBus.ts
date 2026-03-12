@@ -52,6 +52,11 @@ export interface GameEvents {
   "player-dodge": { perfect: boolean };
   "player-land": {};
   "item-pickup": {};
+  "progress-update": {
+    altitude: number;
+    nextBossAltitude: number;
+    biome: string;
+  };
 }
 
 export const EventBus = {
