@@ -22,6 +22,10 @@ export interface GameSettingsData {
   colorblindMode: "NONE" | "DEUTERANOPIA" | "PROTANOPIA" | "TRITANOPIA";
   enemyOutlines: boolean;
   largerUI: boolean;
+  // Mouse Controls
+  mouseAttackEnabled: boolean;
+  mouseAimEnabled: boolean;
+  mouseCameraLookahead: boolean;
 }
 
 const DEFAULTS: GameSettingsData = {
@@ -46,6 +50,10 @@ const DEFAULTS: GameSettingsData = {
   colorblindMode: "NONE",
   enemyOutlines: false,
   largerUI: false,
+  // Mouse Controls
+  mouseAttackEnabled: false,
+  mouseAimEnabled: false,
+  mouseCameraLookahead: false,
 };
 
 export const GameSettings = {
@@ -86,6 +94,9 @@ export const GameSettings = {
           colorblindMode: (parsed.colorblindMode as GameSettingsData["colorblindMode"]) ?? DEFAULTS.colorblindMode,
           enemyOutlines: (parsed.enemyOutlines as boolean) ?? DEFAULTS.enemyOutlines,
           largerUI: (parsed.largerUI as boolean) ?? DEFAULTS.largerUI,
+          mouseAttackEnabled: (parsed.mouseAttackEnabled as boolean) ?? DEFAULTS.mouseAttackEnabled,
+          mouseAimEnabled: (parsed.mouseAimEnabled as boolean) ?? DEFAULTS.mouseAimEnabled,
+          mouseCameraLookahead: (parsed.mouseCameraLookahead as boolean) ?? DEFAULTS.mouseCameraLookahead,
         };
       }
     } catch {

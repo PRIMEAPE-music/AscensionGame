@@ -1464,6 +1464,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
             ))}
           </div>
         </div>
+
+        {/* Mouse Controls */}
+        <div>
+          <div style={sectionTitleStyle}>Mouse Controls</div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            }}
+          >
+            {renderToggleWithDescription(
+              "Click to Attack",
+              "Left click = attack, Right click = dodge",
+              "mouseAttackEnabled",
+              settings.mouseAttackEnabled,
+              (val) => updateSetting({ mouseAttackEnabled: val }),
+            )}
+            {renderToggleWithDescription(
+              "Mouse Aim",
+              "Aim projectile abilities with mouse cursor",
+              "mouseAimEnabled",
+              settings.mouseAimEnabled,
+              (val) => updateSetting({ mouseAimEnabled: val }),
+            )}
+            {renderToggleWithDescription(
+              "Camera Lookahead",
+              "Camera shifts toward mouse position",
+              "mouseCameraLookahead",
+              settings.mouseCameraLookahead,
+              (val) => updateSetting({ mouseCameraLookahead: val }),
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Back button */}

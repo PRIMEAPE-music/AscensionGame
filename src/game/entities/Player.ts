@@ -26,6 +26,7 @@ import { GameSettings } from "../systems/GameSettings";
 import { CosmeticManager } from "../systems/CosmeticManager";
 import { GamepadManager } from "../systems/GamepadManager";
 import { KeyBindings } from "../systems/KeyBindings";
+import { MouseManager } from "../systems/MouseManager";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
@@ -392,7 +393,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Cache JustDown once per frame — Phaser consumes it on first read
     // OR with gamepad inputs so both keyboard and controller work simultaneously
     this.jumpJustPressed = Phaser.Input.Keyboard.JustDown(this.cursors.space!) || gp.jumpJustPressed;
-    this.dodgeJustPressed = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed;
+    this.dodgeJustPressed = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed || (GameSettings.get().mouseAttackEnabled && MouseManager.isRightClicked());
     this.grappleJustPressed = Phaser.Input.Keyboard.JustDown(this.grappleKey) || gp.grappleJustPressed;
 
     this.updateTimers(delta);
@@ -922,11 +923,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const canAttack = !this.isAttacking || this.attackState === "RECOVERY";
 
     const gpCombat = GamepadManager.state;
+    const mouseAttack = GameSettings.get().mouseAttackEnabled;
     if (canAttack && !this.isWallSliding) {
-      if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpCombat.attackBJustPressed) {
+      if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpCombat.attackBJustPressed || (mouseAttack && MouseManager.isLeftClicked())) {
         this.handleComboInput('B');
         this.tryAttack(AttackType.LIGHT);
-      } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpCombat.attackXJustPressed) {
+      } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpCombat.attackXJustPressed || (mouseAttack && MouseManager.isMiddleClicked())) {
         this.handleComboInput('X');
         this.tryAttack(AttackType.HEAVY);
       } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpCombat.attackYJustPressed) {
@@ -2044,10 +2046,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.projectileCooldown = this.PROJECTILE_COOLDOWN;
 
-    const facingRight = !this.flipX;
-    const dirX = facingRight ? 1 : -1;
+    // Determine projectile direction: use mouse aim if enabled, else use facing direction
+    let dirX: number;
+    let dirY: number;
+    if (GameSettings.get().mouseAimEnabled) {
+      const aim = MouseManager.getAimDirection();
+      dirX = aim.x;
+      dirY = aim.y;
+    } else {
+      const facingRight = !this.flipX;
+      dirX = facingRight ? 1 : -1;
+      dirY = 0;
+    }
+
     const startX = this.x + dirX * 20;
-    const startY = this.y;
+    const startY = this.y + dirY * 20;
 
     // Create projectile sprite
     const projectile = this.scene.add.rectangle(startX, startY, 16, 8, 0x44aaff, 0.9);
@@ -2056,6 +2069,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const projBody = projectile.body as Phaser.Physics.Arcade.Body;
     projBody.setAllowGravity(false);
     projBody.setVelocityX(this.PROJECTILE_SPEED * dirX);
+    projBody.setVelocityY(this.PROJECTILE_SPEED * dirY);
 
     const damage = Math.round(
       COMBAT.BASE_DAMAGE * this.PROJECTILE_DAMAGE_MULT * this.classStats.attackDamage,
