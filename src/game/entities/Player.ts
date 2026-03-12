@@ -13,6 +13,13 @@ import {
   type AttackDefinition,
   COMBAT_CONFIG,
 } from "../systems/CombatTypes";
+import {
+  type ComboButton,
+  type ComboDefinition,
+  COMBO_DEFINITIONS,
+  COMBO_WINDOW,
+  COMBO_BUFFER,
+} from "../systems/ComboDefinitions";
 import { SPRITE_CONFIG } from "../config/AnimationConfig";
 import { PersistentStats } from "../systems/PersistentStats";
 import { GameSettings } from "../systems/GameSettings";
@@ -49,6 +56,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private comboTimer: number = 0;
   private attackState: "IDLE" | "STARTUP" | "ACTIVE" | "RECOVERY" = "IDLE";
   private attackTimer: number = 0;
+
+  // Combo String State
+  private comboStringSequence: ComboButton[] = [];
+  private comboStringTimer: number = 0;
+  private comboBufferedInput: ComboButton | null = null;
+  private currentComboString: ComboDefinition | null = null;
+  private comboStringStep: number = 0;
+  private comboStringMultiplier: number = 1.0;
+  private pendingFinisher: ComboDefinition | null = null;
 
   // Perfect Parry State
   private attackStartTime: number = 0;
@@ -399,6 +415,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.comboTimer -= delta;
       if (this.comboTimer <= 0) {
         this.currentAttackId = null;
+      }
+    }
+
+    // Combo string timer
+    if (this.comboStringTimer > 0) {
+      this.comboStringTimer -= delta;
+      if (this.comboStringTimer <= 0) {
+        this.comboStringSequence = [];
+        this.currentComboString = null;
+        this.comboStringStep = 0;
       }
     }
 
@@ -806,10 +832,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
           this.enterRecoveryState(attackDef);
         }
       } else if (this.attackState === "RECOVERY") {
-        if (
-          this.attackTimer >=
-          attackDef.startup + attackDef.hitbox.duration + attackDef.recovery
-        ) {
+        // Buffer input during RECOVERY within the buffer window before it ends
+        const totalAttackTime = attackDef.startup + attackDef.hitbox.duration + attackDef.recovery;
+        const timeUntilEnd = totalAttackTime - this.attackTimer;
+
+        if (timeUntilEnd <= COMBO_BUFFER && !this.comboBufferedInput) {
+          const gpBuf = GamepadManager.state;
+          if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpBuf.attackBJustPressed) {
+            this.comboBufferedInput = 'B';
+          } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpBuf.attackXJustPressed) {
+            this.comboBufferedInput = 'X';
+          } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpBuf.attackYJustPressed) {
+            this.comboBufferedInput = 'Y';
+          }
+        }
+
+        if (this.attackTimer >= totalAttackTime) {
           this.endAttack();
         }
       }
@@ -820,8 +858,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const gpCombat = GamepadManager.state;
     if (canAttack && !this.isWallSliding) {
       if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpCombat.attackBJustPressed) {
+        this.handleComboInput('B');
         this.tryAttack(AttackType.LIGHT);
       } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpCombat.attackXJustPressed) {
+        this.handleComboInput('X');
         this.tryAttack(AttackType.HEAVY);
       } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpCombat.attackYJustPressed) {
         // Priest ground SPECIAL: Sacred Ground instead of normal attack
@@ -839,6 +879,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
           );
           return;
         }
+        this.handleComboInput('Y');
         this.tryAttack(AttackType.SPECIAL);
       }
     }
@@ -1183,6 +1224,119 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.cleanupHitbox();
     this.restoreDefaultTint();
     this.comboTimer = COMBAT.COMBO_WINDOW;
+
+    // Reset combo string damage multiplier after the attack ends
+    if (this.comboStringMultiplier !== 1.0) {
+      const current = this.statModifiers.get("attackDamage") || 0;
+      this.statModifiers.set("attackDamage", current - (this.comboStringMultiplier - 1.0));
+      this.comboStringMultiplier = 1.0;
+    }
+    this.pendingFinisher = null;
+
+    // Process buffered input from combo string
+    if (this.comboBufferedInput) {
+      const buffered = this.comboBufferedInput;
+      this.comboBufferedInput = null;
+      this.handleComboInput(buffered);
+      const attackType = buffered === 'B' ? AttackType.LIGHT
+        : buffered === 'X' ? AttackType.HEAVY
+        : AttackType.SPECIAL;
+      this.tryAttack(attackType);
+    }
+  }
+
+  private handleComboInput(button: ComboButton): void {
+    // Add to sequence
+    this.comboStringSequence.push(button);
+    this.comboStringTimer = COMBO_WINDOW;
+
+    // Check for matching combos
+    const isAerial = !this.onGround;
+    const matching = COMBO_DEFINITIONS.filter(combo => {
+      if (combo.aerial !== isAerial) return false;
+      // Check if current sequence matches the start of this combo
+      if (this.comboStringSequence.length > combo.sequence.length) return false;
+      for (let i = 0; i < this.comboStringSequence.length; i++) {
+        if (this.comboStringSequence[i] !== combo.sequence[i]) return false;
+      }
+      return true;
+    });
+
+    if (matching.length === 0) {
+      // No combos match — reset sequence to just this button, try to start fresh
+      this.comboStringSequence = [button];
+      this.currentComboString = null;
+      this.comboStringStep = 0;
+
+      // Re-check with the single-button sequence for a fresh combo start
+      const freshMatch = COMBO_DEFINITIONS.filter(combo => {
+        if (combo.aerial !== isAerial) return false;
+        return combo.sequence[0] === button;
+      });
+      if (freshMatch.length > 0) {
+        this.currentComboString = freshMatch[0];
+        this.comboStringStep = 1;
+      }
+    } else {
+      // Check if any combo is complete
+      const complete = matching.find(c => c.sequence.length === this.comboStringSequence.length);
+      if (complete) {
+        this.executeComboFinisher(complete);
+        this.comboStringSequence = [];
+        this.currentComboString = null;
+        this.comboStringStep = 0;
+      } else {
+        // Partial match — combo in progress
+        this.currentComboString = matching[0]; // Best match
+        this.comboStringStep = this.comboStringSequence.length;
+      }
+    }
+  }
+
+  private executeComboFinisher(combo: ComboDefinition): void {
+    // Apply bonus damage multiplier to the current attack via statModifiers
+    // This will be picked up by CombatManager.calculateDamage through attackDamage modifier
+    this.comboStringMultiplier = combo.damageMultiplier;
+    const current = this.statModifiers.get("attackDamage") || 0;
+    this.statModifiers.set("attackDamage", current + (combo.damageMultiplier - 1.0));
+
+    // Store pending finisher for knockback effect on hit
+    if (combo.finisherEffect) {
+      this.pendingFinisher = combo;
+    }
+
+    // Emit combo event for HUD
+    EventBus.emit('combo-string', { name: combo.name, multiplier: combo.damageMultiplier });
+
+    // Visual feedback: screen shake for heavy finishers
+    if (combo.damageMultiplier >= 1.3) {
+      const settings = GameSettings.get();
+      const shakeLevel = settings.screenShakeIntensity;
+      if (shakeLevel !== 'OFF') {
+        const intensityMult = shakeLevel === 'LOW' ? 0.4 : shakeLevel === 'MEDIUM' ? 1.0 : 1.5;
+        const flashReduce = settings.flashReduction;
+        const baseIntensity = 0.004 * (flashReduce ? 0.3 : 1);
+        this.scene.cameras.main.shake(
+          100 * intensityMult,
+          baseIntensity * intensityMult,
+        );
+      }
+    }
+  }
+
+  private resetComboString(): void {
+    this.comboStringSequence = [];
+    this.comboStringTimer = 0;
+    this.currentComboString = null;
+    this.comboStringStep = 0;
+    this.comboBufferedInput = null;
+    // Clean up any active combo multiplier from statModifiers
+    if (this.comboStringMultiplier !== 1.0) {
+      const current = this.statModifiers.get("attackDamage") || 0;
+      this.statModifiers.set("attackDamage", current - (this.comboStringMultiplier - 1.0));
+      this.comboStringMultiplier = 1.0;
+    }
+    this.pendingFinisher = null;
   }
 
   /**
@@ -1368,6 +1522,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.health -= finalAmount;
     PersistentStats.addDamageTaken(finalAmount);
+
+    // Reset combo string on taking damage
+    this.resetComboString();
 
     // Stacked Damage Reflection: reflect additional 30% (total 60%) from Player side
     // Base 30% is handled by CombatManager; stacked adds another 30% here
@@ -2063,6 +2220,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Reset out-of-combat timer (Health Regen ability)
     this.outOfCombatTimer = 0;
     this.healthRegenTimer = 0;
+
+    // Apply combo string finisher knockback effect
+    if (this.pendingFinisher && this.pendingFinisher.finisherKnockback) {
+      const finisher = this.pendingFinisher;
+      const kb = finisher.finisherKnockback;
+      // Apply finisher knockback to all enemies hit by this attack
+      this.hitEnemies.forEach((enemy: any) => {
+        if (!enemy.active) return;
+        // Determine direction for horizontal knockback
+        const direction = enemy.x > this.x ? 1 : -1;
+        // Override with finisher knockback (additive to whatever CombatManager did)
+        if (kb.x !== 0) {
+          enemy.setVelocityX(kb.x * direction);
+        }
+        if (kb.y !== 0) {
+          enemy.setVelocityY(kb.y);
+        }
+      });
+    }
 
     // Monk flow state
     if (this.classType === ClassType.MONK) {
