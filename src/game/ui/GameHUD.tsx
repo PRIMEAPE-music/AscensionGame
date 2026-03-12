@@ -46,6 +46,13 @@ const glassStyle: React.CSSProperties = {
   boxShadow: "0 2px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05)",
 };
 
+const glassStyleHighContrast: React.CSSProperties = {
+  background: "rgba(0, 0, 0, 0.55)",
+  border: "2px solid rgba(255, 255, 255, 0.4)",
+  borderRadius: "12px",
+  boxShadow: "0 2px 16px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
+};
+
 // Bubble config: x%, size, duration, delay
 const BUBBLES = [
   { left: "12%", size: 5, duration: 3.2, delay: 0 },
@@ -105,6 +112,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     const hex = themeDef.previewColor.toString(16).padStart(6, '0');
     return `#${hex}`;
   }, []);
+
+  const highContrast = GameSettings.get().highContrast;
+  const activeGlassStyle = highContrast ? glassStyleHighContrast : glassStyle;
+  const hcTextShadow = highContrast
+    ? "1px 1px 2px rgba(0,0,0,1), -1px -1px 2px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,0.8)"
+    : "1px 1px 3px rgba(0,0,0,0.8)";
 
   const healthPercentage = (health / maxHealth) * 100;
   const tierColor = TIER_COLORS[styleTier] || "#666";
@@ -330,14 +343,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           alignItems: "flex-start",
           fontFamily: "monospace",
           color: "white",
-          textShadow: "1px 1px 3px rgba(0,0,0,0.8)",
+          textShadow: hcTextShadow,
           zIndex: 10,
         }}
       >
         {/* Left: Health */}
         <div
           style={{
-            ...glassStyle,
+            ...activeGlassStyle,
             padding: "12px 18px",
             display: "flex",
             flexDirection: "column",
@@ -411,7 +424,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         {/* Right: Altitude + Style + Boss Distance */}
         <div
           style={{
-            ...glassStyle,
+            ...activeGlassStyle,
             padding: "12px 18px",
             display: "flex",
             flexDirection: "column",
@@ -695,13 +708,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           justifyContent: "center",
           fontFamily: "monospace",
           color: "white",
-          textShadow: "1px 1px 3px rgba(0,0,0,0.8)",
+          textShadow: hcTextShadow,
           zIndex: 10,
         }}
       >
         <div
           style={{
-            ...glassStyle,
+            ...activeGlassStyle,
             padding: "8px 18px",
             pointerEvents: "auto",
             display: "flex",

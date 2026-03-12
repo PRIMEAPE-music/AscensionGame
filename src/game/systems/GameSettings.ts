@@ -153,16 +153,4 @@ export const GameSettings = {
     this._data = { ...this._data, ...partial };
     this.save();
   },
-
-  getScreenShakeIntensity(): "OFF" | "LOW" | "MEDIUM" | "HIGH" {
-    return this._data.screenShakeIntensity;
-  },
-
-  getDamageNumbers(): boolean {
-    return this._data.damageNumbers;
-  },
-
-  getParticleEffects(): "LOW" | "MEDIUM" | "HIGH" {
-    return this._data.particleEffects;
-  },
 };

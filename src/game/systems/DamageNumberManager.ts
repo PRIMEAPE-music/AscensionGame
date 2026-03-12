@@ -1,10 +1,27 @@
 import Phaser from 'phaser';
+import { GameSettings } from './GameSettings';
 
 export class DamageNumberManager {
   private scene: Phaser.Scene;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
+  }
+
+  /**
+   * Return font sizes based on the damageNumberSize setting.
+   */
+  private getFontSizes(): { heavy: string; normal: string } {
+    const size = GameSettings.get().damageNumberSize;
+    switch (size) {
+      case 'SMALL':
+        return { heavy: '18px', normal: '14px' };
+      case 'LARGE':
+        return { heavy: '32px', normal: '24px' };
+      case 'MEDIUM':
+      default:
+        return { heavy: '24px', normal: '18px' };
+    }
   }
 
   /**
@@ -15,7 +32,10 @@ export class DamageNumberManager {
    * @param isHeavy if true, show larger yellow text
    */
   show(x: number, y: number, damage: number, isHeavy: boolean = false): void {
-    const fontSize = isHeavy ? '24px' : '18px';
+    if (!GameSettings.get().damageNumbers) return;
+
+    const fontSizes = this.getFontSizes();
+    const fontSize = isHeavy ? fontSizes.heavy : fontSizes.normal;
     const color = isHeavy ? '#ffcc00' : '#ffffff';
 
     const text = this.scene.add.text(x, y - 20, `${damage}`, {
@@ -49,6 +69,8 @@ export class DamageNumberManager {
    * Uses gold color and larger text to emphasize the successful parry.
    */
   showParry(x: number, y: number, reflectedDamage: number): void {
+    if (!GameSettings.get().damageNumbers) return;
+
     // "PARRY!" label
     const label = this.scene.add.text(x, y - 30, 'PARRY!', {
       fontSize: '28px',

@@ -138,6 +138,27 @@ function App() {
     return () => window.removeEventListener('colorblind-mode-change', handleColorblindChange);
   }, []);
 
+  // High contrast filter: apply CSS contrast boost to the game canvas
+  useEffect(() => {
+    const applyHighContrast = () => {
+      const canvas = document.querySelector('#phaser-game canvas') as HTMLElement | null;
+      if (canvas) {
+        if (GameSettings.get().highContrast) {
+          canvas.style.filter = [canvas.style.filter.replace(/contrast\([^)]*\)\s*/g, '').trim(), 'contrast(1.3)'].filter(Boolean).join(' ');
+        } else {
+          canvas.style.filter = canvas.style.filter.replace(/contrast\([^)]*\)\s*/g, '').trim();
+        }
+      }
+    };
+    // Apply on mount after canvas is ready
+    const timer = setTimeout(applyHighContrast, 150);
+    window.addEventListener('high-contrast-change', applyHighContrast);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('high-contrast-change', applyHighContrast);
+    };
+  }, []);
+
   // FPS counter
   useEffect(() => {
     if (!GameSettings.get().showFPS) return;
@@ -907,7 +928,19 @@ function App() {
         <>
           <div id="phaser-game" style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", zIndex: 0 }} />
           {gameState === "PLAYING" && (
-            <>
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                pointerEvents: "none",
+                transform: GameSettings.get().largerUI ? "scale(1.15)" : undefined,
+                transformOrigin: "top left",
+                zIndex: 1,
+              }}
+            >
               <GameHUD
                 health={health}
                 maxHealth={maxHealth}
@@ -966,7 +999,7 @@ function App() {
                   }}
                 />
               )}
-            </>
+            </div>
           )}
           {gameState === "DEATH" && deathStats && (
             <DeathScreen
