@@ -83,6 +83,10 @@ export class MainScene extends Phaser.Scene {
   // Save system
   private lastSaveAltitude: number = 0;
 
+  // Play time tracking (for periodic save)
+  private playTimeAccumulator: number = 0;
+  private lastPlayTimeSave: number = 0;
+
   // Sacred Ground instances (Priest class mechanic)
   private sacredGrounds: SacredGround[] = [];
   private sacredGroundListener: ((e: Event) => void) | null = null;
@@ -502,7 +506,10 @@ export class MainScene extends Phaser.Scene {
     EventBus.on("boss-warning", () => AudioManager.startBossMusic());
     EventBus.on("boss-defeated", () => AudioManager.playBossDefeat());
     EventBus.on("parry-success", () => AudioManager.playParry());
-    EventBus.on("portal-teleport", () => AudioManager.playPortalTeleport());
+    EventBus.on("portal-teleport", () => {
+      AudioManager.playPortalTeleport();
+      PersistentStats.addPortalUsed();
+    });
     EventBus.on("combo-update", () => AudioManager.playComboTick());
     EventBus.on("essence-change", (data) => {
       if (data.gained > 0) AudioManager.playEssencePickup();
@@ -644,6 +651,15 @@ export class MainScene extends Phaser.Scene {
     // Tutorial hint checks
     const selectedClassType: string = (window as any).__selectedClass || 'MONK';
     TutorialManager.checkTriggers(altitude, Date.now() - this.runStartTime, selectedClassType);
+
+    // Periodically save play time (every 30 seconds)
+    this.playTimeAccumulator += delta;
+    if (this.playTimeAccumulator - this.lastPlayTimeSave >= 30000) {
+      const elapsed = this.playTimeAccumulator - this.lastPlayTimeSave;
+      this.lastPlayTimeSave = this.playTimeAccumulator;
+      PersistentStats.addPlayTime(elapsed);
+      PersistentStats.save();
+    }
 
     // Auto-save every 500m climbed
     if (altitude >= this.lastSaveAltitude + 500) {
