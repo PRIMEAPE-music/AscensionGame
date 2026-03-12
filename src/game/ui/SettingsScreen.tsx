@@ -3,6 +3,7 @@ import { GameSettings } from "../systems/GameSettings";
 import type { GameSettingsData } from "../systems/GameSettings";
 import { AudioManager } from "../systems/AudioManager";
 import { GamepadManager } from "../systems/GamepadManager";
+import { TutorialManager } from "../systems/TutorialManager";
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -72,6 +73,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     return { ...AudioManager.settings };
   });
   const [gamepadConnected, setGamepadConnected] = useState(false);
+  const [resetTutorialHover, setResetTutorialHover] = useState(false);
+  const [tutorialResetDone, setTutorialResetDone] = useState(false);
 
   useEffect(() => {
     GameSettings.load();
@@ -698,6 +701,74 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               (val) => updateSetting({ flashReduction: val }),
             )}
             {renderDamageNumberSizeSelector()}
+          </div>
+        </div>
+
+        {/* Tutorial */}
+        <div>
+          <div style={sectionTitleStyle}>Tutorial</div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "14px 20px",
+              background: "rgba(255, 255, 255, 0.03)",
+              borderRadius: "8px",
+              border: "1px solid rgba(255, 255, 255, 0.06)",
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+              <span
+                style={{
+                  fontSize: "15px",
+                  color: "rgba(200, 200, 220, 0.85)",
+                  letterSpacing: "1px",
+                }}
+              >
+                Reset Tutorial
+              </span>
+              <span
+                style={{
+                  fontSize: "11px",
+                  color: "rgba(200, 200, 220, 0.45)",
+                  letterSpacing: "0.5px",
+                }}
+              >
+                Show all tutorial hints again on next run
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                TutorialManager.reset();
+                setTutorialResetDone(true);
+                setTimeout(() => setTutorialResetDone(false), 2000);
+              }}
+              onMouseEnter={() => setResetTutorialHover(true)}
+              onMouseLeave={() => setResetTutorialHover(false)}
+              style={{
+                padding: "6px 18px",
+                fontSize: "12px",
+                fontFamily: "monospace",
+                fontWeight: "bold",
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+                border: `1px solid ${tutorialResetDone ? "rgba(80, 200, 80, 0.5)" : resetTutorialHover ? "rgba(224, 208, 160, 0.5)" : "rgba(224, 208, 160, 0.2)"}`,
+                borderRadius: "4px",
+                background: tutorialResetDone
+                  ? "rgba(80, 200, 80, 0.15)"
+                  : resetTutorialHover
+                    ? "rgba(224, 208, 160, 0.15)"
+                    : "rgba(224, 208, 160, 0.05)",
+                color: tutorialResetDone ? "#50c850" : "#e0d0a0",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                outline: "none",
+                minWidth: "80px",
+              }}
+            >
+              {tutorialResetDone ? "Done!" : "Reset"}
+            </button>
           </div>
         </div>
 
