@@ -60,6 +60,26 @@ const BUBBLES = [
   { left: "8%", size: 4, duration: 3.9, delay: 2.4 },
 ];
 
+function getBiomeColor(biome: string): string {
+  const colors: Record<string, string> = {
+    DEPTHS: '#4466aa',
+    CAVERNS: '#ff6633',
+    SPIRE: '#44cc44',
+    SUMMIT: '#8888cc',
+  };
+  return colors[biome] || '#888';
+}
+
+function formatBiomeName(biome: string): string {
+  const names: Record<string, string> = {
+    DEPTHS: 'The Depths',
+    CAVERNS: 'Infernal Caverns',
+    SPIRE: 'The Spire',
+    SUMMIT: 'The Summit',
+  };
+  return names[biome] || biome.replace(/_/g, ' ');
+}
+
 export const GameHUD: React.FC<GameHUDProps> = ({
   health,
   maxHealth,
@@ -127,6 +147,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   // Combo string name display
   const [comboName, setComboName] = useState<string | null>(null);
   const comboNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Progress indicator state
+  const [progressData, setProgressData] = useState<{
+    altitude: number;
+    nextBossAltitude: number;
+    biome: string;
+  } | null>(null);
 
   // Essence flash animation
   const [essenceFlash, setEssenceFlash] = useState(false);
@@ -219,6 +246,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       comboNameTimerRef.current = setTimeout(() => setComboName(null), 1500);
     });
 
+    const unsubProgress = EventBus.on("progress-update", (data) => {
+      setProgressData(data);
+    });
+
     return () => {
       unsubSpawn();
       unsubHealth();
@@ -229,11 +260,23 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       unsubSpeed();
       unsubInventory();
       unsubComboString();
+      unsubProgress();
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
       if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
       if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current);
     };
   }, []);
+
+  // Progress bar calculations
+  const bossInterval = 1000;
+  const progressAltitude = progressData?.altitude ?? altitude;
+  const nextBossAlt = progressData?.nextBossAltitude ?? bossInterval;
+  const currentBiome = progressData?.biome ?? 'DEPTHS';
+  const prevBossAlt = nextBossAlt - bossInterval;
+  const currentInInterval = progressAltitude - prevBossAlt;
+  const playerProgressPercent = Math.max(0, Math.min(100, (currentInInterval / bossInterval) * 100));
+  const bossProgressPercent = 100; // Boss is always at the top
+  const progressDistanceToBoss = Math.max(0, Math.round(nextBossAlt - progressAltitude));
 
   return (
     <>
@@ -379,6 +422,22 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         >
           <div style={{ fontSize: "18px", fontWeight: "bold", letterSpacing: "1px", color: themeColor }}>
             {Math.floor(altitude)}m
+            {progressDistanceToBoss <= 300 && !bossActive && (
+              <span style={{ color: '#ff4444', fontSize: '12px' }}>
+                {' '}| BOSS IN {progressDistanceToBoss}m
+              </span>
+            )}
+          </div>
+
+          {/* Biome Indicator */}
+          <div style={{
+            fontSize: '10px',
+            color: getBiomeColor(currentBiome),
+            opacity: 0.7,
+            textTransform: 'uppercase',
+            letterSpacing: '2px',
+          }}>
+            {formatBiomeName(currentBiome)}
           </div>
 
           {/* Boss Distance Indicator */}
@@ -730,7 +789,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         <div
           style={{
             position: "absolute",
-            right: 20,
+            right: 50,
             top: "40%",
             color: "#ffd700",
             fontSize: "18px",
@@ -743,6 +802,80 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           }}
         >
           {comboName}
+        </div>
+      )}
+
+      {/* Vertical Progress Bar — right edge */}
+      {!bossActive && (
+        <div style={{
+          position: 'absolute',
+          right: 10,
+          top: '30%',
+          height: '200px',
+          width: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          pointerEvents: 'none',
+          fontFamily: 'monospace',
+          zIndex: 10,
+        }}>
+          {/* Boss altitude label */}
+          <div style={{
+            fontSize: '9px',
+            color: '#ff6666',
+            marginBottom: '2px',
+            whiteSpace: 'nowrap',
+          }}>
+            {Math.floor(nextBossAlt)}m
+          </div>
+
+          {/* Bar background */}
+          <div style={{
+            width: '4px',
+            height: '100%',
+            background: 'rgba(255,255,255,0.15)',
+            borderRadius: '2px',
+            position: 'relative',
+          }}>
+            {/* Boss marker at top */}
+            <div style={{
+              position: 'absolute',
+              bottom: `${bossProgressPercent}%`,
+              left: '-6px',
+              width: '16px',
+              height: '3px',
+              background: '#ff4444',
+              borderRadius: '1px',
+              boxShadow: '0 0 4px #ff4444',
+              transform: 'translateY(50%)',
+            }} />
+
+            {/* Player position marker */}
+            <div style={{
+              position: 'absolute',
+              bottom: `${playerProgressPercent}%`,
+              left: '-4px',
+              width: '12px',
+              height: '4px',
+              background: '#44ff44',
+              borderRadius: '2px',
+              boxShadow: '0 0 4px #44ff44',
+              transform: 'translateY(50%)',
+            }} />
+          </div>
+
+          {/* Distance to boss label */}
+          <div style={{
+            fontSize: '10px',
+            color: progressDistanceToBoss <= 300 ? '#ff4444' : '#ff6666',
+            marginTop: '4px',
+            whiteSpace: 'nowrap',
+            fontWeight: progressDistanceToBoss <= 300 ? 'bold' : 'normal',
+            textShadow: progressDistanceToBoss <= 300 ? '0 0 6px rgba(255, 68, 68, 0.6)' : 'none',
+          }}>
+            {progressDistanceToBoss}m
+          </div>
         </div>
       )}
 
