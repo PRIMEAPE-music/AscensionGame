@@ -11,6 +11,8 @@ export interface RunSaveData {
     elapsedTimeMs: number;     // Time played in this run
     kills: number;
     bossesDefeated: number;
+    // Silver item slot count (dynamic)
+    maxSilverItems?: number;
     // Inventory
     silverItems: Array<{
         id: string;

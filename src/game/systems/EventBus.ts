@@ -11,7 +11,7 @@ export interface ShopOffering {
 export interface GameEvents {
   "health-change": { health: number; maxHealth: number };
   "altitude-change": { altitude: number };
-  "inventory-change": { inventory: ItemData[] };
+  "inventory-change": { inventory: ItemData[]; maxSlots?: number };
   "enemy-killed": { enemyType: string; x: number; y: number };
   "player-died": void;
   "boss-warning": { distance: number };

@@ -195,6 +195,13 @@ export class MainScene extends Phaser.Scene {
       this.risingDarkness.enable(WORLD.PLAYER_SPAWN.y);
     }
 
+    // Apply silver item slot modifiers
+    // Minimalist: cap at 1 slot (already starts at 1, so no change needed — addSilverItemSlot is blocked in boss-defeated handler)
+    // Speed Demon: extra slot at start (+1, so player starts with 2) — but Minimalist overrides
+    if (ActiveModifiers.isActive('speed_demon') && !ActiveModifiers.isActive('minimalist')) {
+      this.player.addSilverItemSlot();
+    }
+
     // Particle effects (needs player for state tracking)
     this.particleManager = new ParticleManager(this);
 
@@ -320,6 +327,11 @@ export class MainScene extends Phaser.Scene {
         essence: this.essenceTotal,
         gained: bossEssence,
       });
+
+      // Every 3rd boss grants +1 silver item slot (unless Minimalist is active)
+      if (data.bossNumber % 3 === 0 && !ActiveModifiers.isActive('minimalist')) {
+        this.player.addSilverItemSlot();
+      }
     });
 
     // Track enemy kills and award essence
@@ -680,6 +692,7 @@ export class MainScene extends Phaser.Scene {
       elapsedTimeMs: Date.now() - this.runStartTime,
       kills: this.killCount,
       bossesDefeated: this.bossesDefeated,
+      maxSilverItems: this.player.getMaxSilverItems(),
       silverItems: this.player.inventory
         .filter(item => item.type === 'SILVER')
         .map(item => ({
@@ -715,6 +728,11 @@ export class MainScene extends Phaser.Scene {
 
     // Adjust run start time to account for previously elapsed time
     this.runStartTime = Date.now() - data.elapsedTimeMs;
+
+    // Restore max silver item slots from save (set directly to avoid emitting extra events)
+    if (data.maxSilverItems && data.maxSilverItems > 1) {
+      this.player.setMaxSilverItems(data.maxSilverItems);
+    }
 
     // Restore silver items from save
     for (const savedItem of data.silverItems) {
