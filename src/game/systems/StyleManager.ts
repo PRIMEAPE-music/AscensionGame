@@ -95,6 +95,11 @@ export class StyleManager {
     this.addStyle(STYLE.SLOPE_LAUNCH_BONUS * (speed / 500));
   }
 
+  onComboEnd(finalCount: number): void {
+    // Award style points based on combo length: base of MULTI_KILL_BONUS scaled by hits
+    this.addStyle(STYLE.MULTI_KILL_BONUS * (finalCount - 2));
+  }
+
   private recomputeCache(): void {
     if (this.meter === this._lastMeterValue) return;
     this._lastMeterValue = this.meter;

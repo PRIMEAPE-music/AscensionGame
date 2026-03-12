@@ -42,6 +42,7 @@ export interface GameEvents {
   "portal-teleport": { fromAltitude: number; toAltitude: number };
   "flow-change": { flow: number; maxFlow: number };
   "shield-guard-change": { active: boolean };
+  "priest-sacred-ground": { x: number; y: number };
   "sacred-ground-cooldown": { remaining: number; total: number };
   "gambling-open": { essence: number };
   "gambling-close": {};
