@@ -158,8 +158,8 @@ export class ParticleManager {
   // ---------------------------------------------------------------------------
 
   private getParticleMultiplier(): number {
-    const quality = GameSettings.get().graphicsQuality;
-    switch (quality) {
+    const level = GameSettings.get().particleEffects;
+    switch (level) {
       case 'LOW': return 0.3;
       case 'MEDIUM': return 1.0;
       case 'HIGH': return 1.5;
