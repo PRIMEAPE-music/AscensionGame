@@ -207,6 +207,18 @@ function App() {
     elapsedTimeRef.current = 0;
   }, []);
 
+  const handleStartWeeklyChallenge = useCallback((challengeData: { class: string; modifiers: string[]; seed: number; specialRule: string }) => {
+    setSelectedClass(challengeData.class as ClassType);
+    (window as any).__selectedClass = challengeData.class;
+    (window as any).__dailyChallengeSeed = challengeData.seed;
+    (window as any).__isWeeklyChallenge = true;
+    (window as any).__weeklySpecialRule = challengeData.specialRule;
+    ActiveModifiers.setModifiers(challengeData.modifiers);
+    setGameState("PLAYING");
+    startTimeRef.current = Date.now();
+    elapsedTimeRef.current = 0;
+  }, []);
+
   const handleBackToMenu = useCallback(() => {
     setMenuScreen("main");
   }, []);
@@ -287,6 +299,8 @@ function App() {
     GoldItemCollection.clearEquipped();
     delete (window as any).__isDailyChallenge;
     delete (window as any).__dailyChallengeSeed;
+    delete (window as any).__isWeeklyChallenge;
+    delete (window as any).__weeklySpecialRule;
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setHasSavedRun(false);
@@ -335,6 +349,8 @@ function App() {
     setSavedRunInfo(RunSaveManager.getSaveInfo());
     delete (window as any).__isDailyChallenge;
     delete (window as any).__dailyChallengeSeed;
+    delete (window as any).__isWeeklyChallenge;
+    delete (window as any).__weeklySpecialRule;
     setGameState("MAIN_MENU");
     setMenuScreen("main");
     setSelectedClass(null);
@@ -368,6 +384,8 @@ function App() {
     GoldItemCollection.clearEquipped();
     delete (window as any).__isDailyChallenge;
     delete (window as any).__dailyChallengeSeed;
+    delete (window as any).__isWeeklyChallenge;
+    delete (window as any).__weeklySpecialRule;
     gameRef.current?.destroy(true);
     gameRef.current = null;
     setGameState("PLAYING"); // Triggers game recreation with same class
@@ -558,6 +576,17 @@ function App() {
           stats.timeMs
         );
         (window as any).__dailyChallengeNewBest = isNewBest;
+      }
+
+      // Submit weekly challenge run if applicable
+      if ((window as any).__isWeeklyChallenge) {
+        const isNewBest = DailyChallenge.submitWeeklyRun(
+          stats.altitude,
+          stats.kills,
+          stats.bossesDefeated,
+          stats.timeMs
+        );
+        (window as any).__weeklyChallengeNewBest = isNewBest;
       }
 
       // Check achievements after run ends
@@ -764,6 +793,7 @@ function App() {
         <DailyChallengeScreen
           onBack={handleBackToMenu}
           onStartChallenge={handleStartDailyChallenge}
+          onStartWeeklyChallenge={handleStartWeeklyChallenge}
         />
       )}
       {gameState === "CLASS_SELECT" && (
