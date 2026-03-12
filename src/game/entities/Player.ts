@@ -99,6 +99,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private dodgeJustPressed: boolean = false;
   private grappleJustPressed: boolean = false;
 
+  // Toggle dodge state
+  private toggleDodgeActive: boolean = false;
+  private toggleDodgeTimeout: number = 0;
+  private readonly TOGGLE_DODGE_MAX_DURATION = 500; // ms before auto-cancel
+
+  // Input delay compensation
+  private inputBuffer: Array<{ time: number; jump: boolean; dodge: boolean; grapple: boolean }> = [];
+  private _delayedJump: boolean = false;
+  private _delayedDodge: boolean = false;
+  private _delayedGrapple: boolean = false;
+
   // Double Jump State (supports triple jump when stacked)
   private canDoubleJump: boolean = false;
   private hasDoubleJumped: boolean = false;
@@ -391,9 +402,73 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // Cache JustDown once per frame — Phaser consumes it on first read
     // OR with gamepad inputs so both keyboard and controller work simultaneously
-    this.jumpJustPressed = Phaser.Input.Keyboard.JustDown(this.cursors.space!) || gp.jumpJustPressed;
-    this.dodgeJustPressed = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed;
-    this.grappleJustPressed = Phaser.Input.Keyboard.JustDown(this.grappleKey) || gp.grappleJustPressed;
+    const rawJump = Phaser.Input.Keyboard.JustDown(this.cursors.space!) || gp.jumpJustPressed;
+    let rawDodge = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed;
+    const rawGrapple = Phaser.Input.Keyboard.JustDown(this.grappleKey) || gp.grappleJustPressed;
+
+    // Toggle dodge: pressing dodge toggles the dodge state on/off
+    const settings = GameSettings.get();
+    if (settings.toggleDodge) {
+      if (rawDodge) {
+        if (this.toggleDodgeActive) {
+          // Second press cancels the dodge
+          this.toggleDodgeActive = false;
+          rawDodge = false;
+        } else if (this.dodgeTimer <= 0) {
+          // First press starts the dodge
+          this.toggleDodgeActive = true;
+          this.toggleDodgeTimeout = this.TOGGLE_DODGE_MAX_DURATION;
+        }
+      }
+      // Auto-cancel after timeout
+      if (this.toggleDodgeActive) {
+        this.toggleDodgeTimeout -= delta;
+        if (this.toggleDodgeTimeout <= 0 || this.dodgeTimer <= 0) {
+          // Keep active only if dodge is still running
+          if (this.dodgeTimer <= 0) {
+            this.toggleDodgeActive = false;
+          }
+        }
+      }
+    }
+
+    // Input delay compensation
+    const inputDelay = settings.inputDelay;
+    if (inputDelay > 0) {
+      // Buffer current inputs with timestamp
+      this.inputBuffer.push({
+        time: time,
+        jump: rawJump,
+        dodge: rawDodge,
+        grapple: rawGrapple,
+      });
+
+      // Process inputs that have aged past the delay threshold
+      this._delayedJump = false;
+      this._delayedDodge = false;
+      this._delayedGrapple = false;
+
+      const cutoff = time - inputDelay;
+      while (this.inputBuffer.length > 0 && this.inputBuffer[0].time <= cutoff) {
+        const input = this.inputBuffer.shift()!;
+        if (input.jump) this._delayedJump = true;
+        if (input.dodge) this._delayedDodge = true;
+        if (input.grapple) this._delayedGrapple = true;
+      }
+
+      this.jumpJustPressed = this._delayedJump;
+      this.dodgeJustPressed = this._delayedDodge;
+      this.grappleJustPressed = this._delayedGrapple;
+
+      // Cap buffer size to prevent memory leak
+      if (this.inputBuffer.length > 60) {
+        this.inputBuffer = this.inputBuffer.slice(-30);
+      }
+    } else {
+      this.jumpJustPressed = rawJump;
+      this.dodgeJustPressed = rawDodge;
+      this.grappleJustPressed = rawGrapple;
+    }
 
     this.updateTimers(delta);
     this.handleMovement();
@@ -425,14 +500,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   private updateTimers(delta: number) {
+    // Use GameSettings values for coyote time and jump buffer (with PHYSICS as fallback)
+    const accessSettings = GameSettings.get();
+    const coyoteTime = accessSettings.coyoteTimeWindow ?? PHYSICS.COYOTE_TIME;
+    const jumpBuffer = accessSettings.jumpBufferWindow ?? PHYSICS.JUMP_BUFFER;
+
     if (this.onGround) {
-      this.coyoteTimer = PHYSICS.COYOTE_TIME;
+      this.coyoteTimer = coyoteTime;
     } else {
       this.coyoteTimer -= delta;
     }
 
     if (this.jumpJustPressed) {
-      this.jumpBufferTimer = PHYSICS.JUMP_BUFFER;
+      this.jumpBufferTimer = jumpBuffer;
     } else {
       this.jumpBufferTimer -= delta;
     }

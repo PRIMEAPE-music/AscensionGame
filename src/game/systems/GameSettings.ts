@@ -22,6 +22,14 @@ export interface GameSettingsData {
   colorblindMode: "NONE" | "DEUTERANOPIA" | "PROTANOPIA" | "TRITANOPIA";
   enemyOutlines: boolean;
   largerUI: boolean;
+  // Accessibility — Audio & Input
+  monoAudio: boolean;
+  visualSoundCues: boolean;
+  toggleDodge: boolean;
+  toggleBlock: boolean;
+  jumpBufferWindow: number;
+  coyoteTimeWindow: number;
+  inputDelay: number;
 }
 
 const DEFAULTS: GameSettingsData = {
@@ -46,6 +54,14 @@ const DEFAULTS: GameSettingsData = {
   colorblindMode: "NONE",
   enemyOutlines: false,
   largerUI: false,
+  // Accessibility — Audio & Input
+  monoAudio: false,
+  visualSoundCues: false,
+  toggleDodge: false,
+  toggleBlock: false,
+  jumpBufferWindow: 150,
+  coyoteTimeWindow: 100,
+  inputDelay: 0,
 };
 
 export const GameSettings = {
@@ -86,6 +102,13 @@ export const GameSettings = {
           colorblindMode: (parsed.colorblindMode as GameSettingsData["colorblindMode"]) ?? DEFAULTS.colorblindMode,
           enemyOutlines: (parsed.enemyOutlines as boolean) ?? DEFAULTS.enemyOutlines,
           largerUI: (parsed.largerUI as boolean) ?? DEFAULTS.largerUI,
+          monoAudio: (parsed.monoAudio as boolean) ?? DEFAULTS.monoAudio,
+          visualSoundCues: (parsed.visualSoundCues as boolean) ?? DEFAULTS.visualSoundCues,
+          toggleDodge: (parsed.toggleDodge as boolean) ?? DEFAULTS.toggleDodge,
+          toggleBlock: (parsed.toggleBlock as boolean) ?? DEFAULTS.toggleBlock,
+          jumpBufferWindow: (parsed.jumpBufferWindow as number) ?? DEFAULTS.jumpBufferWindow,
+          coyoteTimeWindow: (parsed.coyoteTimeWindow as number) ?? DEFAULTS.coyoteTimeWindow,
+          inputDelay: (parsed.inputDelay as number) ?? DEFAULTS.inputDelay,
         };
       }
     } catch {

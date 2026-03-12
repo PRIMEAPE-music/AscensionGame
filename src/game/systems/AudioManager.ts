@@ -1,3 +1,5 @@
+import { GameSettings } from './GameSettings';
+
 const STORAGE_KEY = 'ascension_audio_settings';
 
 interface AudioSettings {
@@ -26,6 +28,11 @@ export const AudioManager = {
     sfxGain: null as GainNode | null,
     uiGain: null as GainNode | null,
     masterGain: null as GainNode | null,
+
+    // Mono audio support
+    _monoEnabled: false,
+    _monoMerger: null as ChannelMergerNode | null,
+    _monoSplitter: null as ChannelSplitterNode | null,
 
     // Throttle tracking for rapidly-repeating sounds
     _lastPlayTime: {} as Record<string, number>,
@@ -67,6 +74,49 @@ export const AudioManager = {
         this.uiGain = this.ctx.createGain();
         this.uiGain.connect(this.masterGain);
         this.uiGain.gain.value = this.settings.uiVolume;
+
+        // Apply mono audio setting from GameSettings
+        const gameSettings = GameSettings.get();
+        if (gameSettings.monoAudio) {
+            this.setMonoMode(true);
+        }
+    },
+
+    setMonoMode(enabled: boolean): void {
+        if (!this.ctx || !this.masterGain) return;
+        if (enabled === this._monoEnabled) return;
+        this._monoEnabled = enabled;
+
+        // Disconnect master from current destination
+        this.masterGain.disconnect();
+
+        if (enabled) {
+            // Create splitter -> merger pipeline to merge stereo to mono
+            // Splitter takes stereo input and splits into 2 channels
+            this._monoSplitter = this.ctx.createChannelSplitter(2);
+            // Merger takes 2 inputs and merges into 1 channel output
+            this._monoMerger = this.ctx.createChannelMerger(1);
+
+            // Connect master -> splitter
+            this.masterGain.connect(this._monoSplitter);
+            // Connect both L and R channels into the single mono channel
+            this._monoSplitter.connect(this._monoMerger, 0, 0);
+            this._monoSplitter.connect(this._monoMerger, 1, 0);
+            // Connect merger -> destination
+            this._monoMerger.connect(this.ctx.destination);
+        } else {
+            // Clean up mono nodes
+            if (this._monoSplitter) {
+                try { this._monoSplitter.disconnect(); } catch { /* already disconnected */ }
+                this._monoSplitter = null;
+            }
+            if (this._monoMerger) {
+                try { this._monoMerger.disconnect(); } catch { /* already disconnected */ }
+                this._monoMerger = null;
+            }
+            // Reconnect master directly to destination
+            this.masterGain.connect(this.ctx.destination);
+        }
     },
 
     resume(): void {

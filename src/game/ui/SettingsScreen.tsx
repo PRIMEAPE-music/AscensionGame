@@ -237,6 +237,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     if (partial.colorblindMode !== undefined) {
       window.dispatchEvent(new CustomEvent('colorblind-mode-change'));
     }
+    // Apply mono audio change immediately
+    if (partial.monoAudio !== undefined) {
+      AudioManager.setMonoMode(partial.monoAudio);
+    }
   };
 
   const renderToggle = (
@@ -617,6 +621,90 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
             }}
           >
             {pct}%
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAccessibilitySlider = (
+    label: string,
+    description: string,
+    id: string,
+    value: number,
+    min: number,
+    max: number,
+    step: number,
+    unit: string,
+    onChange: (val: number) => void,
+  ) => {
+    const isHovered = hoveredToggle === id;
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 20px",
+          background: isHovered
+            ? "rgba(255, 255, 255, 0.06)"
+            : "rgba(255, 255, 255, 0.03)",
+          borderRadius: "8px",
+          border: `1px solid ${isHovered ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.06)"}`,
+          transition: "all 0.2s ease",
+        }}
+        onMouseEnter={() => setHoveredToggle(id)}
+        onMouseLeave={() => setHoveredToggle(null)}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: "160px" }}>
+          <span
+            style={{
+              fontSize: "15px",
+              color: "rgba(200, 200, 220, 0.85)",
+              letterSpacing: "1px",
+            }}
+          >
+            {label}
+          </span>
+          <span
+            style={{
+              fontSize: "11px",
+              color: "rgba(200, 200, 220, 0.45)",
+              letterSpacing: "0.5px",
+            }}
+          >
+            {description}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, justifyContent: "flex-end" }}>
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onChange={(e) => onChange(parseInt(e.target.value))}
+            style={{
+              width: "160px",
+              height: "6px",
+              cursor: "pointer",
+              accentColor: "#4488cc",
+              background: "rgba(255, 255, 255, 0.08)",
+              borderRadius: "3px",
+              outline: "none",
+            }}
+          />
+          <span
+            style={{
+              fontSize: "13px",
+              fontWeight: "bold",
+              color: "#4488cc",
+              minWidth: "55px",
+              textAlign: "right",
+              letterSpacing: "1px",
+            }}
+          >
+            {value}{unit}
           </span>
         </div>
       </div>
@@ -1120,6 +1208,91 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               "largerUI",
               settings.largerUI,
               (val) => updateSetting({ largerUI: val }),
+            )}
+
+            {/* Divider before audio & input accessibility */}
+            <div
+              style={{
+                height: "1px",
+                background: "rgba(68, 136, 204, 0.1)",
+                margin: "6px 0",
+              }}
+            />
+
+            {/* Audio Accessibility */}
+            {renderToggleWithDescription(
+              "Mono Audio",
+              "Merge stereo channels to mono (useful for single-ear listening)",
+              "monoAudio",
+              settings.monoAudio,
+              (val) => updateSetting({ monoAudio: val }),
+            )}
+            {renderToggleWithDescription(
+              "Visual Sound Cues",
+              "Show on-screen indicators for important sounds (for deaf/HoH players)",
+              "visualSoundCues",
+              settings.visualSoundCues,
+              (val) => updateSetting({ visualSoundCues: val }),
+            )}
+
+            {/* Divider before input accessibility */}
+            <div
+              style={{
+                height: "1px",
+                background: "rgba(68, 136, 204, 0.1)",
+                margin: "6px 0",
+              }}
+            />
+
+            {/* Input Accessibility */}
+            {renderToggleWithDescription(
+              "Toggle Dodge",
+              "Press dodge to activate instead of hold (press again to cancel)",
+              "toggleDodge",
+              settings.toggleDodge,
+              (val) => updateSetting({ toggleDodge: val }),
+            )}
+            {renderToggleWithDescription(
+              "Toggle Block",
+              "Press block to activate instead of hold",
+              "toggleBlock",
+              settings.toggleBlock,
+              (val) => updateSetting({ toggleBlock: val }),
+            )}
+
+            {/* Timing Window Sliders */}
+            {renderAccessibilitySlider(
+              "Jump Buffer",
+              "Time window to buffer jump input before landing",
+              "jumpBufferWindow",
+              settings.jumpBufferWindow,
+              50,
+              300,
+              25,
+              "ms",
+              (val) => updateSetting({ jumpBufferWindow: val }),
+            )}
+            {renderAccessibilitySlider(
+              "Coyote Time",
+              "Grace period to jump after walking off an edge",
+              "coyoteTimeWindow",
+              settings.coyoteTimeWindow,
+              50,
+              300,
+              25,
+              "ms",
+              (val) => updateSetting({ coyoteTimeWindow: val }),
+            )}
+            {renderAccessibilitySlider(
+              "Input Delay",
+              "Compensate for input lag by buffering inputs",
+              "inputDelay",
+              settings.inputDelay,
+              0,
+              200,
+              10,
+              "ms",
+              (val) => updateSetting({ inputDelay: val }),
             )}
           </div>
         </div>

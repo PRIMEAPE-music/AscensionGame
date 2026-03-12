@@ -32,6 +32,7 @@ import { RunSaveManager } from "../systems/RunSaveManager";
 import type { RunSaveData } from "../systems/RunSaveManager";
 import { GamepadManager } from "../systems/GamepadManager";
 import { TutorialManager } from "../systems/TutorialManager";
+import { SoundCueManager } from "../systems/SoundCueManager";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -504,6 +505,9 @@ export class MainScene extends Phaser.Scene {
     EventBus.on("player-land", () => AudioManager.playLand());
     EventBus.on("item-pickup", () => AudioManager.playItemPickup());
 
+    // Initialize visual sound cue system (accessibility)
+    SoundCueManager.init(this);
+
     // Music state: biome changes
     EventBus.on("biome-change", (data) => AudioManager.setBiome(data.biome));
 
@@ -683,6 +687,9 @@ export class MainScene extends Phaser.Scene {
     });
     AudioManager.setCombatState(nearbyEnemyCount > 0);
 
+    // Update visual sound cue indicators (accessibility)
+    SoundCueManager.update(this.player.x, this.player.y, delta);
+
     // Accessibility: Slower Enemies — halve enemy attack speed by doubling their cooldowns
     const accessSettings = GameSettings.get();
     if (accessSettings.assistMode && accessSettings.slowerEnemies) {
@@ -834,6 +841,7 @@ export class MainScene extends Phaser.Scene {
 
   shutdown(): void {
     AudioManager.stopMusic();
+    SoundCueManager.destroy();
     this.tweens.killAll();
     this.time.removeAllEvents();
     this.backgroundRenderer?.destroy?.();
