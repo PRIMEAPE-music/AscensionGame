@@ -127,11 +127,19 @@ export class CombatManager {
     const isHeavy = (attackDef?.damageMultiplier ?? 1) >= 1.5;
     this.damageNumbers?.show(enemyX, enemyY, damage, isHeavy);
 
-    // Screen shake (reduced if flash reduction enabled)
-    const flashReduce = GameSettings.get().flashReduction;
-    const shakeIntensity = (isHeavy ? 0.005 : 0.002) * (flashReduce ? 0.3 : 1);
-    const shakeDuration = (isHeavy ? 80 : 50) * (flashReduce ? 0.5 : 1);
-    this.scene.cameras.main.shake(shakeDuration, shakeIntensity);
+    // Screen shake (respects intensity setting and flash reduction)
+    const settings = GameSettings.get();
+    const shakeLevel = settings.screenShakeIntensity;
+    if (shakeLevel !== 'OFF') {
+      const intensityMultiplier = shakeLevel === 'LOW' ? 0.4 : shakeLevel === 'MEDIUM' ? 1.0 : 1.5;
+      const flashReduce = settings.flashReduction;
+      const baseIntensity = (isHeavy ? 0.005 : 0.002) * (flashReduce ? 0.3 : 1);
+      const baseDuration = (isHeavy ? 80 : 50) * (flashReduce ? 0.5 : 1);
+      this.scene.cameras.main.shake(
+        baseDuration * intensityMultiplier,
+        baseIntensity * intensityMultiplier,
+      );
+    }
 
     // Hit-stop (brief time scale dip)
     this.scene.time.timeScale = 0.1;

@@ -58,6 +58,19 @@ const PARTICLE_OPTIONS: GameSettingsData["particleEffects"][] = [
   "HIGH",
 ];
 
+const SCREEN_SHAKE_OPTIONS: GameSettingsData["screenShakeIntensity"][] = [
+  "OFF",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+];
+
+const GRAPHICS_QUALITY_OPTIONS: GameSettingsData["graphicsQuality"][] = [
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+];
+
 const DAMAGE_NUMBER_SIZE_OPTIONS: GameSettingsData["damageNumberSize"][] = [
   "SMALL",
   "MEDIUM",
@@ -66,6 +79,7 @@ const DAMAGE_NUMBER_SIZE_OPTIONS: GameSettingsData["damageNumberSize"][] = [
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   const [settings, setSettings] = useState<GameSettingsData>(GameSettings.get());
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
   const [backHover, setBackHover] = useState(false);
   const [hoveredToggle, setHoveredToggle] = useState<string | null>(null);
   const [audioSettings, setAudioSettings] = useState(() => {
@@ -82,6 +96,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
     AudioManager.init();
     setAudioSettings({ ...AudioManager.settings });
   }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenEnabled) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+    GameSettings.set({ fullscreen: !document.fullscreenElement });
+    setSettings(GameSettings.get());
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -172,6 +205,97 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
                 : "none",
             }}
           />
+        </div>
+      </div>
+    );
+  };
+
+  const renderOptionSelector = (
+    label: string,
+    rowId: string,
+    options: string[],
+    currentValue: string,
+    onSelect: (value: string) => void,
+    description?: string,
+  ) => {
+    const isHovered = hoveredToggle === rowId;
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 20px",
+          background: isHovered
+            ? "rgba(255, 255, 255, 0.06)"
+            : "rgba(255, 255, 255, 0.03)",
+          borderRadius: "8px",
+          border: `1px solid ${isHovered ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.06)"}`,
+          transition: "all 0.2s ease",
+        }}
+        onMouseEnter={() => setHoveredToggle(rowId)}
+        onMouseLeave={() => setHoveredToggle(null)}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span
+            style={{
+              fontSize: "15px",
+              color: "rgba(200, 200, 220, 0.85)",
+              letterSpacing: "1px",
+            }}
+          >
+            {label}
+          </span>
+          {description && (
+            <span
+              style={{
+                fontSize: "11px",
+                color: "rgba(200, 200, 220, 0.45)",
+                letterSpacing: "0.5px",
+              }}
+            >
+              {description}
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: "6px" }}>
+          {options.map((opt) => {
+            const isActive = currentValue === opt;
+            const isOptHovered = hoveredToggle === `${rowId}-${opt}`;
+            return (
+              <button
+                key={opt}
+                onMouseEnter={() => setHoveredToggle(`${rowId}-${opt}`)}
+                onMouseLeave={() => setHoveredToggle(null)}
+                onClick={() => onSelect(opt)}
+                style={{
+                  padding: "6px 16px",
+                  fontSize: "12px",
+                  fontFamily: "monospace",
+                  fontWeight: "bold",
+                  letterSpacing: "1px",
+                  textTransform: "uppercase",
+                  border: `1px solid ${isActive ? "rgba(224, 208, 160, 0.5)" : isOptHovered ? "rgba(255, 255, 255, 0.25)" : "rgba(255, 255, 255, 0.1)"}`,
+                  borderRadius: "4px",
+                  background: isActive
+                    ? "rgba(224, 208, 160, 0.2)"
+                    : isOptHovered
+                      ? "rgba(255, 255, 255, 0.08)"
+                      : "rgba(255, 255, 255, 0.03)",
+                  color: isActive
+                    ? "#e0d0a0"
+                    : isOptHovered
+                      ? "#fff"
+                      : "rgba(200, 200, 220, 0.5)",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  outline: "none",
+                }}
+              >
+                {opt}
+              </button>
+            );
+          })}
         </div>
       </div>
     );
@@ -575,8 +699,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               gap: "10px",
             }}
           >
-            {renderToggle("Screen Shake", "screenShake", settings.screenShake, (val) =>
-              updateSetting({ screenShake: val }),
+            {renderToggle("Fullscreen", "fullscreen", isFullscreen, () =>
+              toggleFullscreen(),
+            )}
+            {renderOptionSelector(
+              "Screen Shake",
+              "screenShake",
+              SCREEN_SHAKE_OPTIONS as unknown as string[],
+              settings.screenShakeIntensity,
+              (val) => updateSetting({ screenShakeIntensity: val as GameSettingsData["screenShakeIntensity"] }),
+            )}
+            {renderOptionSelector(
+              "Graphics Quality",
+              "graphicsQuality",
+              GRAPHICS_QUALITY_OPTIONS as unknown as string[],
+              settings.graphicsQuality,
+              (val) => updateSetting({ graphicsQuality: val as GameSettingsData["graphicsQuality"] }),
+              "Adjusts particle density and visual effects",
             )}
             {renderToggle(
               "Damage Numbers",
@@ -585,6 +724,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               (val) => updateSetting({ damageNumbers: val }),
             )}
             {renderParticleSelector()}
+            {renderToggle("Show FPS", "showFPS", settings.showFPS, (val) =>
+              updateSetting({ showFPS: val }),
+            )}
+            {renderToggle("Show Speed Meter", "showSpeedMeter", settings.showSpeedMeter, (val) =>
+              updateSetting({ showSpeedMeter: val }),
+            )}
           </div>
         </div>
 

@@ -88,6 +88,7 @@ function App() {
   const [hasSavedRun, setHasSavedRun] = useState(false);
   const [savedRunInfo, setSavedRunInfo] = useState<{ classType: string; altitude: number; timestamp: number } | null>(null);
   const [tutorialHint, setTutorialHint] = useState<{ title: string; text: string } | null>(null);
+  const [fps, setFps] = useState(0);
   const maxComboRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
@@ -108,6 +109,26 @@ function App() {
     // Check for saved run
     setHasSavedRun(RunSaveManager.hasSave());
     setSavedRunInfo(RunSaveManager.getSaveInfo());
+  }, []);
+
+  // FPS counter
+  useEffect(() => {
+    if (!GameSettings.get().showFPS) return;
+    let frameCount = 0;
+    let lastTime = performance.now();
+    let rafId: number;
+    const measure = () => {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastTime >= 1000) {
+        setFps(frameCount);
+        frameCount = 0;
+        lastTime = now;
+      }
+      rafId = requestAnimationFrame(measure);
+    };
+    rafId = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(rafId);
   }, []);
 
   // Process achievement popup queue — show next when current is dismissed
@@ -831,6 +852,21 @@ function App() {
         achievement={achievementPopup}
         onDone={() => setAchievementPopup(null)}
       />
+      {GameSettings.get().showFPS && (
+        <div style={{
+          position: 'fixed',
+          top: 4,
+          right: 4,
+          color: '#0f0',
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          zIndex: 9999,
+          opacity: 0.7,
+          pointerEvents: 'none',
+        }}>
+          {fps} FPS
+        </div>
+      )}
     </div>
   );
 }

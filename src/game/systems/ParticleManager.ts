@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { SPRITE_CONFIG } from "../config/AnimationConfig";
 import { CosmeticManager } from "./CosmeticManager";
+import { GameSettings } from "./GameSettings";
 
 /**
  * Biome-specific dust tint colours, keyed by biome name.
@@ -153,6 +154,20 @@ export class ParticleManager {
   }
 
   // ---------------------------------------------------------------------------
+  // Quality-based particle scaling
+  // ---------------------------------------------------------------------------
+
+  private getParticleMultiplier(): number {
+    const quality = GameSettings.get().graphicsQuality;
+    switch (quality) {
+      case 'LOW': return 0.3;
+      case 'MEDIUM': return 1.0;
+      case 'HIGH': return 1.5;
+      default: return 1.0;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Public effect triggers
   // ---------------------------------------------------------------------------
 
@@ -168,7 +183,7 @@ export class ParticleManager {
       : DEFAULT_DUST_TINT;
 
     this.landingEmitter.setParticleTint(tint);
-    const count = Phaser.Math.Between(8, 15);
+    const count = Math.max(1, Math.floor(Phaser.Math.Between(8, 15) * this.getParticleMultiplier()));
     this.landingEmitter.explode(count, x, y);
   }
 
@@ -178,7 +193,7 @@ export class ParticleManager {
   emitJumpBurst(x: number, y: number): void {
     if (!this.jumpEmitter) return;
 
-    const count = Phaser.Math.Between(3, 5);
+    const count = Math.max(1, Math.floor(Phaser.Math.Between(3, 5) * this.getParticleMultiplier()));
     this.jumpEmitter.explode(count, x, y);
   }
 
@@ -189,7 +204,7 @@ export class ParticleManager {
   emitCrumbleParticles(x: number, y: number, width: number): void {
     if (!this.crumbleEmitter) return;
 
-    const count = Phaser.Math.Between(15, 25);
+    const count = Math.max(1, Math.floor(Phaser.Math.Between(15, 25) * this.getParticleMultiplier()));
     const halfWidth = width / 2;
 
     for (let i = 0; i < count; i++) {
@@ -204,7 +219,7 @@ export class ParticleManager {
   emitBounceEffect(x: number, y: number): void {
     if (!this.bounceEmitter) return;
 
-    const count = Phaser.Math.Between(6, 10);
+    const count = Math.max(1, Math.floor(Phaser.Math.Between(6, 10) * this.getParticleMultiplier()));
     this.bounceEmitter.explode(count, x, y);
   }
 
@@ -213,7 +228,8 @@ export class ParticleManager {
    * Heavy attacks produce more particles with a warm orange colour.
    */
   emitHitImpact(x: number, y: number, isHeavy: boolean): void {
-    const count = isHeavy ? 12 : 6;
+    const baseCount = isHeavy ? 12 : 6;
+    const count = Math.max(1, Math.floor(baseCount * this.getParticleMultiplier()));
     const speed = isHeavy ? 200 : 120;
 
     // Apply equipped attack effect cosmetic color
