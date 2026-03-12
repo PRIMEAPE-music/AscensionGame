@@ -31,6 +31,8 @@ import { CosmeticManager } from "./game/systems/CosmeticManager";
 import { RunSaveManager } from "./game/systems/RunSaveManager";
 import { AudioManager } from "./game/systems/AudioManager";
 import { DailyChallenge } from "./game/systems/DailyChallenge";
+import { TutorialManager } from "./game/systems/TutorialManager";
+import { TutorialOverlay } from "./game/ui/TutorialOverlay";
 import "./App.css";
 
 type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
@@ -85,6 +87,7 @@ function App() {
   >([]);
   const [hasSavedRun, setHasSavedRun] = useState(false);
   const [savedRunInfo, setSavedRunInfo] = useState<{ classType: string; altitude: number; timestamp: number } | null>(null);
+  const [tutorialHint, setTutorialHint] = useState<{ title: string; text: string } | null>(null);
   const maxComboRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
@@ -98,6 +101,9 @@ function App() {
     GameSettings.load();
     CosmeticManager.load();
     DailyChallenge.load();
+    TutorialManager.load();
+    TutorialManager.onShowHint = (hint) => setTutorialHint(hint);
+    TutorialManager.onHideHint = () => setTutorialHint(null);
 
     // Check for saved run
     setHasSavedRun(RunSaveManager.hasSave());
@@ -799,6 +805,15 @@ function App() {
                   currentItems={itemReplaceData.currentItems}
                   onTake={handleItemReplaceTake}
                   onLeave={handleItemReplaceLeave}
+                />
+              )}
+              {tutorialHint && (
+                <TutorialOverlay
+                  hint={tutorialHint}
+                  onDismiss={() => {
+                    TutorialManager.hideHint();
+                    setTutorialHint(null);
+                  }}
                 />
               )}
             </>

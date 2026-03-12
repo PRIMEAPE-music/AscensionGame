@@ -30,6 +30,7 @@ import { AudioManager } from "../systems/AudioManager";
 import { RunSaveManager } from "../systems/RunSaveManager";
 import type { RunSaveData } from "../systems/RunSaveManager";
 import { GamepadManager } from "../systems/GamepadManager";
+import { TutorialManager } from "../systems/TutorialManager";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -327,6 +328,11 @@ export class MainScene extends Phaser.Scene {
       this.killCount++;
       PersistentStats.addKill();
 
+      // Tutorial: trigger first-kill hint
+      if (this.killCount === 1) {
+        TutorialManager.triggerEvent('first-kill');
+      }
+
       // Vampirism ability: heal on every 10th kill
       this.player.onEnemyKilled();
 
@@ -482,6 +488,9 @@ export class MainScene extends Phaser.Scene {
       AudioManager.stopMusic();
       AudioManager.playDeath();
       AudioManager.playDeathMusic();
+
+      // Tutorial: mark first run as done
+      TutorialManager.completeFirstRun();
       const altitude = Math.max(
         0,
         (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
@@ -570,6 +579,10 @@ export class MainScene extends Phaser.Scene {
     );
     PersistentStats.setAltitude(altitude);
     EventBus.emit("altitude-change", { altitude });
+
+    // Tutorial hint checks
+    const selectedClassType: string = (window as any).__selectedClass || 'MONK';
+    TutorialManager.checkTriggers(altitude, Date.now() - this.runStartTime, selectedClassType);
 
     // Auto-save every 500m climbed
     if (altitude >= this.lastSaveAltitude + 500) {
@@ -804,6 +817,9 @@ export class MainScene extends Phaser.Scene {
       _player.body?.touching?.down &&
       !platform.getData("shopVisited")
     ) {
+      // Tutorial: trigger near-shop hint
+      TutorialManager.triggerEvent('near-shop');
+
       platform.setData("shopVisited", true);
       this.scene.pause();
       EventBus.emit("shop-open", {
