@@ -31,8 +31,10 @@ import { CosmeticManager } from "./game/systems/CosmeticManager";
 import { RunSaveManager } from "./game/systems/RunSaveManager";
 import { AudioManager } from "./game/systems/AudioManager";
 import { DailyChallenge } from "./game/systems/DailyChallenge";
+import { LeaderboardManager } from "./game/systems/LeaderboardManager";
 import { TutorialManager } from "./game/systems/TutorialManager";
 import { TutorialOverlay } from "./game/ui/TutorialOverlay";
+import { LeaderboardScreen } from "./game/ui/LeaderboardScreen";
 import "./App.css";
 
 type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
@@ -48,7 +50,7 @@ interface DeathStats {
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null);
   const [gameState, setGameState] = useState<GameState>("MAIN_MENU");
-  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics" | "daily">("main");
+  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics" | "daily" | "leaderboard">("main");
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [health, setHealth] = useState(3);
@@ -102,6 +104,7 @@ function App() {
     GameSettings.load();
     CosmeticManager.load();
     DailyChallenge.load();
+    LeaderboardManager.load();
     TutorialManager.load();
     TutorialManager.onShowHint = (hint) => setTutorialHint(hint);
     TutorialManager.onHideHint = () => setTutorialHint(null);
@@ -194,6 +197,10 @@ function App() {
 
   const handleDailyChallenge = useCallback(() => {
     setMenuScreen("daily");
+  }, []);
+
+  const handleShowLeaderboard = useCallback(() => {
+    setMenuScreen("leaderboard");
   }, []);
 
   const handleStartDailyChallenge = useCallback((challengeData: { class: string; modifiers: string[]; seed: number }) => {
@@ -564,6 +571,8 @@ function App() {
 
     const handleDeathScreen = (e: CustomEvent) => {
       const stats = e.detail;
+      // Expose max combo for leaderboard submission in DeathScreen
+      (window as any).__maxComboThisRun = maxComboRef.current;
       setDeathStats(stats);
       setGameState("DEATH");
 
@@ -625,6 +634,7 @@ function App() {
 
       // Reset max combo for next run
       maxComboRef.current = 0;
+      delete (window as any).__maxComboThisRun;
     };
 
     const handleShopOpen = (e: CustomEvent) => {
@@ -775,6 +785,7 @@ function App() {
           onSettings={handleShowSettings}
           onCosmetics={handleShowCosmetics}
           onDailyChallenge={handleDailyChallenge}
+          onLeaderboard={handleShowLeaderboard}
         />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "stats" && (
@@ -788,6 +799,9 @@ function App() {
       )}
       {gameState === "MAIN_MENU" && menuScreen === "cosmetics" && (
         <CosmeticScreen onBack={handleBackToMenu} />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "leaderboard" && (
+        <LeaderboardScreen onBack={handleBackToMenu} />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "daily" && (
         <DailyChallengeScreen

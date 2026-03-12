@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { CosmeticManager } from "../systems/CosmeticManager";
 import { DailyChallenge, WEEKLY_RULES } from "../systems/DailyChallenge";
-import { RUN_MODIFIERS } from "../config/RunModifiers";
+import { RUN_MODIFIERS, ActiveModifiers } from "../config/RunModifiers";
+import { LeaderboardManager, type NewRecordInfo } from "../systems/LeaderboardManager";
 
 interface DeathScreenProps {
   altitude: number;
@@ -196,6 +197,31 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
     return { seed: weekly.seed, modifiers: modNames, specialRuleName: ruleName };
   });
 
+  // Submit run to leaderboard and track new records
+  const [newRecords] = useState<NewRecordInfo[]>(() => {
+    try {
+      const classType = (window as any).__selectedClass || "UNKNOWN";
+      const modifiers = ActiveModifiers.active ? [...ActiveModifiers.active] : [];
+      // Use maxComboRef value stored on window by App.tsx combo tracking
+      const highestCombo = (window as any).__maxComboThisRun || 0;
+      return LeaderboardManager.submitRun({
+        altitude,
+        timeMs,
+        bossesDefeated,
+        kills,
+        highestCombo,
+        classType,
+        modifiers,
+      });
+    } catch {
+      return [];
+    }
+  });
+
+  const altitudeRank = useMemo(() => {
+    return LeaderboardManager.getRankForScore("highest_altitude", Math.floor(altitude));
+  }, [altitude]);
+
   useEffect(() => {
     const titleTimer = setTimeout(() => setTitleVisible(true), 200);
     const buttonsTimer = setTimeout(() => setButtonsVisible(true), 1400);
@@ -366,6 +392,68 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
           />
         </div>
       </div>
+
+      {/* Leaderboard Records */}
+      {(newRecords.length > 0 || altitudeRank > 0) && (
+        <div
+          style={{
+            marginBottom: "20px",
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            opacity: buttonsVisible ? 1 : 0,
+            transform: buttonsVisible ? "translateY(0)" : "translateY(10px)",
+            transition: "opacity 0.5s ease, transform 0.5s ease",
+          }}
+        >
+          {newRecords.map((record, i) => (
+            <div
+              key={record.category}
+              style={{
+                fontSize: "15px",
+                fontWeight: "bold",
+                color: "#ffd700",
+                letterSpacing: "2px",
+                textTransform: "uppercase",
+                textShadow: "0 0 12px rgba(255, 215, 0, 0.5)",
+                opacity: 0,
+                animation: `fadeInRecord 0.5s ease ${1.2 + i * 0.15}s forwards`,
+              }}
+            >
+              NEW RECORD: {record.label}!{record.position === 1 ? " #1" : ` #${record.position}`}
+            </div>
+          ))}
+          {altitudeRank > 0 && altitudeRank <= 10 && !newRecords.some(r => r.category === "highest_altitude") && (
+            <div
+              style={{
+                fontSize: "12px",
+                color: "rgba(224, 208, 160, 0.5)",
+                letterSpacing: "1px",
+              }}
+            >
+              Altitude Rank: #{altitudeRank}
+            </div>
+          )}
+          {altitudeRank > 0 && altitudeRank <= 10 && newRecords.some(r => r.category === "highest_altitude") && (
+            <div
+              style={{
+                fontSize: "12px",
+                color: "rgba(224, 208, 160, 0.5)",
+                letterSpacing: "1px",
+              }}
+            >
+              Altitude Leaderboard: #{altitudeRank}
+            </div>
+          )}
+          <style>{`
+            @keyframes fadeInRecord {
+              from { opacity: 0; transform: translateY(8px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
+        </div>
+      )}
 
       {/* Buttons */}
       <div
