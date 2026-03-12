@@ -4,6 +4,7 @@ import { QUALITY_COLORS, QUALITY_LABELS } from '../config/ItemConfig';
 
 interface InventoryUIProps {
     items: ItemData[];
+    maxSlots?: number;
 }
 
 function getItemBorderColor(item: ItemData): string {
@@ -19,7 +20,12 @@ function getItemTooltip(item: ItemData): string {
     return `${item.name}${qualityLabel}\n${item.description}`;
 }
 
-export const InventoryUI: React.FC<InventoryUIProps> = ({ items }) => {
+export const InventoryUI: React.FC<InventoryUIProps> = ({ items, maxSlots = 1 }) => {
+    // Separate silver items for slot display
+    const silverItems = items.filter(i => i.type === 'SILVER');
+    const goldItems = items.filter(i => i.type === 'GOLD');
+    const emptySlotCount = Math.max(0, maxSlots - silverItems.length);
+
     return (
         <div style={{
             display: 'flex',
@@ -31,7 +37,8 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({ items }) => {
             minHeight: '40px',
             alignItems: 'center'
         }}>
-            {items.map((item) => {
+            {/* Gold items (no slot limit) */}
+            {goldItems.map((item) => {
                 const borderColor = getItemBorderColor(item);
                 return (
                     <div key={item.id} title={getItemTooltip(item)} style={{
@@ -53,7 +60,56 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({ items }) => {
                     </div>
                 );
             })}
-            {items.length === 0 && <span style={{ color: '#aaa', fontSize: '12px', padding: '0 5px' }}>Inventory</span>}
+            {/* Divider between gold and silver if both present */}
+            {goldItems.length > 0 && (silverItems.length > 0 || emptySlotCount > 0) && (
+                <div style={{
+                    width: '1px',
+                    height: '24px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                }} />
+            )}
+            {/* Silver items (filled slots) */}
+            {silverItems.map((item) => {
+                const borderColor = getItemBorderColor(item);
+                return (
+                    <div key={item.id} title={getItemTooltip(item)} style={{
+                        width: '32px',
+                        height: '32px',
+                        backgroundColor: '#' + item.iconColor.toString(16).padStart(6, '0'),
+                        border: `2px solid ${borderColor}`,
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#000',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        cursor: 'help',
+                        boxShadow: `0 0 5px ${borderColor}44`
+                    }}>
+                        {item.name[0]}
+                    </div>
+                );
+            })}
+            {/* Empty silver item slots */}
+            {Array.from({ length: emptySlotCount }).map((_, i) => (
+                <div key={`empty-${i}`} title="Empty silver item slot" style={{
+                    width: '32px',
+                    height: '32px',
+                    backgroundColor: 'transparent',
+                    border: '2px dashed rgba(255, 255, 255, 0.2)',
+                    borderRadius: '4px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'rgba(255, 255, 255, 0.15)',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                }}>
+                    +
+                </div>
+            ))}
+            {items.length === 0 && emptySlotCount === 0 && <span style={{ color: '#aaa', fontSize: '12px', padding: '0 5px' }}>Inventory</span>}
         </div>
     );
 };

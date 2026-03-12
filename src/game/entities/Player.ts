@@ -137,7 +137,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public abilities: Set<string> = new Set();
   public statModifiers: Map<StatType, number> = new Map();
   private pendingItem: ItemData | null = null;
-  private readonly MAX_SILVER_ITEMS = 3;
+  private maxSilverItems: number = 1; // Start with 1 slot; gains +1 every 3rd boss
 
   // Armor (Defense Items)
   private armorHits: number = 0;
@@ -2154,7 +2154,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // Silver items — check slot limit
     const silverItems = this.inventory.filter(i => i.type === 'SILVER');
-    if (silverItems.length >= this.MAX_SILVER_ITEMS) {
+    if (silverItems.length >= this.maxSilverItems) {
       // Inventory full — store pending item and emit event to show replacement UI
       this.pendingItem = item;
       this.scene.scene.pause();
@@ -2203,7 +2203,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       onComplete: () => text.destroy(),
     });
 
-    EventBus.emit("inventory-change", { inventory: this.inventory });
+    EventBus.emit("inventory-change", { inventory: this.inventory, maxSlots: this.maxSilverItems });
     EventBus.emit("synergy-change", { synergies: calculateSynergies(this.inventory) });
   }
 
@@ -2213,7 +2213,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const idx = this.inventory.findIndex(item => item.id === itemId);
     if (idx !== -1) {
       this.inventory.splice(idx, 1);
-      EventBus.emit('inventory-change', { inventory: [...this.inventory] });
+      EventBus.emit('inventory-change', { inventory: [...this.inventory], maxSlots: this.maxSilverItems });
       EventBus.emit('synergy-change', { synergies: calculateSynergies(this.inventory) });
     }
     this.recalculateArmor();
@@ -2322,5 +2322,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
     this.pendingItem = null;
+  }
+
+  public getMaxSilverItems(): number {
+    return this.maxSilverItems;
+  }
+
+  public setMaxSilverItems(count: number): void {
+    this.maxSilverItems = count;
+    EventBus.emit('inventory-change', { inventory: [...this.inventory], maxSlots: this.maxSilverItems });
+  }
+
+  public addSilverItemSlot(): void {
+    this.maxSilverItems++;
+    EventBus.emit('inventory-change', { inventory: [...this.inventory], maxSlots: this.maxSilverItems });
   }
 }

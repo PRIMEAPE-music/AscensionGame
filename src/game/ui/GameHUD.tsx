@@ -117,6 +117,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const [speed, setSpeed] = useState(0);
   const [maxSpeed, setMaxSpeed] = useState(600);
 
+  // Silver item max slots (dynamic)
+  const [maxSlots, setMaxSlots] = useState(1);
+
   // Synergy bonuses
   const [synergies, setSynergies] = useState<SynergyBonus[]>([]);
 
@@ -199,6 +202,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       setMaxSpeed(data.maxSpeed);
     });
 
+    const unsubInventory = EventBus.on("inventory-change", (data) => {
+      if (data.maxSlots !== undefined) {
+        setMaxSlots(data.maxSlots);
+      }
+    });
+
     return () => {
       unsubSpawn();
       unsubHealth();
@@ -207,6 +216,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       unsubWarning();
       unsubSynergy();
       unsubSpeed();
+      unsubInventory();
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
       if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
     };
@@ -628,7 +638,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             gap: "4px",
           }}
         >
-          <InventoryUI items={inventory} />
+          <InventoryUI items={inventory} maxSlots={maxSlots} />
           {synergies.length > 0 && (
             <div
               style={{
