@@ -27,6 +27,14 @@ export interface GameSettingsData {
   touchButtonSize: "SMALL" | "MEDIUM" | "LARGE";
   touchButtonOpacity: number;
   touchJoystickSide: "LEFT" | "RIGHT";
+  // Accessibility — Audio & Input
+  monoAudio: boolean;
+  visualSoundCues: boolean;
+  toggleDodge: boolean;
+  toggleBlock: boolean;
+  jumpBufferWindow: number;
+  coyoteTimeWindow: number;
+  inputDelay: number;
 }
 
 const DEFAULTS: GameSettingsData = {
@@ -56,6 +64,14 @@ const DEFAULTS: GameSettingsData = {
   touchButtonSize: "MEDIUM",
   touchButtonOpacity: 0.6,
   touchJoystickSide: "LEFT",
+  // Accessibility — Audio & Input
+  monoAudio: false,
+  visualSoundCues: false,
+  toggleDodge: false,
+  toggleBlock: false,
+  jumpBufferWindow: 150,
+  coyoteTimeWindow: 100,
+  inputDelay: 0,
 };
 
 export const GameSettings = {
@@ -100,6 +116,13 @@ export const GameSettings = {
           touchButtonSize: (parsed.touchButtonSize as GameSettingsData["touchButtonSize"]) ?? DEFAULTS.touchButtonSize,
           touchButtonOpacity: (parsed.touchButtonOpacity as number) ?? DEFAULTS.touchButtonOpacity,
           touchJoystickSide: (parsed.touchJoystickSide as GameSettingsData["touchJoystickSide"]) ?? DEFAULTS.touchJoystickSide,
+          monoAudio: (parsed.monoAudio as boolean) ?? DEFAULTS.monoAudio,
+          visualSoundCues: (parsed.visualSoundCues as boolean) ?? DEFAULTS.visualSoundCues,
+          toggleDodge: (parsed.toggleDodge as boolean) ?? DEFAULTS.toggleDodge,
+          toggleBlock: (parsed.toggleBlock as boolean) ?? DEFAULTS.toggleBlock,
+          jumpBufferWindow: (parsed.jumpBufferWindow as number) ?? DEFAULTS.jumpBufferWindow,
+          coyoteTimeWindow: (parsed.coyoteTimeWindow as number) ?? DEFAULTS.coyoteTimeWindow,
+          inputDelay: (parsed.inputDelay as number) ?? DEFAULTS.inputDelay,
         };
       }
     } catch {
