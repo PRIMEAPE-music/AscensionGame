@@ -93,7 +93,7 @@ export class MainScene extends Phaser.Scene {
 
   // Sacred Ground instances (Priest class mechanic)
   private sacredGrounds: SacredGround[] = [];
-  private sacredGroundListener: ((e: Event) => void) | null = null;
+  private sacredGroundUnsubscribe: (() => void) | null = null;
 
   // EventBus listener cleanup functions (prevent leak across scene restarts)
   private _eventCleanups: (() => void)[] = [];
@@ -459,21 +459,26 @@ export class MainScene extends Phaser.Scene {
     }));
 
     // Listen for Priest Sacred Ground creation
-    this.sacredGroundListener = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
+    this.sacredGroundUnsubscribe = EventBus.on("priest-sacred-ground", (data) => {
       const sg = new SacredGround(
         this,
         this.player,
         this.enemies,
-        detail.x,
-        detail.y,
+        data.x,
+        data.y,
       );
       this.sacredGrounds.push(sg);
-    };
-    window.addEventListener(
-      "priest-sacred-ground",
-      this.sacredGroundListener,
-    );
+    });
+
+    // Award style points when a combo ends (3+ hits)
+    EventBus.on("combo-end", (data) => {
+      this.styleManager.onComboEnd(data.finalCount);
+    });
+
+    // Award style points when launching off a slope
+    EventBus.on("slope-launch", (data) => {
+      this.styleManager.onSlopeLaunch(data.speed);
+    });
 
     // Handle gambling results
     this._eventCleanups.push(EventBus.on("gambling-result", (data) => {
@@ -1053,12 +1058,9 @@ export class MainScene extends Phaser.Scene {
     // Clean up Sacred Ground instances and listener
     this.sacredGrounds.forEach((sg) => sg.destroy());
     this.sacredGrounds = [];
-    if (this.sacredGroundListener) {
-      window.removeEventListener(
-        "priest-sacred-ground",
-        this.sacredGroundListener,
-      );
-      this.sacredGroundListener = null;
+    if (this.sacredGroundUnsubscribe) {
+      this.sacredGroundUnsubscribe();
+      this.sacredGroundUnsubscribe = null;
     }
   }
 

@@ -1027,11 +1027,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         ) {
           // Sacred Ground created — MainScene handles spawning the zone
           // Emit event so MainScene can create the SacredGround object
-          window.dispatchEvent(
-            new CustomEvent("priest-sacred-ground", {
-              detail: { x: this.x, y: this.y + 20 },
-            }),
-          );
+          EventBus.emit("priest-sacred-ground", { x: this.x, y: this.y + 20 });
           return;
         }
         this.handleComboInput('Y');
@@ -2707,9 +2703,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
    */
   public clearSlopeState(): number {
     if (this.wasOnSlope && !this.onSlope) {
-      // Just left a slope — re-enable gravity
+      // Just left a slope — re-enable gravity and emit slope-launch event
       const body = this.body as Phaser.Physics.Arcade.Body;
       body.setAllowGravity(true);
+
+      const vx = body.velocity.x;
+      const vy = body.velocity.y;
+      const speed = Math.sqrt(vx * vx + vy * vy);
+
+      if (speed > 0) {
+        const angle = this.slopeAngle;
+        EventBus.emit("slope-launch", { speed, angle });
+      }
+
       this.wasOnSlope = false;
       this.pendingLaunchVector = null;
     }
