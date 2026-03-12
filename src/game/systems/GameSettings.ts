@@ -19,6 +19,9 @@ export interface GameSettingsData {
   highContrast: boolean;
   flashReduction: boolean;
   damageNumberSize: "SMALL" | "MEDIUM" | "LARGE";
+  colorblindMode: "NONE" | "DEUTERANOPIA" | "PROTANOPIA" | "TRITANOPIA";
+  enemyOutlines: boolean;
+  largerUI: boolean;
 }
 
 const DEFAULTS: GameSettingsData = {
@@ -40,6 +43,9 @@ const DEFAULTS: GameSettingsData = {
   highContrast: false,
   flashReduction: false,
   damageNumberSize: "MEDIUM",
+  colorblindMode: "NONE",
+  enemyOutlines: false,
+  largerUI: false,
 };
 
 export const GameSettings = {
@@ -77,6 +83,9 @@ export const GameSettings = {
           highContrast: (parsed.highContrast as boolean) ?? DEFAULTS.highContrast,
           flashReduction: (parsed.flashReduction as boolean) ?? DEFAULTS.flashReduction,
           damageNumberSize: (parsed.damageNumberSize as GameSettingsData["damageNumberSize"]) ?? DEFAULTS.damageNumberSize,
+          colorblindMode: (parsed.colorblindMode as GameSettingsData["colorblindMode"]) ?? DEFAULTS.colorblindMode,
+          enemyOutlines: (parsed.enemyOutlines as boolean) ?? DEFAULTS.enemyOutlines,
+          largerUI: (parsed.largerUI as boolean) ?? DEFAULTS.largerUI,
         };
       }
     } catch {

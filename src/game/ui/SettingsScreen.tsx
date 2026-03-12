@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useReducer } from "react";
 import { GameSettings } from "../systems/GameSettings";
 import type { GameSettingsData } from "../systems/GameSettings";
+import { ColorblindFilter } from "../systems/ColorblindFilter";
+import type { ColorblindMode } from "../systems/ColorblindFilter";
 import { AudioManager } from "../systems/AudioManager";
 import { GamepadManager } from "../systems/GamepadManager";
 import { TutorialManager } from "../systems/TutorialManager";
@@ -116,6 +118,27 @@ const DAMAGE_NUMBER_SIZE_OPTIONS: GameSettingsData["damageNumberSize"][] = [
   "LARGE",
 ];
 
+const COLORBLIND_MODE_OPTIONS: GameSettingsData["colorblindMode"][] = [
+  "NONE",
+  "DEUTERANOPIA",
+  "PROTANOPIA",
+  "TRITANOPIA",
+];
+
+const COLORBLIND_MODE_LABELS: Record<GameSettingsData["colorblindMode"], string> = {
+  NONE: "None",
+  DEUTERANOPIA: "Deuteranopia",
+  PROTANOPIA: "Protanopia",
+  TRITANOPIA: "Tritanopia",
+};
+
+const COLORBLIND_MODE_DESCRIPTIONS: Record<GameSettingsData["colorblindMode"], string> = {
+  NONE: "No color correction",
+  DEUTERANOPIA: "Red-green (most common)",
+  PROTANOPIA: "Red-green",
+  TRITANOPIA: "Blue-yellow",
+};
+
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   const [settings, setSettings] = useState<GameSettingsData>(GameSettings.get());
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
@@ -210,6 +233,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
   const updateSetting = (partial: Partial<GameSettingsData>) => {
     GameSettings.set(partial);
     setSettings(GameSettings.get());
+    // Notify App.tsx when colorblind mode changes so it can update the canvas filter
+    if (partial.colorblindMode !== undefined) {
+      window.dispatchEvent(new CustomEvent('colorblind-mode-change'));
+    }
   };
 
   const renderToggle = (
@@ -916,6 +943,184 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
               (val) => updateSetting({ flashReduction: val }),
             )}
             {renderDamageNumberSizeSelector()}
+
+            {/* Divider before colorblind options */}
+            <div
+              style={{
+                height: "1px",
+                background: "rgba(68, 136, 204, 0.1)",
+                margin: "6px 0",
+              }}
+            />
+
+            {/* Colorblind Mode dropdown-style selector */}
+            {(() => {
+              const rowId = "colorblind-mode";
+              const isHovered = hoveredToggle === rowId;
+              const currentMode = settings.colorblindMode || "NONE";
+              return (
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "14px 20px",
+                      background: isHovered
+                        ? "rgba(255, 255, 255, 0.06)"
+                        : "rgba(255, 255, 255, 0.03)",
+                      borderRadius: "8px",
+                      border: `1px solid ${isHovered ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.06)"}`,
+                      transition: "all 0.2s ease",
+                    }}
+                    onMouseEnter={() => setHoveredToggle(rowId)}
+                    onMouseLeave={() => setHoveredToggle(null)}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                      <span
+                        style={{
+                          fontSize: "15px",
+                          color: "rgba(200, 200, 220, 0.85)",
+                          letterSpacing: "1px",
+                        }}
+                      >
+                        Colorblind Mode
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          color: "rgba(200, 200, 220, 0.45)",
+                          letterSpacing: "0.5px",
+                        }}
+                      >
+                        Apply color correction filter to the game
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {COLORBLIND_MODE_OPTIONS.map((opt) => {
+                        const isActive = currentMode === opt;
+                        const optId = `colorblind-${opt}`;
+                        const isOptHovered = hoveredToggle === optId;
+                        return (
+                          <button
+                            key={opt}
+                            onMouseEnter={() => setHoveredToggle(optId)}
+                            onMouseLeave={() => setHoveredToggle(null)}
+                            onClick={() => updateSetting({ colorblindMode: opt })}
+                            title={COLORBLIND_MODE_DESCRIPTIONS[opt]}
+                            style={{
+                              padding: "6px 12px",
+                              fontSize: "11px",
+                              fontFamily: "monospace",
+                              fontWeight: "bold",
+                              letterSpacing: "0.5px",
+                              border: `1px solid ${isActive ? "rgba(68, 136, 204, 0.5)" : isOptHovered ? "rgba(255, 255, 255, 0.25)" : "rgba(255, 255, 255, 0.1)"}`,
+                              borderRadius: "4px",
+                              background: isActive
+                                ? "rgba(68, 136, 204, 0.2)"
+                                : isOptHovered
+                                  ? "rgba(255, 255, 255, 0.08)"
+                                  : "rgba(255, 255, 255, 0.03)",
+                              color: isActive
+                                ? "#4488cc"
+                                : isOptHovered
+                                  ? "#fff"
+                                  : "rgba(200, 200, 220, 0.5)",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              outline: "none",
+                            }}
+                          >
+                            {COLORBLIND_MODE_LABELS[opt]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Color swatch preview strip */}
+                  {currentMode !== "NONE" && (() => {
+                    const swatches = ColorblindFilter.getPreviewSwatches(currentMode as ColorblindMode);
+                    return (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: "10px 20px",
+                          marginTop: "6px",
+                          background: "rgba(255, 255, 255, 0.02)",
+                          borderRadius: "6px",
+                          border: "1px solid rgba(68, 136, 204, 0.1)",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            color: "rgba(200, 200, 220, 0.45)",
+                            letterSpacing: "0.5px",
+                            marginRight: "4px",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Adjusted palette:
+                        </span>
+                        <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                          {swatches.map((swatch) => (
+                            <div
+                              key={swatch.label}
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                gap: "2px",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: "24px",
+                                  height: "16px",
+                                  borderRadius: "3px",
+                                  background: swatch.hex,
+                                  border: "1px solid rgba(255, 255, 255, 0.15)",
+                                }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: "8px",
+                                  color: "rgba(200, 200, 220, 0.35)",
+                                  letterSpacing: "0.3px",
+                                }}
+                              >
+                                {swatch.label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            })()}
+
+            {/* Enemy Outlines toggle */}
+            {renderToggleWithDescription(
+              "Enemy Outlines",
+              "Adds visible outlines to enemies for better visibility",
+              "enemyOutlines",
+              settings.enemyOutlines,
+              (val) => updateSetting({ enemyOutlines: val }),
+            )}
+
+            {/* Larger UI toggle */}
+            {renderToggleWithDescription(
+              "Larger UI",
+              "Scales HUD elements to 120% for readability",
+              "largerUI",
+              settings.largerUI,
+              (val) => updateSetting({ largerUI: val }),
+            )}
           </div>
         </div>
 

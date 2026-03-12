@@ -27,6 +27,8 @@ import { SettingsScreen } from "./game/ui/SettingsScreen";
 import { CosmeticScreen } from "./game/ui/CosmeticScreen";
 import { DailyChallengeScreen } from "./game/ui/DailyChallengeScreen";
 import { GameSettings } from "./game/systems/GameSettings";
+import { ColorblindFilter } from "./game/systems/ColorblindFilter";
+import type { ColorblindMode } from "./game/systems/ColorblindFilter";
 import { CosmeticManager } from "./game/systems/CosmeticManager";
 import { RunSaveManager } from "./game/systems/RunSaveManager";
 import { AudioManager } from "./game/systems/AudioManager";
@@ -109,6 +111,23 @@ function App() {
     // Check for saved run
     setHasSavedRun(RunSaveManager.hasSave());
     setSavedRunInfo(RunSaveManager.getSaveInfo());
+  }, []);
+
+  // Colorblind filter: listen for settings changes and apply/remove filter on the game canvas
+  useEffect(() => {
+    const handleColorblindChange = () => {
+      const canvas = document.querySelector('#phaser-game canvas') as HTMLElement | null;
+      if (canvas) {
+        const mode = GameSettings.get().colorblindMode as ColorblindMode;
+        if (mode && mode !== 'NONE') {
+          ColorblindFilter.applyFilter(canvas, mode);
+        } else {
+          ColorblindFilter.removeFilter(canvas);
+        }
+      }
+    };
+    window.addEventListener('colorblind-mode-change', handleColorblindChange);
+    return () => window.removeEventListener('colorblind-mode-change', handleColorblindChange);
   }, []);
 
   // FPS counter
@@ -516,6 +535,21 @@ function App() {
 
     gameRef.current = new Phaser.Game(config);
 
+    // Apply colorblind filter to the game canvas once it renders
+    const applyColorblindFilter = () => {
+      const canvas = document.querySelector('#phaser-game canvas') as HTMLElement | null;
+      if (canvas) {
+        const mode = GameSettings.get().colorblindMode as ColorblindMode;
+        if (mode && mode !== 'NONE') {
+          ColorblindFilter.applyFilter(canvas, mode);
+        } else {
+          ColorblindFilter.removeFilter(canvas);
+        }
+      }
+    };
+    // Small delay to ensure the canvas exists in DOM
+    const filterTimer = setTimeout(applyColorblindFilter, 100);
+
     // Event Listeners
     const handleHealthChange = (e: CustomEvent) => {
       setHealth(e.detail.health);
@@ -697,6 +731,11 @@ function App() {
     );
 
     return () => {
+      clearTimeout(filterTimer);
+      // Remove colorblind filter from canvas
+      const canvas = document.querySelector('#phaser-game canvas') as HTMLElement | null;
+      if (canvas) ColorblindFilter.removeFilter(canvas);
+
       window.removeEventListener(
         "health-change",
         handleHealthChange as EventListener,
