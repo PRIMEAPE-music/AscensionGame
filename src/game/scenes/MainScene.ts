@@ -37,6 +37,7 @@ import { MouseManager } from "../systems/MouseManager";
 import { TutorialManager } from "../systems/TutorialManager";
 import { ReplayManager } from "../systems/ReplayManager";
 import { SoundCueManager } from "../systems/SoundCueManager";
+import { CoopManager } from "../systems/CoopManager";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -47,6 +48,16 @@ const ESSENCE_REWARDS: Record<string, number> = {
 
 export class MainScene extends Phaser.Scene {
   private player!: Player;
+  private player2: Player | null = null;
+  private players: Player[] = [];
+  private cameraTarget: Phaser.GameObjects.Rectangle | null = null;
+
+  // Co-op respawn tracking
+  private p1Dead: boolean = false;
+  private p2Dead: boolean = false;
+  private p1RespawnTimer: number = 0;
+  private p2RespawnTimer: number = 0;
+
   private staticPlatforms!: Phaser.Physics.Arcade.StaticGroup;
   private movingPlatforms!: Phaser.Physics.Arcade.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
@@ -180,7 +191,7 @@ export class MainScene extends Phaser.Scene {
 
     this.levelGenerator.init();
 
-    // Player (created early so HazardManager can reference it)
+    // Player 1 (created early so HazardManager can reference it)
     const selectedClass: ClassType =
       (window as any).__selectedClass || ClassType.MONK;
     this.player = new Player(
@@ -188,7 +199,22 @@ export class MainScene extends Phaser.Scene {
       WORLD.PLAYER_SPAWN.x,
       WORLD.PLAYER_SPAWN.y,
       selectedClass,
+      0, // playerIndex
     );
+
+    // Player 2 (co-op only)
+    if (CoopManager.isActive()) {
+      const p2Class: ClassType = (CoopManager.getPlayer2Class() || ClassType.MONK) as ClassType;
+      this.player2 = new Player(
+        this,
+        WORLD.PLAYER_SPAWN.x + 80,
+        WORLD.PLAYER_SPAWN.y,
+        p2Class,
+        1, // playerIndex
+      );
+    }
+    this.players = this.player2 ? [this.player, this.player2] : [this.player];
+
     this.highestY = WORLD.PLAYER_SPAWN.y;
 
     // Persistent stats — load from localStorage and start tracking this run
@@ -201,6 +227,16 @@ export class MainScene extends Phaser.Scene {
       const itemData = ITEMS[itemId];
       if (itemData && itemData.type === 'GOLD') {
         this.player.collectItem(itemData);
+      }
+    }
+
+    // Apply gold items to P2 as well (same equipped items)
+    if (this.player2) {
+      for (const itemId of equippedGoldItems) {
+        const itemData = ITEMS[itemId];
+        if (itemData && itemData.type === 'GOLD') {
+          this.player2.collectItem(itemData);
+        }
       }
     }
 
@@ -240,7 +276,12 @@ export class MainScene extends Phaser.Scene {
     );
     this.spawnManager.setPortalGroup(this.portals);
     this.spawnManager.setWindGroup(this.windCurrents);
-    this.combatManager = new CombatManager(this, this.player, this.enemies);
+    // Make both players available to managers for co-op targeting
+    if (this.player2) {
+      this.spawnManager.setPlayers(this.players);
+      this.bossArenaManager.setPlayers(this.players);
+    }
+    this.combatManager = new CombatManager(this, this.players, this.enemies);
     this.combatManager.setDamageNumberManager(new DamageNumberManager(this));
     this.combatManager.setParticleManager(this.particleManager);
 
@@ -314,6 +355,73 @@ export class MainScene extends Phaser.Scene {
       this,
     );
 
+    // === Co-op: Register colliders for Player 2 ===
+    if (this.player2) {
+      this.physics.add.collider(
+        this.player2,
+        this.staticPlatforms,
+        this.handleStaticPlatformCollision,
+        this.oneWayPlatformCheck,
+        this,
+      );
+      this.physics.add.collider(
+        this.player2,
+        this.movingPlatforms,
+        (_player, platform) => {
+          if (this.player2!.body!.touching.down || this.player2!.body!.blocked.down) {
+            this.player2!.detectPlatformType(platform);
+          }
+        },
+        this.oneWayPlatformCheck,
+        this,
+      );
+      this.physics.add.collider(this.player2, this.leftWall);
+      this.physics.add.collider(this.player2, this.rightWall);
+
+      // Combat overlaps for P2
+      this.physics.add.overlap(
+        this.player2,
+        this.enemies,
+        (p, e) => this.combatManager.handleContactDamage(p, e),
+        undefined,
+        this,
+      );
+      this.physics.add.overlap(
+        this.player2,
+        this.items,
+        (p, i) => this.combatManager.handleItemCollision(p, i),
+        undefined,
+        this,
+      );
+
+      // Stalactite overlap for P2
+      this.physics.add.overlap(
+        this.player2,
+        this.hazardManager.getStalactites(),
+        (_p, s) => this.hazardManager.handleStalactitePlayerOverlap(_p, s),
+        undefined,
+        this,
+      );
+
+      // Portal overlap for P2
+      this.physics.add.overlap(
+        this.player2,
+        this.portals,
+        (_p, portal) => this.handlePortalOverlap(portal as PortalPlatform, this.player2!),
+        undefined,
+        this,
+      );
+
+      // Wind current overlap for P2
+      this.physics.add.overlap(
+        this.player2,
+        this.windCurrents,
+        (_p, windZone) => this.handleWindOverlap(windZone as WindCurrent, this.player2!),
+        undefined,
+        this,
+      );
+    }
+
     // Register sprite animations
     for (const anim of ANIMATIONS) {
       this.anims.create({
@@ -328,8 +436,20 @@ export class MainScene extends Phaser.Scene {
     }
 
     // Camera
-    this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
-    this.cameras.main.setDeadzone(100, 100);
+    if (CoopManager.isActive()) {
+      // Create an invisible camera target at midpoint of both players
+      this.cameraTarget = this.add.rectangle(
+        this.player.x,
+        this.player.y,
+        1, 1, 0x000000, 0
+      );
+      this.cameras.main.startFollow(this.cameraTarget, true, 0.05, 0.05);
+      // Wider deadzone for co-op to reduce jitter
+      this.cameras.main.setDeadzone(200, 200);
+    } else {
+      this.cameras.main.startFollow(this.player, true, 0.05, 0.05);
+      this.cameras.main.setDeadzone(100, 100);
+    }
     // Bound camera to world edges: left=0, top=-Infinity (player ascends forever), right=WORLD.WIDTH, bottom=WORLD.HEIGHT
     this.cameras.main.setBounds(0, -Number.MAX_SAFE_INTEGER, WORLD.WIDTH, Number.MAX_SAFE_INTEGER + WORLD.HEIGHT);
 
@@ -349,7 +469,15 @@ export class MainScene extends Phaser.Scene {
     EventBus.emit("health-change", {
       health: this.player.health,
       maxHealth: this.player.maxHealth,
+      playerIndex: 0,
     });
+    if (this.player2) {
+      EventBus.emit("health-change", {
+        health: this.player2.health,
+        maxHealth: this.player2.maxHealth,
+        playerIndex: 1,
+      });
+    }
 
     // Listen for boss defeats to spawn reward items
     EventBus.on("boss-defeated", (data) => {
@@ -569,33 +697,67 @@ export class MainScene extends Phaser.Scene {
 
     // Handle player death — emit death screen event with run stats
     this.runStartTime = Date.now();
-    EventBus.on("player-died", () => {
-      AudioManager.stopMusic();
-      AudioManager.playDeath();
-      AudioManager.playDeathMusic();
+    EventBus.on("player-died", (data: any) => {
+      const dyingPlayerIndex = data?.playerIndex ?? 0;
 
-      // Tutorial: mark first run as done
-      TutorialManager.completeFirstRun();
-      const altitude = Math.max(
-        0,
-        (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
-      );
+      if (!CoopManager.isActive()) {
+        // Solo mode — existing behavior
+        AudioManager.stopMusic();
+        AudioManager.playDeath();
+        AudioManager.playDeathMusic();
 
-      // Clear saved run on death
-      RunSaveManager.clear();
+        TutorialManager.completeFirstRun();
+        const altitude = Math.max(
+          0,
+          (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
+        );
 
-      // Finalize persistent stats for this run and save to localStorage
-      PersistentStats.setEssence(this.essenceTotal);
-      PersistentStats.endRun();
-      PersistentStats.save();
+        RunSaveManager.clear();
+        PersistentStats.setEssence(this.essenceTotal);
+        PersistentStats.endRun();
+        PersistentStats.save();
 
-      EventBus.emit("show-death-screen", {
-        altitude: Math.floor(altitude),
-        kills: this.killCount,
-        bossesDefeated: this.bossesDefeated,
-        timeMs: Date.now() - this.runStartTime,
-        essenceEarned: this.essenceTotal,
-      });
+        EventBus.emit("show-death-screen", {
+          altitude: Math.floor(altitude),
+          kills: this.killCount,
+          bossesDefeated: this.bossesDefeated,
+          timeMs: Date.now() - this.runStartTime,
+          essenceEarned: this.essenceTotal,
+        });
+        return;
+      }
+
+      // Co-op mode — mark player as dead, start respawn timer
+      if (dyingPlayerIndex === 0) {
+        this.p1Dead = true;
+        this.p1RespawnTimer = CoopManager.getRespawnDelay();
+      } else {
+        this.p2Dead = true;
+        this.p2RespawnTimer = CoopManager.getRespawnDelay();
+      }
+
+      // If BOTH players are dead, game over
+      if (this.p1Dead && this.p2Dead) {
+        AudioManager.stopMusic();
+        AudioManager.playDeath();
+        AudioManager.playDeathMusic();
+        TutorialManager.completeFirstRun();
+        const altitude = Math.max(
+          0,
+          (WORLD.BASE_PLATFORM_Y - Math.min(this.player.y, this.player2?.y ?? Infinity)) / WORLD.ALTITUDE_SCALE,
+        );
+        RunSaveManager.clear();
+        PersistentStats.setEssence(this.essenceTotal);
+        PersistentStats.endRun();
+        PersistentStats.save();
+        EventBus.emit("show-death-screen", {
+          altitude: Math.floor(altitude),
+          kills: this.killCount,
+          bossesDefeated: this.bossesDefeated,
+          timeMs: Date.now() - this.runStartTime,
+          essenceEarned: this.essenceTotal,
+        });
+      }
     });
 
     // Save after boss defeat
@@ -651,6 +813,18 @@ export class MainScene extends Phaser.Scene {
     });
 
     this.player.update(time, delta);
+
+    if (this.player2) {
+      this.player2.update(time, delta);
+
+      // Slope handling for P2
+      this.player2.clearSlopeState();
+      const slopeResult2 = this.slopeManager.update(this.player2);
+      if (slopeResult2) {
+        this.player2.handleSlopePhysics(slopeResult2);
+      }
+    }
+
     this.levelGenerator.update(this.player.y);
 
     // Slope collision (after player update, before other systems)
@@ -660,15 +834,90 @@ export class MainScene extends Phaser.Scene {
       this.player.handleSlopePhysics(slopeResult);
     }
 
+    // Co-op respawn logic
+    if (CoopManager.isActive()) {
+      if (this.p1Dead && !this.p2Dead && this.player2) {
+        this.p1RespawnTimer -= delta;
+        if (this.p1RespawnTimer <= 0) {
+          this.p1Dead = false;
+          this.player.setPosition(this.player2.x, this.player2.y - 50);
+          this.player.health = 1;
+          this.player.setVisible(true);
+          this.player.setActive(true);
+          (this.player.body as Phaser.Physics.Arcade.Body).enable = true;
+          this.player.makeInvincible(CoopManager.getRespawnInvincibility());
+          EventBus.emit("health-change", {
+            health: this.player.health,
+            maxHealth: this.player.maxHealth,
+            playerIndex: 0,
+          });
+        }
+      }
+      if (this.p2Dead && !this.p1Dead && this.player2) {
+        this.p2RespawnTimer -= delta;
+        if (this.p2RespawnTimer <= 0) {
+          this.p2Dead = false;
+          this.player2.setPosition(this.player.x, this.player.y - 50);
+          this.player2.health = 1;
+          this.player2.setVisible(true);
+          this.player2.setActive(true);
+          (this.player2.body as Phaser.Physics.Arcade.Body).enable = true;
+          this.player2.makeInvincible(CoopManager.getRespawnInvincibility());
+          EventBus.emit("health-change", {
+            health: this.player2.health,
+            maxHealth: this.player2.maxHealth,
+            playerIndex: 1,
+          });
+        }
+      }
+
+      // Separation handling: if players are too far apart vertically, teleport lower player
+      if (this.player2 && !this.p1Dead && !this.p2Dead) {
+        const separation = Math.abs(this.player.y - this.player2.y);
+        if (separation > 1200) {
+          // Teleport the lower (higher Y value) player to the higher one
+          if (this.player.y > this.player2.y) {
+            this.player.setPosition(this.player2.x, this.player2.y + 100);
+            this.player.setVelocity(0, 0);
+          } else {
+            this.player2.setPosition(this.player.x, this.player.y + 100);
+            this.player2.setVelocity(0, 0);
+          }
+        }
+      }
+    }
+
+    // Update co-op camera target position
+    if (this.cameraTarget && this.player2) {
+      const p1Alive = !this.p1Dead;
+      const p2Alive = !this.p2Dead;
+      if (p1Alive && p2Alive) {
+        this.cameraTarget.setPosition(
+          (this.player.x + this.player2.x) / 2,
+          Math.min(this.player.y, this.player2.y) // Follow the higher player
+        );
+      } else if (p1Alive) {
+        this.cameraTarget.setPosition(this.player.x, this.player.y);
+      } else if (p2Alive) {
+        this.cameraTarget.setPosition(this.player2.x, this.player2.y);
+      }
+    }
+
     // Track highest point reached
     if (this.player.y < this.highestY) {
       this.highestY = this.player.y;
     }
+    if (this.player2 && this.player2.y < this.highestY) {
+      this.highestY = this.player2.y;
+    }
 
-    // Calculate altitude
+    // Calculate altitude (use the highest of both players)
+    const activeY = this.player2
+      ? Math.min(this.player.y, this.player2.y)
+      : this.player.y;
     const altitude = Math.max(
       0,
-      (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
+      (WORLD.BASE_PLATFORM_Y - activeY) / WORLD.ALTITUDE_SCALE,
     );
     PersistentStats.setAltitude(altitude);
     EventBus.emit("altitude-change", { altitude });
@@ -696,7 +945,8 @@ export class MainScene extends Phaser.Scene {
     }
 
     // Boss arena system
-    this.bossArenaManager.update(altitude, this.player.y);
+    const bossCheckY = this.player2 ? Math.min(this.player.y, this.player2.y) : this.player.y;
+    this.bossArenaManager.update(altitude, bossCheckY);
 
     // Hazard system (stalactites, wind, portal effects)
     this.hazardManager.update(time, delta, altitude, this.cameras.main.scrollY);
@@ -793,6 +1043,11 @@ export class MainScene extends Phaser.Scene {
       this.player.setPosition(this.player.x, this.highestY);
       this.player.setVelocity(0, 0);
       this.player.takeDamage(1);
+    }
+    if (this.player2 && this.player2.y > this.highestY + WORLD.DEATH_PLANE_OFFSET) {
+      this.player2.setPosition(this.player2.x, this.highestY);
+      this.player2.setVelocity(0, 0);
+      this.player2.takeDamage(1);
     }
 
     // Mouse camera lookahead: offset camera follow target toward mouse position
@@ -910,22 +1165,24 @@ export class MainScene extends Phaser.Scene {
     if (rightBody) rightBody.updateFromGameObject();
   }
 
-  private handlePortalOverlap(portal: PortalPlatform): void {
+  private handlePortalOverlap(portal: PortalPlatform, player?: Player): void {
     if (portal.cooldownTimer > 0) return;
     if (!portal.getLinkedPortal()) return;
 
-    portal.teleportPlayer(this.player);
+    const targetPlayer = player || this.player;
+    portal.teleportPlayer(targetPlayer);
 
     // Update highest Y tracker so death plane doesn't punish the teleport
-    if (this.player.y < this.highestY) {
-      this.highestY = this.player.y;
+    if (targetPlayer.y < this.highestY) {
+      this.highestY = targetPlayer.y;
     }
   }
 
-  private handleWindOverlap(windZone: WindCurrent): void {
+  private handleWindOverlap(windZone: WindCurrent, player?: Player): void {
     if (!windZone.active || !windZone.isActive) return;
 
-    const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
+    const targetPlayer = player || this.player;
+    const playerBody = targetPlayer.body as Phaser.Physics.Arcade.Body;
     if (!playerBody) return;
 
     // Use a fixed delta estimate since overlap callbacks don't receive delta;
@@ -981,6 +1238,22 @@ export class MainScene extends Phaser.Scene {
     this.time.removeAllEvents();
     this.touchControls?.destroy();
     this.touchControls = null;
+
+    // Clean up co-op resources
+    if (this.player2) {
+      this.player2.destroy();
+      this.player2 = null;
+    }
+    this.players = [];
+    if (this.cameraTarget) {
+      this.cameraTarget.destroy();
+      this.cameraTarget = null;
+    }
+    this.p1Dead = false;
+    this.p2Dead = false;
+    this.p1RespawnTimer = 0;
+    this.p2RespawnTimer = 0;
+
     this.backgroundRenderer?.destroy?.();
     this.biomeRenderer?.destroy?.();
     this.atmosphereManager?.destroy?.();
@@ -1028,9 +1301,11 @@ export class MainScene extends Phaser.Scene {
   }
 
   private handleStaticPlatformCollision(_player: any, platform: any) {
+    const collidingPlayer = _player as Player;
+
     // Detect platform type for surface effects
     if (_player.body?.touching?.down) {
-      this.player.detectPlatformType(platform);
+      collidingPlayer.detectPlatformType(platform);
     }
 
     // Shop platform detection
@@ -1070,7 +1345,7 @@ export class MainScene extends Phaser.Scene {
       _player.body?.touching?.down &&
       platform.body?.touching?.up
     ) {
-      this.player.setVelocityY(-800);
+      collidingPlayer.setVelocityY(-800);
       this.styleManager.addStyle(5);
       this.particleManager.emitBounceEffect(platform.x, platform.y);
     }
@@ -1120,7 +1395,7 @@ export class MainScene extends Phaser.Scene {
 
       const currentAltitude = Math.max(
         0,
-        (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE,
+        (WORLD.BASE_PLATFORM_Y - collidingPlayer.y) / WORLD.ALTITUDE_SCALE,
       );
       // Teleport 50-100m upward (in altitude units)
       const teleportAltitude = Phaser.Math.Between(50, 100);
@@ -1129,12 +1404,12 @@ export class MainScene extends Phaser.Scene {
       const toAltitude = currentAltitude + teleportAltitude;
 
       // Teleport player upward
-      this.player.setPosition(this.player.x, this.player.y - teleportPixels);
-      this.player.setVelocity(0, 0);
+      collidingPlayer.setPosition(collidingPlayer.x, collidingPlayer.y - teleportPixels);
+      collidingPlayer.setVelocity(0, 0);
 
       // Update highest Y tracker so death plane doesn't punish the teleport
-      if (this.player.y < this.highestY) {
-        this.highestY = this.player.y;
+      if (collidingPlayer.y < this.highestY) {
+        this.highestY = collidingPlayer.y;
       }
 
       // Camera shake wobble effect (2 seconds)
@@ -1143,8 +1418,8 @@ export class MainScene extends Phaser.Scene {
       // Purple flash effect (reduced or skipped if flash reduction enabled)
       const portalFlashReduction = GameSettings.get().flashReduction;
       const flash = this.add.rectangle(
-        this.player.x,
-        this.player.y,
+        collidingPlayer.x,
+        collidingPlayer.y,
         WORLD.WIDTH * 2,
         this.cameras.main.height * 2,
         0x9933ff,

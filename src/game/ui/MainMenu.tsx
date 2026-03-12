@@ -17,6 +17,7 @@ interface MainMenuProps {
   onDailyChallenge: () => void;
   onLeaderboard: () => void;
   onReplay?: () => void;
+  onCoopStart?: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -56,6 +57,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onDailyChallenge,
   onLeaderboard,
   onReplay,
+  onCoopStart,
 }) => {
   const [hoveredButton, setHoveredButton] = useState<string | null>(null);
   const [titleVisible, setTitleVisible] = useState(false);
@@ -346,6 +348,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         >
           {hasSavedRun ? "New Run" : "Start Run"}
         </button>
+        {onCoopStart && (
+          <button
+            style={getButtonStyle("coop")}
+            onMouseEnter={() => setHoveredButton("coop")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={onCoopStart}
+          >
+            LOCAL CO-OP
+          </button>
+        )}
         <button
           style={getButtonStyle("daily")}
           onMouseEnter={() => setHoveredButton("daily")}

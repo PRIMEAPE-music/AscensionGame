@@ -25,7 +25,7 @@ export class FloatingEye extends Enemy {
     private readonly BEAM_LENGTH = 400;
     private readonly BEAM_THICKNESS = 4;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 4, 1, 80);
         this.enemyType = 'floating_eye';
         this.tier = 'intermediate';
@@ -45,10 +45,11 @@ export class FloatingEye extends Enemy {
         // Beam group for overlap detection
         this.beamGroup = scene.physics.add.group({ allowGravity: false });
 
+        const playerList = Array.isArray(player) ? player : [player];
         this.beamCollider = scene.physics.add.overlap(
-            player,
+            playerList,
             this.beamGroup,
-            () => this.onBeamHitPlayer(),
+            (p: any) => this.onBeamHitPlayer(p),
             undefined,
             this,
         );
@@ -265,20 +266,20 @@ export class FloatingEye extends Enemy {
         this.beam = null;
     }
 
-    private onBeamHitPlayer(): void {
-        if ((this.player as any).isInvincible) return;
+    private onBeamHitPlayer(hitPlayer: any): void {
+        if (hitPlayer.isInvincible) return;
 
-        (this.player as any).takeDamage(this.damage);
+        hitPlayer.takeDamage(this.damage);
 
         EventBus.emit('health-change', {
-            health: (this.player as any).health,
-            maxHealth: (this.player as any).maxHealth,
+            health: hitPlayer.health,
+            maxHealth: hitPlayer.maxHealth,
         });
 
         // Knockback player away from the eye
-        const direction = this.player.x > this.x ? 1 : -1;
-        this.player.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
-        this.player.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
+        const direction = hitPlayer.x > this.x ? 1 : -1;
+        hitPlayer.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
+        hitPlayer.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
     }
 
     update(time: number, delta: number) {

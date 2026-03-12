@@ -18,6 +18,8 @@
 // Left Stick axes[0]: Horizontal (-1 to 1)
 // Left Stick axes[1]: Vertical (-1 to 1)
 
+import { CoopManager } from './CoopManager';
+
 export interface GamepadState {
   connected: boolean;
   // Movement
@@ -92,19 +94,17 @@ function createDefaultState(): GamepadState {
 }
 
 export const GamepadManager = {
-  state: createDefaultState(),
+  state: createDefaultState(),      // Player 1's gamepad state (solo mode only)
+  _p2State: createDefaultState(),   // Player 2's gamepad state (co-op mode)
   previousButtons: new Map<number, boolean>(),
+  _p2PreviousButtons: new Map<number, boolean>(),
 
-  update(): void {
-    const gamepads = navigator.getGamepads();
-    const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
-
-    if (!gp) {
-      this.state.connected = false;
-      return;
-    }
-
-    this.state.connected = true;
+  _updateStateFromGamepad(
+    gp: Gamepad,
+    state: GamepadState,
+    prevButtons: Map<number, boolean>,
+  ): void {
+    state.connected = true;
 
     // Movement from left stick or d-pad
     let moveX = gp.axes[0] || 0;
@@ -120,8 +120,8 @@ export const GamepadManager = {
     if (gp.buttons[12]?.pressed) moveY = -1; // Up
     if (gp.buttons[13]?.pressed) moveY = 1; // Down
 
-    this.state.moveX = moveX;
-    this.state.moveY = moveY;
+    state.moveX = moveX;
+    state.moveY = moveY;
 
     // Button states with "just pressed" detection
     const checkButton = (
@@ -130,10 +130,10 @@ export const GamepadManager = {
       justPressed: keyof GamepadState,
     ) => {
       const pressed = gp.buttons[index]?.pressed || false;
-      const wasPressed = this.previousButtons.get(index) || false;
-      (this.state as any)[current] = pressed;
-      (this.state as any)[justPressed] = pressed && !wasPressed;
-      this.previousButtons.set(index, pressed);
+      const wasPressed = prevButtons.get(index) || false;
+      (state as any)[current] = pressed;
+      (state as any)[justPressed] = pressed && !wasPressed;
+      prevButtons.set(index, pressed);
     };
 
     checkButton(0, "jump", "jumpJustPressed"); // A
@@ -150,40 +150,68 @@ export const GamepadManager = {
     const lbHeld = gp.buttons[4]?.pressed;
     if (lbHeld) {
       // When LB is held, face buttons trigger ultimate abilities instead
-      this.state.cataclysmJustPressed = this.state.attackBJustPressed;
-      this.state.cataclysm = this.state.attackB;
-      this.state.temporalRiftJustPressed = this.state.attackXJustPressed;
-      this.state.temporalRift = this.state.attackX;
-      this.state.divineInterventionJustPressed = this.state.attackYJustPressed;
-      this.state.divineIntervention = this.state.attackY;
-      this.state.essenceBurstJustPressed = this.state.jumpJustPressed;
-      this.state.essenceBurst = this.state.jump;
+      state.cataclysmJustPressed = state.attackBJustPressed;
+      state.cataclysm = state.attackB;
+      state.temporalRiftJustPressed = state.attackXJustPressed;
+      state.temporalRift = state.attackX;
+      state.divineInterventionJustPressed = state.attackYJustPressed;
+      state.divineIntervention = state.attackY;
+      state.essenceBurstJustPressed = state.jumpJustPressed;
+      state.essenceBurst = state.jump;
 
       // Don't trigger normal attacks/jump while LB is held
-      this.state.attackBJustPressed = false;
-      this.state.attackB = false;
-      this.state.attackXJustPressed = false;
-      this.state.attackX = false;
-      this.state.attackYJustPressed = false;
-      this.state.attackY = false;
-      this.state.jumpJustPressed = false;
-      this.state.jump = false;
+      state.attackBJustPressed = false;
+      state.attackB = false;
+      state.attackXJustPressed = false;
+      state.attackX = false;
+      state.attackYJustPressed = false;
+      state.attackY = false;
+      state.jumpJustPressed = false;
+      state.jump = false;
       // Also suppress dodge since LB is the dodge button
-      this.state.dodgeJustPressed = false;
-      this.state.dodge = false;
+      state.dodgeJustPressed = false;
+      state.dodge = false;
     } else {
-      this.state.cataclysmJustPressed = false;
-      this.state.cataclysm = false;
-      this.state.temporalRiftJustPressed = false;
-      this.state.temporalRift = false;
-      this.state.divineInterventionJustPressed = false;
-      this.state.divineIntervention = false;
-      this.state.essenceBurstJustPressed = false;
-      this.state.essenceBurst = false;
+      state.cataclysmJustPressed = false;
+      state.cataclysm = false;
+      state.temporalRiftJustPressed = false;
+      state.temporalRift = false;
+      state.divineInterventionJustPressed = false;
+      state.divineIntervention = false;
+      state.essenceBurstJustPressed = false;
+      state.essenceBurst = false;
     }
   },
 
+  update(): void {
+    const gamepads = navigator.getGamepads();
+    const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
+
+    if (!gp) {
+      this.state.connected = false;
+      this._p2State.connected = false;
+      return;
+    }
+
+    if (CoopManager.isActive()) {
+      // In co-op: gamepad goes to Player 2 only
+      this.state = createDefaultState(); // P1 uses keyboard only
+      this._updateStateFromGamepad(gp, this._p2State, this._p2PreviousButtons);
+    } else {
+      // Solo: gamepad goes to Player 1 (existing behavior)
+      this._updateStateFromGamepad(gp, this.state, this.previousButtons);
+    }
+  },
+
+  getStateForPlayer(playerIndex: number): GamepadState {
+    if (playerIndex === 0) return this.state;
+    return this._p2State;
+  },
+
   isConnected(): boolean {
+    if (CoopManager.isActive()) {
+      return this.state.connected || this._p2State.connected;
+    }
     return this.state.connected;
   },
 };

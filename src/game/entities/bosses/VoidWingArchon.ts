@@ -17,7 +17,7 @@ export class VoidWingArchon extends Boss {
   // Tracked objects for cleanup
   private feathers: Phaser.GameObjects.Rectangle[] = [];
 
-  constructor(scene: Phaser.Scene, x: number, y: number, player: Player, bossNumber: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[], bossNumber: number) {
     super(scene, x, y, player, bossNumber, 'Void Wing Archon');
 
     this.setTint(0x6600ff);
@@ -182,10 +182,10 @@ export class VoidWingArchon extends Boss {
 
       this.feathers.push(feather);
 
-      // Overlap with player
-      this.scene.physics.add.overlap(this.player, feather, () => {
-        if (!(this.player as any).isInvincible && feather.active) {
-          (this.player as any).takeDamage(1);
+      // Overlap with all players
+      this.scene.physics.add.overlap(this._players, feather, (p: any) => {
+        if (!p.isInvincible && feather.active) {
+          p.takeDamage(1);
           const idx = this.feathers.indexOf(feather);
           if (idx !== -1) this.feathers.splice(idx, 1);
           feather.destroy();

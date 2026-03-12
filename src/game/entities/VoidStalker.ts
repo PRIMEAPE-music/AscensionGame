@@ -18,7 +18,7 @@ export class VoidStalker extends Enemy {
     private readonly RECOVERY_DURATION = 500;
     private readonly PATROL_TURN_INTERVAL = 2000;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 6, 1, 150);
         this.enemyType = 'void_stalker';
         this.tier = 'intermediate';

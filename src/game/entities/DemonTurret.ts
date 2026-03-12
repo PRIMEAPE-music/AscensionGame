@@ -12,7 +12,7 @@ export class DemonTurret extends Enemy {
   private projectiles: Phaser.Physics.Arcade.Group;
   private projectileCollider: Phaser.Physics.Arcade.Collider;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+  constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
     super(scene, x, y, "dude", player, 5, 1, 0); // 5 HP, 1 Dmg, 0 Speed (stationary)
     this.enemyType = 'turret';
     this.tier = 'basic';
@@ -30,11 +30,12 @@ export class DemonTurret extends Enemy {
       allowGravity: false,
     });
 
-    // Overlap projectiles with player for damage
+    // Overlap projectiles with all players for damage
+    const playerList = Array.isArray(player) ? player : [player];
     this.projectileCollider = scene.physics.add.overlap(
-      player,
+      playerList,
       this.projectiles,
-      (_p: any, proj: any) => this.onProjectileHitPlayer(proj),
+      (p: any, proj: any) => this.onProjectileHitPlayer(p, proj),
       undefined,
       this,
     );
@@ -109,20 +110,20 @@ export class DemonTurret extends Enemy {
     });
   }
 
-  private onProjectileHitPlayer(proj: any) {
-    if ((this.player as any).isInvincible) return;
+  private onProjectileHitPlayer(hitPlayer: any, proj: any) {
+    if (hitPlayer.isInvincible) return;
 
-    (this.player as any).takeDamage(this.damage);
+    hitPlayer.takeDamage(this.damage);
 
     EventBus.emit("health-change", {
-      health: (this.player as any).health,
-      maxHealth: (this.player as any).maxHealth,
+      health: hitPlayer.health,
+      maxHealth: hitPlayer.maxHealth,
     });
 
     // Knockback player away from projectile
-    const direction = (this.player as any).x > proj.x ? 1 : -1;
-    (this.player as any).setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
-    (this.player as any).setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
+    const direction = hitPlayer.x > proj.x ? 1 : -1;
+    hitPlayer.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
+    hitPlayer.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
 
     // Destroy projectile on hit
     proj.destroy();

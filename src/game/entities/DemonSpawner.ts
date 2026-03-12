@@ -17,7 +17,7 @@ export class DemonSpawner extends Enemy {
     private readonly SUMMON_DURATION = 1000;
     private readonly DETECT_RANGE = 600;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 8, 0, 0);
         this.enemyType = 'demon_spawner';
         this.tier = 'intermediate';
@@ -197,7 +197,7 @@ export class DemonSpawner extends Enemy {
             const spawnX = this.x + offsetX;
             const spawnY = this.y + 20;
 
-            const minion = new ImpCrawler(this.scene, spawnX, spawnY, this.player);
+            const minion = new ImpCrawler(this.scene, spawnX, spawnY, this._players);
 
             if (enemiesGroup) {
                 enemiesGroup.add(minion);

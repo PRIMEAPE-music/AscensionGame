@@ -24,7 +24,7 @@ export class RiftWeaver extends Enemy {
     private readonly TELEPORT_MIN_DIST = 200;
     private readonly TELEPORT_MAX_DIST = 350;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 12, 1, 120);
         this.enemyType = 'rift_weaver';
         this.tier = 'advanced';
@@ -44,10 +44,11 @@ export class RiftWeaver extends Enemy {
         // Portal group for overlap detection
         this.portalGroup = scene.physics.add.group({ allowGravity: false });
 
+        const playerList = Array.isArray(player) ? player : [player];
         this.portalCollider = scene.physics.add.overlap(
-            player,
+            playerList,
             this.portalGroup,
-            () => this.onPortalHitPlayer(),
+            (p: any) => this.onPortalHitPlayer(p),
             undefined,
             this,
         );
@@ -238,20 +239,20 @@ export class RiftWeaver extends Enemy {
         });
     }
 
-    private onPortalHitPlayer(): void {
-        if ((this.player as any).isInvincible) return;
+    private onPortalHitPlayer(hitPlayer: any): void {
+        if (hitPlayer.isInvincible) return;
 
-        (this.player as any).takeDamage(this.damage);
+        hitPlayer.takeDamage(this.damage);
 
         EventBus.emit('health-change', {
-            health: (this.player as any).health,
-            maxHealth: (this.player as any).maxHealth,
+            health: hitPlayer.health,
+            maxHealth: hitPlayer.maxHealth,
         });
 
         // Knockback player away from rift weaver
-        const direction = this.player.x > this.x ? 1 : -1;
-        this.player.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
-        this.player.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
+        const direction = hitPlayer.x > this.x ? 1 : -1;
+        hitPlayer.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
+        hitPlayer.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
     }
 
     update(time: number, delta: number) {

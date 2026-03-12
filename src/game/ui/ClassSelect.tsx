@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ClassType, CLASSES } from "../config/ClassConfig";
 import type { ClassType as ClassTypeT } from "../config/ClassConfig";
 
 interface ClassSelectProps {
   onSelect: (classType: ClassTypeT) => void;
+  playerLabel?: string; // "PLAYER 1" or "PLAYER 2" for co-op sequential selection
 }
 
 const CLASS_DESCRIPTIONS: Record<ClassTypeT, string> = {
@@ -43,8 +44,13 @@ const STAT_LABELS: {
   },
 ];
 
-export const ClassSelect: React.FC<ClassSelectProps> = ({ onSelect }) => {
+export const ClassSelect: React.FC<ClassSelectProps> = ({ onSelect, playerLabel }) => {
   const [selected, setSelected] = useState<ClassTypeT | null>(null);
+
+  // Reset selection when the player label changes (P1 → P2 in co-op)
+  useEffect(() => {
+    setSelected(null);
+  }, [playerLabel]);
 
   const classTypes = Object.keys(CLASSES) as ClassTypeT[];
 
@@ -66,6 +72,21 @@ export const ClassSelect: React.FC<ClassSelectProps> = ({ onSelect }) => {
         zIndex: 100,
       }}
     >
+      {playerLabel && (
+        <div
+          style={{
+            fontSize: "16px",
+            fontWeight: "bold",
+            letterSpacing: "4px",
+            textTransform: "uppercase",
+            color: "#aaddff",
+            marginBottom: "12px",
+            textShadow: "0 0 12px rgba(170, 221, 255, 0.4)",
+          }}
+        >
+          {playerLabel} — Choose Your Class
+        </div>
+      )}
       <h1
         style={{
           fontSize: "48px",

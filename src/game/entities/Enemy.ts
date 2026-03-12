@@ -6,7 +6,34 @@ import { GameSettings } from '../systems/GameSettings';
 export type EnemyAIState = 'PATROL' | 'ALERT' | 'ATTACK' | 'FLEE' | 'STUN' | 'IDLE';
 
 export class Enemy extends Phaser.Physics.Arcade.Sprite {
-    protected player: Player;
+    protected _players: Player[];
+
+    /** Returns the nearest alive player. Backward-compatible alias for subclasses. */
+    protected get player(): Player {
+        return this.getNearestPlayer();
+    }
+
+    protected getNearestPlayer(): Player {
+        if (this._players.length === 1) return this._players[0];
+
+        let nearest = this._players[0];
+        let nearestDist = Infinity;
+        for (const p of this._players) {
+            // Skip dead players when possible
+            if ((p as any).isDead && this._players.some(pp => !(pp as any).isDead)) continue;
+            const dist = Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y);
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearest = p;
+            }
+        }
+        return nearest;
+    }
+
+    protected getPlayers(): Player[] {
+        return this._players;
+    }
+
     public health: number;
     public maxHealth: number;
     protected damage: number;
@@ -68,9 +95,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     /** Outline sprite rendered behind this enemy for accessibility. */
     private _outlineSprite: Phaser.GameObjects.Sprite | null = null;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, texture: string, player: Player, health: number, damage: number, speed: number) {
+    constructor(scene: Phaser.Scene, x: number, y: number, texture: string, player: Player | Player[], health: number, damage: number, speed: number) {
         super(scene, x, y, texture);
-        this.player = player;
+        this._players = Array.isArray(player) ? player : [player];
         this.health = health;
         this.maxHealth = health;
         this.damage = damage;

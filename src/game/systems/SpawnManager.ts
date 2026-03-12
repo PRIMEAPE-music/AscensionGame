@@ -14,6 +14,7 @@ import {
   type EnemyTier,
 } from "../config/EnemyConfig";
 import { EventBus } from "./EventBus";
+import { CoopManager } from "./CoopManager";
 
 // Wind current spawn configuration
 const WIND_UPDRAFT_MIN_ALTITUDE = 300;
@@ -41,8 +42,13 @@ export class SpawnManager {
   private scene: Phaser.Scene;
   private enemies: Phaser.Physics.Arcade.Group;
   private items: Phaser.Physics.Arcade.Group;
-  private player: Player;
+  private players: Player[];
   private spawnTimer: number = 0;
+
+  // Backwards-compat getter: primary player
+  private get player(): Player {
+    return this.players[0];
+  }
   private nextSpawnInterval: number;
   private staticPlatforms: Phaser.Physics.Arcade.StaticGroup;
 
@@ -61,13 +67,13 @@ export class SpawnManager {
     scene: Phaser.Scene,
     enemies: Phaser.Physics.Arcade.Group,
     items: Phaser.Physics.Arcade.Group,
-    player: Player,
+    player: Player | Player[],
     staticPlatforms: Phaser.Physics.Arcade.StaticGroup,
   ) {
     this.scene = scene;
     this.enemies = enemies;
     this.items = items;
-    this.player = player;
+    this.players = Array.isArray(player) ? player : [player];
     this.staticPlatforms = staticPlatforms;
     this.nextSpawnInterval = this.getSpawnInterval(0);
     this.nextPortalSpawnInterval = Phaser.Math.Between(
@@ -100,6 +106,16 @@ export class SpawnManager {
     return this.windCurrents;
   }
 
+  /** Update the players array (used by MainScene for co-op). */
+  setPlayers(players: Player[]): void {
+    this.players = players;
+  }
+
+  /** Returns the Y position of the highest (smallest Y) player, used for spawn/cleanup reference. */
+  private getHighestPlayerY(): number {
+    return Math.min(...this.players.map(p => p.y));
+  }
+
   update(altitude: number, delta: number): void {
     this.spawnTimer += delta;
 
@@ -125,7 +141,7 @@ export class SpawnManager {
     // Update all active wind currents (periodic toggling, particles)
     this.updateWindCurrents(delta);
 
-    this.cleanup(this.player.y);
+    this.cleanup(this.getHighestPlayerY());
   }
 
   private getSpawnInterval(altitude: number): number {
@@ -218,13 +234,11 @@ export class SpawnManager {
       const plat = child as Phaser.Physics.Arcade.Sprite;
       if (plat.y < viewTop || plat.y > viewBottom) return true;
 
-      const dist = Phaser.Math.Distance.Between(
-        this.player.x,
-        this.player.y,
-        plat.x,
-        plat.y,
+      // Check distance from all players; skip platform if too close to any player
+      const tooClose = this.players.some(p =>
+        Phaser.Math.Distance.Between(p.x, p.y, plat.x, plat.y) < SPAWNING.MIN_DISTANCE_FROM_PLAYER
       );
-      if (dist < SPAWNING.MIN_DISTANCE_FROM_PLAYER) return true;
+      if (tooClose) return true;
 
       spawnX = plat.x + Phaser.Math.Between(-50, 50);
       spawnY = plat.y - 40;
@@ -309,10 +323,10 @@ export class SpawnManager {
     let enemy: Enemy;
 
     if (def) {
-      enemy = def.factory(this.scene, x, y, this.player);
+      enemy = def.factory(this.scene, x, y, this.players);
     } else {
       // Fallback to crawler if type not found
-      enemy = ENEMY_REGISTRY["crawler"].factory(this.scene, x, y, this.player);
+      enemy = ENEMY_REGISTRY["crawler"].factory(this.scene, x, y, this.players);
     }
 
     // Apply altitude-based stat scaling before elite modifiers
@@ -324,6 +338,13 @@ export class SpawnManager {
       enemy.applyElite();
     }
 
+    // Apply co-op HP scaling
+    if (CoopManager.isActive()) {
+      const mult = CoopManager.getEnemyHPMultiplier();
+      enemy.health = Math.ceil(enemy.health * mult);
+      enemy.maxHealth = Math.ceil(enemy.maxHealth * mult);
+    }
+
     this.enemies.add(enemy);
     return enemy;
   }
@@ -331,9 +352,9 @@ export class SpawnManager {
   private assignQuality(itemData: ItemData): ItemData {
     if (itemData.type !== 'SILVER') return itemData;
 
-    // Lucky Dice ability: improve quality rolls
-    const hasLuckyDice = this.player.abilities.has('lucky_dice');
-    const hasStackedLuckyDice = this.player.stackedAbilities.has('lucky_dice');
+    // Lucky Dice ability: improve quality rolls (any player having the ability counts)
+    const hasLuckyDice = this.players.some(p => p.abilities.has('lucky_dice'));
+    const hasStackedLuckyDice = this.players.some(p => p.stackedAbilities.has('lucky_dice'));
 
     // Stacked Lucky Dice: always Pristine
     if (hasStackedLuckyDice) {

@@ -24,7 +24,7 @@ export class SoulReaper extends Enemy {
     private readonly REPOSITION_DURATION = 1500;
     private readonly REPOSITION_DISTANCE = 250;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 20, 1, 100);
         this.enemyType = 'soul_reaper';
         this.tier = 'elite';
@@ -47,10 +47,11 @@ export class SoulReaper extends Enemy {
         // Drain aura group for overlap detection
         this.drainGroup = scene.physics.add.group({ allowGravity: false });
 
+        const playerList = Array.isArray(player) ? player : [player];
         this.drainCollider = scene.physics.add.overlap(
-            player,
+            playerList,
             this.drainGroup,
-            () => this.onDrainHitPlayer(),
+            (p: any) => this.onDrainHitPlayer(p),
             undefined,
             this,
         );
@@ -204,8 +205,8 @@ export class SoulReaper extends Enemy {
         this.drainAura = null;
     }
 
-    private onDrainHitPlayer(): void {
-        if ((this.player as any).isInvincible) return;
+    private onDrainHitPlayer(hitPlayer: any): void {
+        if (hitPlayer.isInvincible) return;
         if (!this.isDraining) return;
 
         // Only deal damage every DRAIN_DAMAGE_INTERVAL
@@ -213,17 +214,17 @@ export class SoulReaper extends Enemy {
         if (this.drainDamageTimer < this.DRAIN_DAMAGE_INTERVAL) return;
         this.drainDamageTimer = 0;
 
-        (this.player as any).takeDamage(this.damage);
+        hitPlayer.takeDamage(this.damage);
 
         EventBus.emit('health-change', {
-            health: (this.player as any).health,
-            maxHealth: (this.player as any).maxHealth,
+            health: hitPlayer.health,
+            maxHealth: hitPlayer.maxHealth,
         });
 
         // Light knockback
-        const direction = this.player.x > this.x ? 1 : -1;
-        this.player.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * 0.5 * direction);
-        this.player.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y * 0.5);
+        const direction = hitPlayer.x > this.x ? 1 : -1;
+        hitPlayer.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * 0.5 * direction);
+        hitPlayer.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y * 0.5);
     }
 
     public takeDamage(amount: number) {

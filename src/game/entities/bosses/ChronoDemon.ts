@@ -35,7 +35,7 @@ export class ChronoDemon extends Boss {
 
   private currentStrikeIndex: number = 0;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, player: Player, bossNumber: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[], bossNumber: number) {
     super(scene, x, y, player, bossNumber, 'Chrono Demon');
 
     this.setTint(0x00ffaa);
@@ -214,9 +214,9 @@ export class ChronoDemon extends Boss {
       (hitbox.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
       this.dashHitboxes.push(hitbox);
 
-      this.scene.physics.add.overlap(this.player, hitbox, () => {
-        if (!(this.player as any).isInvincible && hitbox.active) {
-          (this.player as any).takeDamage(1);
+      this.scene.physics.add.overlap(this._players, hitbox, (p: any) => {
+        if (!p.isInvincible && hitbox.active) {
+          p.takeDamage(1);
         }
       });
 
@@ -270,9 +270,9 @@ export class ChronoDemon extends Boss {
         this.scene.physics.add.existing(explosion);
         (explosion.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
 
-        this.scene.physics.add.overlap(this.player, explosion, () => {
-          if (!(this.player as any).isInvincible && explosion.active) {
-            (this.player as any).takeDamage(1);
+        this.scene.physics.add.overlap(this._players, explosion, (p: any) => {
+          if (!p.isInvincible && explosion.active) {
+            p.takeDamage(1);
           }
         });
 
@@ -331,9 +331,9 @@ export class ChronoDemon extends Boss {
       (hitbox.body as Phaser.Physics.Arcade.Body).setAllowGravity(false);
       this.dashHitboxes.push(hitbox);
 
-      this.scene.physics.add.overlap(this.player, hitbox, () => {
-        if (!(this.player as any).isInvincible && hitbox.active) {
-          (this.player as any).takeDamage(1);
+      this.scene.physics.add.overlap(this._players, hitbox, (p: any) => {
+        if (!p.isInvincible && hitbox.active) {
+          p.takeDamage(1);
         }
       });
 

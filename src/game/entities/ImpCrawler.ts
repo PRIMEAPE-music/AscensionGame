@@ -8,7 +8,7 @@ export class ImpCrawler extends Enemy {
     private attackCooldown: number = 0;
     private readonly ATTACK_COOLDOWN_DURATION = 800;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, player: Player) {
+    constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) {
         super(scene, x, y, 'dude', player, 3, 1, 100); // Reusing 'dude' texture for now, will tint
         this.enemyType = 'crawler';
         this.tier = 'basic';

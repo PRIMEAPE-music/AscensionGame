@@ -30,7 +30,7 @@ export interface EnemyDefinition {
     minAltitude: number;
     maxAltitude: number;
     weight: number;
-    factory: (scene: Phaser.Scene, x: number, y: number, player: Player) => Enemy;
+    factory: (scene: Phaser.Scene, x: number, y: number, player: Player | Player[]) => Enemy;
 }
 
 // ---------------------------------------------------------------------------

@@ -22,6 +22,9 @@ interface GameHUDProps {
   flowMaxFlow: number;
   isShieldGuarding: boolean;
   sacredGroundCooldown: { remaining: number; total: number };
+  player2Health?: number;
+  player2MaxHealth?: number;
+  player2ClassName?: string;
 }
 
 function getSpeedColor(speed: number, maxSpeed: number): string {
@@ -95,6 +98,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   flowMaxFlow,
   isShieldGuarding,
   sacredGroundCooldown,
+  player2Health,
+  player2MaxHealth,
+  player2ClassName,
 }) => {
   // Cosmetic UI theme accent color
   const themeColor = useMemo(() => {
@@ -313,6 +319,42 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           }}
         >
           BOSS APPROACHING
+        </div>
+      )}
+
+      {/* P2 Health Panel (co-op) */}
+      {player2Health !== undefined && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-end',
+            gap: 4,
+            pointerEvents: 'none',
+            zIndex: 10,
+            fontFamily: 'monospace',
+          }}
+        >
+          <div style={{ fontSize: 11, color: '#aaddff', letterSpacing: 2 }}>
+            P2 {player2ClassName}
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {Array.from({ length: player2MaxHealth ?? 0 }).map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: '50%',
+                  background: i < (player2Health ?? 0) ? '#ff4466' : 'rgba(255,255,255,0.15)',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                }}
+              />
+            ))}
+          </div>
         </div>
       )}
 

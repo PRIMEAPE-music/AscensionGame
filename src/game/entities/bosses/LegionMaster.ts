@@ -24,7 +24,7 @@ export class LegionMaster extends Boss {
   // Scene enemies group reference (set via setter after spawn)
   private enemiesGroup: Phaser.Physics.Arcade.Group | null = null;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, player: Player, bossNumber: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, player: Player | Player[], bossNumber: number) {
     super(scene, x, y, player, bossNumber, 'Legion Master');
 
     this.setTint(0x440066);
@@ -210,9 +210,9 @@ export class LegionMaster extends Boss {
 
       let minion: Phaser.Physics.Arcade.Sprite;
       if (this.summonType === 'bat') {
-        minion = new ShadowBat(this.scene, clampedX, sy, this.player);
+        minion = new ShadowBat(this.scene, clampedX, sy, this._players);
       } else {
-        minion = new ImpCrawler(this.scene, clampedX, sy, this.player);
+        minion = new ImpCrawler(this.scene, clampedX, sy, this._players);
       }
 
       this.summonedMinions.push(minion);
@@ -247,20 +247,20 @@ export class LegionMaster extends Boss {
 
       this.projectiles.push(bolt);
 
-      // Overlap with player
-      this.scene.physics.add.overlap(this.player, bolt, () => {
-        if (!(this.player as any).isInvincible && bolt.active) {
-          (this.player as any).takeDamage(1);
+      // Overlap with all players
+      this.scene.physics.add.overlap(this._players, bolt, (p: any) => {
+        if (!p.isInvincible && bolt.active) {
+          p.takeDamage(1);
 
           EventBus.emit('health-change', {
-            health: (this.player as any).health,
-            maxHealth: (this.player as any).maxHealth,
+            health: p.health,
+            maxHealth: p.maxHealth,
           });
 
           // Knockback
-          const direction = (this.player as any).x > bolt.x ? 1 : -1;
-          (this.player as any).setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
-          (this.player as any).setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
+          const direction = p.x > bolt.x ? 1 : -1;
+          p.setVelocityX(COMBAT.KNOCKBACK_PLAYER.x * direction);
+          p.setVelocityY(COMBAT.KNOCKBACK_PLAYER.y);
 
           const idx = this.projectiles.indexOf(bolt);
           if (idx !== -1) this.projectiles.splice(idx, 1);
