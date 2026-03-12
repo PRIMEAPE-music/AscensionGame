@@ -82,9 +82,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private dodgeJustPressed: boolean = false;
   private grappleJustPressed: boolean = false;
 
-  // Double Jump State
+  // Double Jump State (supports triple jump when stacked)
   private canDoubleJump: boolean = false;
   private hasDoubleJumped: boolean = false;
+  private extraJumpsUsed: number = 0;
 
   // Air Dash state
   private airDashCooldown: number = 0;
@@ -94,6 +95,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private readonly AIR_DASH_SPEED = 600;
   private readonly AIR_DASH_DURATION = 150;
   private readonly AIR_DASH_COOLDOWN = 1500;
+  private readonly AIR_DASH_COOLDOWN_STACKED = 800;
 
   // Wall Climb state
   private wallClimbStamina: number = 5000; // ms
@@ -144,13 +146,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private armorItems: Map<string, number> = new Map(); // itemId -> remaining hits
 
   // === Gold Ability State ===
+  private stackedAbilities: Set<string> = new Set();
   private healthRegenTimer: number = 0;
   private outOfCombatTimer: number = 0;
   private readonly HEALTH_REGEN_INTERVAL = 30000; // 30s
+  private readonly HEALTH_REGEN_INTERVAL_STACKED = 20000; // 20s when stacked
   private readonly OUT_OF_COMBAT_THRESHOLD = 5000; // 5s
   private vampirismKillCount: number = 0;
   private hasRevived: boolean = false;
   private tempShieldUsed: boolean = false;
+  private tempShieldRechargeTimer: number = 0;
+  private readonly TEMP_SHIELD_RECHARGE_TIME = 300000; // 5 minutes
 
   // === Paladin: Shield Guard ===
   private standStillTimer: number = 0;
@@ -185,6 +191,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private temporalCooldown: number = 0;
   private readonly TEMPORAL_COOLDOWN = 90000;
   private readonly TEMPORAL_DURATION = 5000;
+  private readonly TEMPORAL_DURATION_STACKED = 8000;
   private readonly TEMPORAL_SLOW = 0.3;
 
   // Divine Intervention
@@ -453,13 +460,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.outOfCombatTimer += delta;
       if (this.outOfCombatTimer >= this.OUT_OF_COMBAT_THRESHOLD) {
         this.healthRegenTimer += delta;
-        if (this.healthRegenTimer >= this.HEALTH_REGEN_INTERVAL) {
+        const regenInterval = this.stackedAbilities.has('health_regen')
+          ? this.HEALTH_REGEN_INTERVAL_STACKED
+          : this.HEALTH_REGEN_INTERVAL;
+        if (this.healthRegenTimer >= regenInterval) {
           this.healthRegenTimer = 0;
           if (this.health < this.maxHealth) {
             this.health++;
             EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
           }
         }
+      }
+    }
+
+    // Temp Shield recharge timer (stacked guardian_angel: second use after 5 min)
+    if (this.tempShieldUsed && this.stackedAbilities.has('temp_shield') && this.tempShieldRechargeTimer > 0) {
+      this.tempShieldRechargeTimer -= delta;
+      if (this.tempShieldRechargeTimer <= 0) {
+        this.tempShieldUsed = false; // Allow second activation
+        this.tempShieldRechargeTimer = 0;
       }
     }
   }
@@ -617,6 +636,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.onGround || this.onSlope) {
       this.canDoubleJump = true;
       this.hasDoubleJumped = false;
+      this.extraJumpsUsed = 0;
     }
 
     // Initial Jump (coyote + buffer)
@@ -635,33 +655,37 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.coyoteTimer = 0;
       this.jumpBufferTimer = 0;
     }
-    // Double Jump
+    // Double Jump (Triple Jump when stacked)
     else if (
       this.jumpJustPressed &&
       !canJump &&
       this.canDoubleJump &&
-      !this.hasDoubleJumped &&
       this.abilities.has("double_jump")
     ) {
-      this.setVelocityY(jumpForce * PHYSICS.DOUBLE_JUMP_MULTIPLIER);
-      this.hasDoubleJumped = true;
-      this.isJumping = true;
-      this.jumpTimer = 0;
+      // Max extra jumps: 2 if stacked (triple jump), 1 otherwise (double jump)
+      const maxExtraJumps = this.stackedAbilities.has("double_jump") ? 2 : 1;
+      if (this.extraJumpsUsed < maxExtraJumps) {
+        this.setVelocityY(jumpForce * PHYSICS.DOUBLE_JUMP_MULTIPLIER);
+        this.extraJumpsUsed++;
+        this.hasDoubleJumped = this.extraJumpsUsed >= maxExtraJumps;
+        this.isJumping = true;
+        this.jumpTimer = 0;
 
-      const particle = this.scene.add.circle(
-        this.x,
-        this.y + 20,
-        10,
-        0xffd700,
-        0.8,
-      );
-      this.scene.tweens.add({
-        targets: particle,
-        scale: 2,
-        alpha: 0,
-        duration: 300,
-        onComplete: () => particle.destroy(),
-      });
+        const particle = this.scene.add.circle(
+          this.x,
+          this.y + 20,
+          10,
+          this.stackedAbilities.has("double_jump") ? 0xff8c00 : 0xffd700,
+          0.8,
+        );
+        this.scene.tweens.add({
+          targets: particle,
+          scale: 2,
+          alpha: 0,
+          duration: 300,
+          onComplete: () => particle.destroy(),
+        });
+      }
     }
 
     // Variable jump height (hold button): apply additional upward force while held
@@ -750,6 +774,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.jumpTimer = 0;
         this.hasDoubleJumped = false;
         this.canDoubleJump = true;
+        this.extraJumpsUsed = 0;
       }
     } else {
       this.isWallSliding = false;
@@ -846,6 +871,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       if (this.dodgeTimer <= 0) {
         this.isDodging = false;
 
+        // Stacked Dodge Mastery: spawn damaging afterimage trail
+        if (this.stackedAbilities.has('dodge_mastery')) {
+          this.spawnDodgeAfterimages();
+        }
+
         // Shadow Dodge: grant 1s invisibility after dodge ends
         if (this.abilities.has('shadow_dodge')) {
           this.setAlpha(0.3);
@@ -931,7 +961,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.isAirDashing = true;
       this.hasAirDashed = true;
       this.airDashTimer = this.AIR_DASH_DURATION;
-      this.airDashCooldown = this.AIR_DASH_COOLDOWN;
+      this.airDashCooldown = this.stackedAbilities.has('air_dash')
+        ? this.AIR_DASH_COOLDOWN_STACKED
+        : this.AIR_DASH_COOLDOWN;
 
       // Dash direction based on facing
       const dashDir = this.flipX ? -1 : 1;
@@ -968,6 +1000,57 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         duration: 300,
         onComplete: () => trail.destroy(),
       });
+    }
+  }
+
+  private spawnDodgeAfterimages(): void {
+    // Spawn 3 afterimage damage zones along the dodge path
+    const afterimageCount = 3;
+    const spacing = 40; // pixels between afterimages
+    const facingDir = this.flipX ? -1 : 1;
+    const afterimageDamage = Math.max(1, Math.round(COMBAT.BASE_DAMAGE * 0.2 * this.classStats.attackDamage));
+
+    for (let i = 0; i < afterimageCount; i++) {
+      const offsetX = -facingDir * spacing * (i + 1); // Trail behind the dodge direction
+      const ax = this.x + offsetX;
+      const ay = this.y;
+
+      // Create visual afterimage (semi-transparent rectangle representing player silhouette)
+      const afterimage = this.scene.add.rectangle(
+        ax, ay,
+        this.width * 0.8, this.height * 0.9,
+        0x8844ff, 0.5,
+      );
+      afterimage.setDepth(this.depth - 1);
+
+      // Fade out over 0.5s
+      this.scene.tweens.add({
+        targets: afterimage,
+        alpha: 0,
+        duration: 500,
+        onComplete: () => afterimage.destroy(),
+      });
+
+      // Check for enemy collisions in the afterimage area
+      const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+      if (enemies) {
+        const hitArea = new Phaser.Geom.Rectangle(
+          ax - this.width * 0.4,
+          ay - this.height * 0.45,
+          this.width * 0.8,
+          this.height * 0.9,
+        );
+
+        enemies.getChildren().forEach((enemy: any) => {
+          if (
+            enemy.active &&
+            typeof enemy.takeDamage === "function" &&
+            hitArea.contains(enemy.x, enemy.y)
+          ) {
+            enemy.takeDamage(afterimageDamage);
+          }
+        });
+      }
     }
   }
 
@@ -1299,6 +1382,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.health -= finalAmount;
     PersistentStats.addDamageTaken(finalAmount);
 
+    // Stacked Damage Reflection: reflect additional 30% (total 60%) from Player side
+    // Base 30% is handled by CombatManager; stacked adds another 30% here
+    if (this.stackedAbilities.has('damage_reflect') && attackerRef && attackerRef.active && typeof attackerRef.takeDamage === 'function') {
+      const extraReflect = Math.max(1, Math.round(amount * 0.3));
+      attackerRef.takeDamage(extraReflect);
+    }
+
     // Revive ability: prevent death once per run
     if (this.health <= 0 && this.abilities.has('revive') && !this.hasRevived) {
       this.hasRevived = true;
@@ -1317,7 +1407,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       return false; // Don't die
     }
 
-    // Temporary Shield ability: invincibility when health drops to 1 (once per run)
+    // Temporary Shield ability: invincibility when health drops to 1 (once per run, or twice if stacked)
     if (this.health === 1 && this.abilities.has('temp_shield') && !this.tempShieldUsed) {
       this.tempShieldUsed = true;
       this.invincibilityTimer = 3000;
@@ -1327,6 +1417,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.scene.time.delayedCall(3000, () => {
         if (this.active) this.restoreDefaultTint();
       });
+      // Stacked: start recharge timer for second activation
+      if (this.stackedAbilities.has('temp_shield')) {
+        this.tempShieldRechargeTimer = this.TEMP_SHIELD_RECHARGE_TIME;
+      }
     }
 
     // Start invincibility
@@ -1525,7 +1619,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     overlay.setDepth(150);
 
     // Restore after duration (delayedCall is affected by timeScale, so multiply by slow factor)
-    this.scene.time.delayedCall(this.TEMPORAL_DURATION * this.TEMPORAL_SLOW, () => {
+    const temporalDuration = this.stackedAbilities.has('temporal_rift')
+      ? this.TEMPORAL_DURATION_STACKED
+      : this.TEMPORAL_DURATION;
+    this.scene.time.delayedCall(temporalDuration * this.TEMPORAL_SLOW, () => {
       this.scene.time.timeScale = 1;
       this.scene.physics.world.timeScale = 1;
       this.scene.tweens.add({
@@ -2174,7 +2271,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     PersistentStats.addItemCollected();
 
     if (item.abilityId) {
-      this.abilities.add(item.abilityId);
+      if (this.abilities.has(item.abilityId)) {
+        // Already have this ability — it's being stacked
+        this.stackedAbilities.add(item.abilityId);
+      } else {
+        this.abilities.add(item.abilityId);
+      }
     }
 
     // Armor items: track hits for absorption

@@ -190,7 +190,9 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'double_jump',
-        iconColor: 0xffd700
+        iconColor: 0xffd700,
+        stackable: true,
+        stackDescription: 'Triple Jump instead of Double Jump',
     },
     'vampiric_fang': {
         id: 'vampiric_fang',
@@ -244,7 +246,9 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'air_dash',
-        iconColor: 0x88ccff
+        iconColor: 0x88ccff,
+        stackable: true,
+        stackDescription: 'Air Dash cooldown reduced to 0.8s',
     },
     'spider_silk': {
         id: 'spider_silk',
@@ -271,7 +275,9 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'health_regen',
-        iconColor: 0x44ff44
+        iconColor: 0x44ff44,
+        stackable: true,
+        stackDescription: 'Regen timer reduced to 20s',
     },
     'phantom_step': {
         id: 'phantom_step',
@@ -280,7 +286,9 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'dodge_mastery',
-        iconColor: 0x8844ff
+        iconColor: 0x8844ff,
+        stackable: true,
+        stackDescription: 'Adds damaging afterimage trail on dodge',
     },
     'mirror_shield': {
         id: 'mirror_shield',
@@ -289,7 +297,9 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'damage_reflect',
-        iconColor: 0x44ddff
+        iconColor: 0x44ddff,
+        stackable: true,
+        stackDescription: '60% damage reflection instead of 30%',
     },
     'guardian_angel': {
         id: 'guardian_angel',
@@ -298,7 +308,9 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'temp_shield',
-        iconColor: 0xffdd44
+        iconColor: 0xffdd44,
+        stackable: true,
+        stackDescription: 'Second activation after 5 minutes',
     },
     'cataclysm_orb': {
         id: 'cataclysm_orb',
@@ -316,7 +328,9 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'temporal_rift',
-        iconColor: 0x22aaff
+        iconColor: 0x22aaff,
+        stackable: true,
+        stackDescription: 'Time slow lasts 8s instead of 5s',
     },
     'divine_halo': {
         id: 'divine_halo',

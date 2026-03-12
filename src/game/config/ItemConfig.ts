@@ -39,4 +39,6 @@ export interface ItemData {
     iconColor: number;      // Placeholder for icon
     quality?: ItemQuality;  // Quality tier for silver items (defaults to NORMAL)
     armorHits?: number;     // For defense items: number of hits absorbed before breaking
+    stackable?: boolean;    // Gold items: can equip same item twice if player owns duplicates
+    stackDescription?: string; // Description of the enhanced stacking effect
 }

@@ -1,3 +1,5 @@
+import { ITEMS } from "../config/ItemDatabase";
+
 const STORAGE_KEY = "ascension_gold_items";
 
 interface GoldItemData {
@@ -44,14 +46,28 @@ export const GoldItemCollection = {
   equip(itemId: string): boolean {
     if (this.equippedItems.length >= 2) return false;
     if (!this.isUnlocked(itemId)) return false;
-    if (this.isEquipped(itemId)) return false;
+
+    // Check if already equipped — only allow if item is stackable
+    if (this.isEquipped(itemId)) {
+      const itemData = ITEMS[itemId];
+      if (!itemData?.stackable) return false;
+      // Can't equip more than owned copies
+      const ownedCount = this.unlockedItems.filter(id => id === itemId).length;
+      const equippedCount = this.equippedItems.filter(id => id === itemId).length;
+      if (equippedCount >= ownedCount) return false;
+    }
+
     this.equippedItems.push(itemId);
     this.save();
     return true;
   },
 
   unequip(itemId: string): void {
-    this.equippedItems = this.equippedItems.filter((id) => id !== itemId);
+    // Remove only one instance (important for stacked items)
+    const idx = this.equippedItems.indexOf(itemId);
+    if (idx !== -1) {
+      this.equippedItems.splice(idx, 1);
+    }
     this.save();
   },
 
@@ -70,5 +86,13 @@ export const GoldItemCollection = {
 
   isEquipped(itemId: string): boolean {
     return this.equippedItems.includes(itemId);
+  },
+
+  getOwnedCount(itemId: string): number {
+    return this.unlockedItems.filter(id => id === itemId).length;
+  },
+
+  getEquippedCount(itemId: string): number {
+    return this.equippedItems.filter(id => id === itemId).length;
   },
 };

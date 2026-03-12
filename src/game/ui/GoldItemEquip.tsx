@@ -17,9 +17,27 @@ export const GoldItemEquip: React.FC<GoldItemEquipProps> = ({ onConfirm }) => {
   }, []);
 
   const handleToggle = (itemId: string) => {
-    if (equipped.includes(itemId)) {
-      GoldItemCollection.unequip(itemId);
-      setEquipped(GoldItemCollection.getEquipped());
+    const equippedCount = equipped.filter(id => id === itemId).length;
+
+    if (equippedCount > 0) {
+      // Already equipped at least once — check if we should stack or unequip
+      const item = ITEMS[itemId];
+      const ownedCount = GoldItemCollection.getOwnedCount(itemId);
+
+      if (
+        item?.stackable &&
+        ownedCount >= 2 &&
+        equippedCount === 1 &&
+        equipped.length < 2
+      ) {
+        // Equip second copy (stack)
+        GoldItemCollection.equip(itemId);
+        setEquipped(GoldItemCollection.getEquipped());
+      } else {
+        // Unequip one copy
+        GoldItemCollection.unequip(itemId);
+        setEquipped(GoldItemCollection.getEquipped());
+      }
     } else {
       if (equipped.length >= 2) return;
       GoldItemCollection.equip(itemId);
@@ -32,6 +50,10 @@ export const GoldItemEquip: React.FC<GoldItemEquipProps> = ({ onConfirm }) => {
   };
 
   const isEmpty = unlocked.length === 0;
+
+  // Check if both equipped slots have the same item (stacked)
+  const isStacked = equipped.length === 2 && equipped[0] === equipped[1];
+  const stackedItem = isStacked ? ITEMS[equipped[0]] : null;
 
   return (
     <div
@@ -68,11 +90,46 @@ export const GoldItemEquip: React.FC<GoldItemEquipProps> = ({ onConfirm }) => {
         style={{
           fontSize: "16px",
           color: "#aaa",
-          marginBottom: "40px",
+          marginBottom: isStacked ? "12px" : "40px",
         }}
       >
         (Choose up to 2)
       </p>
+
+      {/* Stacked effect banner */}
+      {isStacked && stackedItem && (
+        <div
+          style={{
+            padding: "10px 24px",
+            marginBottom: "24px",
+            backgroundColor: "rgba(255, 140, 0, 0.12)",
+            border: "1px solid #ff8c00",
+            borderRadius: "6px",
+            textAlign: "center",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "13px",
+              fontWeight: "bold",
+              color: "#ff8c00",
+              textTransform: "uppercase",
+              letterSpacing: "2px",
+            }}
+          >
+            STACKED
+          </span>
+          <span
+            style={{
+              fontSize: "13px",
+              color: "#ffbb44",
+              marginLeft: "10px",
+            }}
+          >
+            {stackedItem.stackDescription}
+          </span>
+        </div>
+      )}
 
       {isEmpty ? (
         <div
@@ -113,9 +170,16 @@ export const GoldItemEquip: React.FC<GoldItemEquipProps> = ({ onConfirm }) => {
           {unlocked.map((itemId) => {
             const item = ITEMS[itemId];
             if (!item) return null;
-            const isEquipped = equipped.includes(itemId);
+            const equippedCount = equipped.filter(id => id === itemId).length;
+            const isEquipped = equippedCount > 0;
+            const ownedCount = GoldItemCollection.getOwnedCount(itemId);
+            const canStack = item.stackable && ownedCount >= 2;
+            const isDoubleEquipped = equippedCount === 2;
             const hexColor =
               "#" + item.iconColor.toString(16).padStart(6, "0");
+
+            // Determine if clickable
+            const canClick = isEquipped || equipped.length < 2;
 
             return (
               <div
@@ -123,24 +187,66 @@ export const GoldItemEquip: React.FC<GoldItemEquipProps> = ({ onConfirm }) => {
                 onClick={() => handleToggle(itemId)}
                 style={{
                   padding: "20px",
+                  position: "relative",
                   backgroundColor: isEquipped
-                    ? "rgba(255, 215, 0, 0.08)"
+                    ? isDoubleEquipped
+                      ? "rgba(255, 140, 0, 0.10)"
+                      : "rgba(255, 215, 0, 0.08)"
                     : "rgba(255,255,255,0.03)",
-                  border: `2px solid ${isEquipped ? "#ffd700" : "#444"}`,
+                  border: `2px solid ${isDoubleEquipped ? "#ff8c00" : isEquipped ? "#ffd700" : "#444"}`,
                   borderRadius: "8px",
-                  cursor:
-                    isEquipped || equipped.length < 2
-                      ? "pointer"
-                      : "not-allowed",
+                  cursor: canClick ? "pointer" : "not-allowed",
                   transition: "all 0.2s ease",
-                  boxShadow: isEquipped
-                    ? "0 0 20px rgba(255, 215, 0, 0.25), inset 0 0 15px rgba(255, 215, 0, 0.05)"
-                    : "none",
+                  boxShadow: isDoubleEquipped
+                    ? "0 0 24px rgba(255, 140, 0, 0.35), inset 0 0 15px rgba(255, 140, 0, 0.08)"
+                    : isEquipped
+                      ? "0 0 20px rgba(255, 215, 0, 0.25), inset 0 0 15px rgba(255, 215, 0, 0.05)"
+                      : "none",
                   opacity:
                     !isEquipped && equipped.length >= 2 ? 0.5 : 1,
                   pointerEvents: "auto",
                 }}
               >
+                {/* Stackable badge */}
+                {canStack && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "6px",
+                      right: "6px",
+                      fontSize: "9px",
+                      fontWeight: "bold",
+                      color: "#ff8c00",
+                      backgroundColor: "rgba(255, 140, 0, 0.15)",
+                      border: "1px solid rgba(255, 140, 0, 0.3)",
+                      borderRadius: "3px",
+                      padding: "2px 5px",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.5px",
+                    }}
+                  >
+                    STACKABLE
+                  </div>
+                )}
+
+                {/* Owned count badge for stackable items with 2+ copies */}
+                {canStack && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "6px",
+                      left: "6px",
+                      fontSize: "9px",
+                      color: "#aaa",
+                      backgroundColor: "rgba(255,255,255,0.06)",
+                      borderRadius: "3px",
+                      padding: "2px 5px",
+                    }}
+                  >
+                    x{ownedCount}
+                  </div>
+                )}
+
                 {/* Color swatch icon */}
                 <div
                   style={{
@@ -161,7 +267,7 @@ export const GoldItemEquip: React.FC<GoldItemEquipProps> = ({ onConfirm }) => {
                     fontWeight: "bold",
                     textAlign: "center",
                     marginBottom: "6px",
-                    color: isEquipped ? "#ffd700" : "#ddd",
+                    color: isDoubleEquipped ? "#ff8c00" : isEquipped ? "#ffd700" : "#ddd",
                   }}
                 >
                   {item.name}
@@ -179,17 +285,32 @@ export const GoldItemEquip: React.FC<GoldItemEquipProps> = ({ onConfirm }) => {
                   {item.description}
                 </p>
 
+                {isDoubleEquipped && item.stackDescription && (
+                  <p
+                    style={{
+                      fontSize: "11px",
+                      color: "#ff8c00",
+                      textAlign: "center",
+                      lineHeight: "1.4",
+                      marginBottom: "6px",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    {item.stackDescription}
+                  </p>
+                )}
+
                 {isEquipped && (
                   <p
                     style={{
                       fontSize: "11px",
-                      color: "#ffd700",
+                      color: isDoubleEquipped ? "#ff8c00" : "#ffd700",
                       textAlign: "center",
                       textTransform: "uppercase",
                       letterSpacing: "1px",
                     }}
                   >
-                    Equipped
+                    {isDoubleEquipped ? "Stacked" : "Equipped"}
                   </p>
                 )}
               </div>
