@@ -134,6 +134,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private readonly WALL_CLIMB_SPEED = 150;
   private isWallClimbing: boolean = false;
 
+  // Wall jump limit (max 2 consecutive wall jumps before landing)
+  private consecutiveWallJumps: number = 0;
+  private readonly MAX_WALL_JUMPS = 2;
+
+  // Fall damage (applied on landing, not mid-air death plane)
+  private fallStartY: number = 0;
+  private isFalling: boolean = false;
+  private readonly FALL_DAMAGE_THRESHOLD = 800; // pixels of fall before damage
+  private readonly FALL_DAMAGE_PER_UNIT = 1; // 1 damage per threshold unit beyond threshold
+
   // Grappling Hook state
   private grappleKey!: Phaser.Input.Keyboard.Key;
   private grappleCooldown: number = 0;
@@ -508,8 +518,33 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this.onGround) {
       this.coyoteTimer = coyoteTime;
+
+      // Fall damage on landing
+      if (this.isFalling) {
+        const fallDistance = this.y - this.fallStartY;
+        if (fallDistance > this.FALL_DAMAGE_THRESHOLD) {
+          const damageUnits = Math.floor((fallDistance - this.FALL_DAMAGE_THRESHOLD) / this.FALL_DAMAGE_THRESHOLD) + 1;
+          const damage = damageUnits * this.FALL_DAMAGE_PER_UNIT;
+          this.takeDamage(damage);
+        }
+        this.isFalling = false;
+      }
+
+      // Reset wall jump count on landing
+      this.consecutiveWallJumps = 0;
     } else {
       this.coyoteTimer -= delta;
+
+      // Track falling: start tracking when moving downward and not wall sliding
+      const vy = (this.body as Phaser.Physics.Arcade.Body).velocity.y;
+      if (vy > 0 && !this.isWallSliding && !this.isFalling) {
+        // Start of a new fall
+        this.isFalling = true;
+        this.fallStartY = this.y;
+      } else if (this.isWallSliding) {
+        // Wall sliding cancels fall damage tracking
+        this.isFalling = false;
+      }
     }
 
     if (this.jumpJustPressed) {
@@ -922,7 +957,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         }
       }
 
-      if (this.jumpJustPressed) {
+      if (this.jumpJustPressed && this.consecutiveWallJumps < this.MAX_WALL_JUMPS) {
         const jumpDir = onLeftWall ? 1 : -1;
         const jumpForceY = this.getStat(
           "jumpHeight",
@@ -940,6 +975,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.hasDoubleJumped = false;
         this.canDoubleJump = true;
         this.extraJumpsUsed = 0;
+        this.consecutiveWallJumps++;
       }
     } else {
       this.isWallSliding = false;

@@ -834,13 +834,6 @@ export class MainScene extends Phaser.Scene {
     // Update Sacred Ground instances (Priest mechanic)
     this.sacredGrounds = this.sacredGrounds.filter((sg) => !sg.update(delta));
 
-    // Death plane (relative to highest reached point)
-    if (this.player.y > this.highestY + WORLD.DEATH_PLANE_OFFSET) {
-      this.player.setPosition(this.player.x, this.highestY);
-      this.player.setVelocity(0, 0);
-      this.player.takeDamage(1);
-    }
-
     // Mouse camera lookahead: offset camera follow target toward mouse position
     if (GameSettings.get().mouseCameraLookahead) {
       const offset = MouseManager.getCameraOffset();
