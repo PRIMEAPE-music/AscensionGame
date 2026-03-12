@@ -107,6 +107,54 @@ export class ChronoDemon extends Boss {
           ctx.stateTimer += delta;
         },
       })
+      .addState('CHARGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performChargeAttack(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
+      .addState('SLAM', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performSlamAttack(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
+      .addState('BARRAGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performProjectileBarrage(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
       .addState('RECOVERY', {
         onEnter: (ctx) => {
           ctx.stateTimer = 0;
@@ -122,7 +170,10 @@ export class ChronoDemon extends Boss {
   }
 
   private pickRandomAttack() {
-    const attacks = ['SEQUENTIAL_STRIKE', 'TIME_BOMB', 'REWIND'];
+    const attacks = ['SEQUENTIAL_STRIKE', 'TIME_BOMB', 'REWIND', 'CHARGE'];
+    if (this.phase >= 2) {
+      attacks.push('SLAM', 'BARRAGE');
+    }
     const choice = attacks[Math.floor(Math.random() * attacks.length)];
     this.stateMachine.transition(choice);
   }
@@ -337,6 +388,7 @@ export class ChronoDemon extends Boss {
       }
     }
 
+    this.updateBoss(delta);
     this.stateMachine.update(time, delta);
   }
 
@@ -358,6 +410,7 @@ export class ChronoDemon extends Boss {
 
     this.positionHistory.length = 0;
 
+    this.cleanupSharedAttacks();
     super.die();
   }
 }

@@ -19,6 +19,9 @@ export interface GameEvents {
   "boss-health-change": { health: number; maxHealth: number; phase: number };
   "boss-phase-change": { phase: number; totalPhases: number };
   "boss-defeated": { bossNumber: number; altitude: number; rewards: string[] };
+  "boss-arena-start": { bossNumber: number };
+  "boss-arena-end": {};
+  "boss-enrage": {};
   "style-change": { meter: number; tier: string; multiplier: number };
   "biome-change": { biome: string };
   "slope-launch": { speed: number; angle: number };

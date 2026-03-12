@@ -92,6 +92,55 @@ export class MagmaTyrant extends Boss {
           }
         },
       })
+      .addState('CHARGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performChargeAttack(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          // Safety: force transition if charge hangs
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
+      .addState('SLAM', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performSlamAttack(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
+      .addState('BARRAGE', {
+        onEnter: (ctx) => {
+          ctx.stateTimer = 0;
+          ctx.performProjectileBarrage(() => {
+            if (!ctx.isDead && ctx.active) {
+              ctx.stateMachine.transition('RECOVERY');
+            }
+          });
+        },
+        onUpdate: (ctx, _time, delta) => {
+          ctx.stateTimer += delta;
+          if (ctx.stateTimer >= 3000) {
+            ctx.stateMachine.transition('RECOVERY');
+          }
+        },
+      })
       .addState('RECOVERY', {
         onEnter: (ctx) => {
           ctx.stateTimer = 0;
@@ -108,7 +157,11 @@ export class MagmaTyrant extends Boss {
   }
 
   private pickRandomAttack() {
-    const attacks = ['GROUND_STOMP', 'FLAME_WAVE', 'ROCK_TOSS'];
+    // Charge available in all phases, Slam and Barrage from phase 2+
+    const attacks = ['GROUND_STOMP', 'FLAME_WAVE', 'ROCK_TOSS', 'CHARGE'];
+    if (this.phase >= 2) {
+      attacks.push('SLAM', 'BARRAGE');
+    }
     const choice = attacks[Math.floor(Math.random() * attacks.length)];
     this.stateMachine.transition(choice);
   }
@@ -248,6 +301,7 @@ export class MagmaTyrant extends Boss {
 
   update(time: number, delta: number) {
     if (this.isDead) return;
+    this.updateBoss(delta);
     this.stateMachine.update(time, delta);
   }
 
@@ -273,6 +327,7 @@ export class MagmaTyrant extends Boss {
       this.telegraph = null;
     }
 
+    this.cleanupSharedAttacks();
     super.die();
   }
 }
