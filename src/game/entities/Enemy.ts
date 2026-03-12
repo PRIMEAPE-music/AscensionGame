@@ -78,6 +78,32 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
         this.setCollideWorldBounds(false); // Enemies can fall off world
     }
 
+    /** Apply altitude-based stat scaling per the design doc. */
+    public applyAltitudeScaling(altitude: number): void {
+        let healthMult: number;
+        let damageMult: number;
+        if (altitude < 1000) {
+            healthMult = 1.0;
+            damageMult = 1.0;
+        } else if (altitude < 3000) {
+            healthMult = 1.5;
+            damageMult = 1.0;
+        } else if (altitude < 6000) {
+            healthMult = 2.5;
+            damageMult = 1.5;
+        } else if (altitude < 10000) {
+            healthMult = 4.0;
+            damageMult = 2.0;
+        } else {
+            // 10000m+: scales infinitely beyond 6x
+            healthMult = 6.0 + (altitude - 10000) / 5000;
+            damageMult = 2.5;
+        }
+        this.health = Math.ceil(this.health * healthMult);
+        this.maxHealth = this.health;
+        this.damage = Math.ceil(this.damage * damageMult);
+    }
+
     /** Apply elite modifiers: 3x health, 1.5x damage, 1.2x speed, silver aura + shimmer. */
     public applyElite(): void {
         this.isElite = true;

@@ -218,9 +218,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           50% { text-shadow: 0 0 40px rgba(255, 215, 0, 0.5), 0 0 80px rgba(255, 215, 0, 0.25), 0 0 120px rgba(255, 215, 0, 0.1); }
           100% { text-shadow: 0 0 30px rgba(255, 215, 0, 0.3), 0 0 60px rgba(255, 215, 0, 0.15), 0 0 90px rgba(255, 215, 0, 0.05); }
         }
+        @keyframes sunPulse {
+          0% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+          50% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+          100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+        }
+        @keyframes raysSpin {
+          0% { transform: translate(-50%, -50%) rotate(0deg); }
+          100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
       `}</style>
 
-      {/* Title */}
+      {/* Title with Sun */}
       <div
         style={{
           opacity: titleVisible ? 1 : 0,
@@ -228,8 +237,41 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           transition: "opacity 0.8s ease, transform 0.8s ease",
           textAlign: "center",
           marginBottom: "60px",
+          position: "relative",
         }}
       >
+        {/* Sun */}
+        <div style={{ position: "relative", width: "100%", height: "360px", marginBottom: "10px" }}>
+          {/* Sun outer glow */}
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "420px",
+              height: "420px",
+              borderRadius: "50%",
+              background: "radial-gradient(circle, rgba(255, 225, 100, 0.35) 0%, rgba(255, 215, 0, 0.15) 40%, rgba(255, 180, 0, 0.06) 60%, transparent 75%)",
+            }}
+          />
+          {/* Sun core */}
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "180px",
+              height: "180px",
+              borderRadius: "50%",
+              background: "radial-gradient(circle, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.97) 25%, rgba(255, 250, 240, 0.9) 45%, rgba(255, 235, 130, 0.85) 60%, rgba(255, 215, 0, 0.95) 75%, rgba(255, 200, 0, 0.8) 85%, rgba(255, 180, 0, 0.3) 95%, transparent 100%)",
+              boxShadow: "0 0 20px rgba(255, 215, 0, 0.9), 0 0 40px rgba(255, 200, 0, 0.7), 0 0 90px rgba(255, 215, 0, 0.5), 0 0 180px rgba(255, 200, 0, 0.25), 0 0 300px rgba(255, 180, 0, 0.1)",
+              border: "3px solid rgba(255, 215, 0, 0.8)",
+              animation: "sunPulse 4s ease-in-out infinite",
+            }}
+          />
+        </div>
         <h1
           style={{
             fontSize: "96px",

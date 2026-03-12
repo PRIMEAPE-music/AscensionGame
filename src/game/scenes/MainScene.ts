@@ -552,10 +552,7 @@ export class MainScene extends Phaser.Scene {
     this.levelGenerator.update(this.player.y);
 
     // Slope collision (after player update, before other systems)
-    const slopeLaunchSpeed = this.player.clearSlopeState();
-    if (slopeLaunchSpeed > 0) {
-      this.styleManager.onSlopeLaunch(slopeLaunchSpeed);
-    }
+    this.player.clearSlopeState();
     const slopeResult = this.slopeManager.update(this.player);
     if (slopeResult) {
       this.player.handleSlopePhysics(slopeResult);
@@ -788,16 +785,6 @@ export class MainScene extends Phaser.Scene {
   private oneWayPlatformCheck(_player: any, platform: any): boolean {
     const playerBody = _player.body as Phaser.Physics.Arcade.Body;
     const platformBody = platform.body as Phaser.Physics.Arcade.StaticBody;
-
-    // If player is dropping through, disable collision temporarily
-    // Exception: don't allow drop-through during boss fights or on the base platform
-    if (
-      this.player.isDroppingSelf &&
-      !this.bossArenaManager.getIsBossFight() &&
-      platformBody.y < WORLD.BASE_PLATFORM_Y
-    ) {
-      return false;
-    }
 
     // Only collide if the player's feet were at or above the platform top last frame
     const playerPrevBottom = playerBody.prev.y + playerBody.halfHeight;

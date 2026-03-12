@@ -160,7 +160,7 @@ export class MagmaTyrant extends Boss {
         const wave = this.scene.add.rectangle(
           WORLD.WIDTH / 2,
           startY,
-          WORLD.WIDTH,
+          WORLD.WIDTH / 2,
           30,
           0xff4400,
           0.6,

@@ -108,10 +108,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private readonly GRAPPLE_COOLDOWN = 3000;
   private readonly GRAPPLE_PULL_SPEED = 800;
 
-  // Drop-Through State
-  private isDropping: boolean = false;
-  private dropTimer: number = 0;
-  private readonly DROP_DURATION = 500; // 0.5s
 
   // Animation State
   private currentAnim: string = "";
@@ -235,9 +231,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return this.dodgeTimer > 0;
   }
 
-  get isDroppingSelf(): boolean {
-    return this.isDropping;
-  }
 
   private get onGround(): boolean {
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -369,7 +362,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.updateTimers(delta);
     this.handleMovement();
-    this.handleDropThrough();
+
     this.handleJumping(delta);
     this.handleWallInteraction();
     this.handleCombat(delta);
@@ -387,6 +380,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.updateInvincibility(delta);
     this.updateClassMechanics(delta);
     this.updateAnimation();
+
+    // Safety net: re-enable gravity if it's off and we're not in a state that needs it off
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    if (!body.allowGravity && !this.onSlope && !this.isAirDashing) {
+      body.setAllowGravity(true);
+    }
   }
 
   private updateTimers(delta: number) {
@@ -414,14 +413,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.temporalCooldown > 0) this.temporalCooldown -= delta;
     if (this.divineCooldown > 0) this.divineCooldown -= delta;
 
-    // Drop-through timer
-    if (this.dropTimer > 0) {
-      this.dropTimer -= delta;
-      if (this.dropTimer <= 0) {
-        this.dropTimer = 0;
-        this.isDropping = false;
-      }
-    }
 
     // Air Dash timers
     if (this.airDashCooldown > 0) this.airDashCooldown -= delta;
@@ -599,24 +590,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  private handleDropThrough() {
-    // Drop through platforms: Down + Space while on ground
-    const gpState = GamepadManager.state;
-    const downHeld = this.cursors.down.isDown || gpState.moveY > 0.5;
-    if (
-      downHeld &&
-      this.jumpJustPressed &&
-      (this.onGround || this.onSlope) &&
-      !this.isDropping
-    ) {
-      this.isDropping = true;
-      this.dropTimer = this.DROP_DURATION;
-      this.setVelocityY(100); // Tiny downward push to start falling
-
-      // Consume the jump input so it doesn't trigger a normal jump
-      this.jumpBufferTimer = 0;
-    }
-  }
 
   private handleJumping(delta: number) {
     const canJump = this.coyoteTimer > 0 || this.onSlope;
@@ -2129,19 +2102,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.slopeAngle = result.angle;
     this.wasOnSlope = true;
 
-    // Prevent falling through — zero out downward velocity
-    if (this.body!.velocity.y > 0) {
+    // Zero out vertical velocity when snapping to a slope — prevents both
+    // falling through and carrying upward launch velocity from a prior slope
+    if (this.body!.velocity.y !== 0) {
       this.setVelocityY(0);
     }
 
-    // Apply slope speed modifier to horizontal velocity
+    // Cap horizontal speed based on slope direction instead of multiplying each frame.
+    // This allows the player to walk uphill (just slower) rather than being forced off.
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.velocity.x *= result.speedMod;
+    const maxSpeed = PHYSICS.MOVE_SPEED * result.speedMod;
+    if (Math.abs(body.velocity.x) > maxSpeed) {
+      body.velocity.x = Math.sign(body.velocity.x) * maxSpeed;
+    }
 
-    // Store launch vector for when player leaves the slope
-    this.pendingLaunchVector = result.launchVector ?? null;
-
-    // Reduce gravity while on slope
+    // Disable gravity while on slope
     body.setAllowGravity(false);
   }
 
@@ -2155,20 +2130,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       const body = this.body as Phaser.Physics.Arcade.Body;
       body.setAllowGravity(true);
       this.wasOnSlope = false;
-
-      // Apply stored launch vector
-      if (this.pendingLaunchVector) {
-        const lv = this.pendingLaunchVector;
-        body.velocity.x += lv.x;
-        body.velocity.y += lv.y;
-        const launchSpeed = Math.sqrt(lv.x * lv.x + lv.y * lv.y);
-        this.pendingLaunchVector = null;
-        EventBus.emit("slope-launch", {
-          speed: launchSpeed,
-          angle: this.slopeAngle,
-        });
-        return launchSpeed;
-      }
+      this.pendingLaunchVector = null;
     }
     this.onSlope = false;
     return 0;

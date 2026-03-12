@@ -32,7 +32,6 @@ export interface SlopeCollisionResult {
   angle: number;
   speedMod: number;
   slopeData: SlopeData | CurvedSlopeData;
-  launchVector?: { x: number; y: number };
 }
 
 export class SlopeManager {
@@ -55,6 +54,8 @@ export class SlopeManager {
    * direction='right' means it rises from right to left (low on right, high on left).
    * x,y is the bottom-left corner of the bounding box.
    */
+  private static readonly THICKNESS = 32;
+
   createSlope(
     x: number,
     y: number,
@@ -64,32 +65,6 @@ export class SlopeManager {
     tint: number,
   ): SlopeData {
     const graphics = this.scene.add.graphics();
-    graphics.setPosition(x, y - height);
-
-    // Fill the triangle
-    graphics.fillStyle(tint, 0.8);
-    graphics.beginPath();
-
-    if (direction === "left") {
-      graphics.moveTo(0, height);
-      graphics.lineTo(width, 0);
-      graphics.lineTo(width, height);
-    } else {
-      graphics.moveTo(0, 0);
-      graphics.lineTo(width, height);
-      graphics.lineTo(0, height);
-    }
-
-    graphics.closePath();
-    graphics.fillPath();
-
-    // Stroke along the slope surface
-    graphics.lineStyle(2, 0xffffff, 0.6);
-    if (direction === "left") {
-      graphics.lineBetween(0, height, width, 0);
-    } else {
-      graphics.lineBetween(0, 0, width, height);
-    }
 
     // Slope line endpoints in world coordinates
     let x1: number, y1: number, x2: number, y2: number;
@@ -105,6 +80,31 @@ export class SlopeManager {
       x2 = x;
       y2 = y - height;
     }
+
+    // Draw as a thick band (same thickness as regular platforms)
+    const T = SlopeManager.THICKNESS;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    // Perpendicular normal — ensure it points downward (+y in screen space)
+    // so the thick band always renders below the collision surface
+    let nx = (-dy / len) * T;
+    let ny = (dx / len) * T;
+    if (ny < 0) { nx = -nx; ny = -ny; }
+
+    // Top edge: x1,y1 → x2,y2. Bottom edge offset by normal.
+    graphics.fillStyle(tint, 0.9);
+    graphics.beginPath();
+    graphics.moveTo(x1, y1);
+    graphics.lineTo(x2, y2);
+    graphics.lineTo(x2 + nx, y2 + ny);
+    graphics.lineTo(x1 + nx, y1 + ny);
+    graphics.closePath();
+    graphics.fillPath();
+
+    // Surface stroke
+    graphics.lineStyle(2, 0xffffff, 0.6);
+    graphics.lineBetween(x1, y1, x2, y2);
 
     const angle = Math.atan2(y2 - y1, x2 - x1);
 
@@ -350,30 +350,44 @@ export class SlopeManager {
   }
 
   /**
-   * Draw a curved slope: filled polygon from surface points down to baselineY, plus surface stroke.
+   * Draw a curved slope as a thick band (same thickness as regular platforms).
+   * Offsets each surface point along its local normal to create the inner edge.
    */
   private drawCurvedSlope(
     graphics: Phaser.GameObjects.Graphics,
     points: CurvePoint[],
-    baselineY: number,
+    _baselineY: number,
     tint: number,
   ): void {
     if (points.length < 2) return;
 
-    // Filled polygon: surface curve + close to baseline
-    graphics.fillStyle(tint, 0.8);
+    const T = SlopeManager.THICKNESS;
+
+    // Compute offset points along the inward normal (downward into the body)
+    const offsetPoints: { x: number; y: number }[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      // Use the tangent angle to find the normal (perpendicular, pointing "inside")
+      // Tangent direction is p.angle; normal 90° clockwise = angle + PI/2
+      const nx = Math.cos(p.angle + Math.PI / 2);
+      const ny = Math.sin(p.angle + Math.PI / 2);
+      offsetPoints.push({ x: p.x + nx * T, y: p.y + ny * T });
+    }
+
+    // Fill: trace surface forward, then offset backward
+    graphics.fillStyle(tint, 0.9);
     graphics.beginPath();
     graphics.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) {
       graphics.lineTo(points[i].x, points[i].y);
     }
-    // Close down to baseline and back
-    graphics.lineTo(points[points.length - 1].x, baselineY);
-    graphics.lineTo(points[0].x, baselineY);
+    for (let i = offsetPoints.length - 1; i >= 0; i--) {
+      graphics.lineTo(offsetPoints[i].x, offsetPoints[i].y);
+    }
     graphics.closePath();
     graphics.fillPath();
 
-    // Stroke along surface only
+    // Surface stroke
     graphics.lineStyle(2, 0xffffff, 0.6);
     graphics.beginPath();
     graphics.moveTo(points[0].x, points[0].y);
@@ -444,8 +458,11 @@ export class SlopeManager {
     const slopeY = slope.y1 + (slope.y2 - slope.y1) * t;
     const dist = playerBottom - slopeY;
 
-    if (Math.abs(dist) > SLOPES.SNAP_TOLERANCE) return null;
-    if (velocityY < -50) return null;
+    // Negative dist = player above surface, positive = player below surface (inside slope body).
+    // Allow generous below-surface tolerance since at high speed the player can drift
+    // well into the 32px-thick slope body between frames.
+    if (dist < -4 || dist > SlopeManager.THICKNESS) return null;
+    if (velocityY < -100) return null;
 
     const downhillDirX = Math.sign(slope.x1 - slope.x2);
     let speedMod: number;
@@ -457,22 +474,11 @@ export class SlopeManager {
       speedMod = SLOPES.UPHILL_SPEED_MULT;
     }
 
-    let launchVector: { x: number; y: number } | undefined;
-    const speed = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
-    if (speed >= SLOPES.MIN_LAUNCH_SPEED) {
-      const launchAngle = slope.angle - Math.PI / 2;
-      launchVector = {
-        x: Math.cos(launchAngle) * speed * SLOPES.LAUNCH_FORCE_MULT,
-        y: Math.sin(launchAngle) * speed * SLOPES.LAUNCH_FORCE_MULT,
-      };
-    }
-
     return {
       surfaceY: slopeY,
       angle: slope.angle,
       speedMod,
       slopeData: slope,
-      launchVector,
     };
   }
 
@@ -491,10 +497,11 @@ export class SlopeManager {
       return null;
 
     // Don't snap during strong upward movement
-    if (velocityY < -50) return null;
+    if (velocityY < -100) return null;
 
     // Find the segment the player is over and the closest surface Y
     let bestDist = Infinity;
+    let bestRawDist = 0;
     let bestSurfaceY = 0;
     let bestSegment: SlopeSegment | null = null;
 
@@ -511,16 +518,20 @@ export class SlopeManager {
       if (Math.abs(dx) < 0.001) continue; // skip vertical segments
       const t = (playerX - seg.x1) / dx;
       const surfaceY = seg.y1 + (seg.y2 - seg.y1) * t;
-      const dist = Math.abs(playerBottom - surfaceY);
+      const rawDist = playerBottom - surfaceY;
+      const dist = Math.abs(rawDist);
 
       if (dist < bestDist) {
         bestDist = dist;
+        bestRawDist = rawDist;
         bestSurfaceY = surfaceY;
         bestSegment = seg;
       }
     }
 
-    if (!bestSegment || bestDist > SLOPES.SNAP_TOLERANCE) return null;
+    // Negative rawDist = player above surface, positive = player below (inside slope body).
+    // Allow generous below-surface tolerance to handle high-speed frame drift.
+    if (!bestSegment || bestRawDist < -4 || bestRawDist > SlopeManager.THICKNESS) return null;
 
     // Speed modifier based on LOCAL segment angle
     // Downhill = moving toward the low end (highest Y value)
@@ -541,24 +552,11 @@ export class SlopeManager {
       speedMod = SLOPES.UPHILL_SPEED_MULT;
     }
 
-    // Launch vector: use the exit segment's tangent (last or first segment depending on direction)
-    let launchVector: { x: number; y: number } | undefined;
-    const speed = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
-    if (speed >= SLOPES.MIN_LAUNCH_SPEED) {
-      // Use the current segment's tangent for launch direction
-      const launchAngle = bestSegment.angle - Math.PI / 2;
-      launchVector = {
-        x: Math.cos(launchAngle) * speed * SLOPES.LAUNCH_FORCE_MULT,
-        y: Math.sin(launchAngle) * speed * SLOPES.LAUNCH_FORCE_MULT,
-      };
-    }
-
     return {
       surfaceY: bestSurfaceY,
       angle: bestSegment.angle,
       speedMod,
       slopeData: slope,
-      launchVector,
     };
   }
 

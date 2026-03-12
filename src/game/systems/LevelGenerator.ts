@@ -98,12 +98,12 @@ export class LevelGenerator {
     this.lastGamblingAltitude = 0;
     this.nextGamblingDist = this.nextGamblingInterval();
 
-    // Wide starting platform
+    // Wide starting platform (keep large for safe spawn)
     this.createPlatform(960, WORLD.BASE_PLATFORM_Y, 10, PlatformType.STANDARD);
-    // Guide player toward left wall to start the climb
-    this.createPlatform(500, 830, 2, PlatformType.STANDARD);
-    this.createPlatform(300, 650, 1.8, PlatformType.STANDARD);
-    this.createPlatform(200, 470, 1.5, PlatformType.STANDARD);
+    // Guide player toward left wall to start the climb — varied sizes
+    this.createPlatform(500, 830, Phaser.Math.FloatBetween(1.5, 2.5), PlatformType.STANDARD);
+    this.createPlatform(300, 650, Phaser.Math.FloatBetween(1.0, 2.2), PlatformType.STANDARD);
+    this.createPlatform(200, 470, Phaser.Math.FloatBetween(0.8, 1.8), PlatformType.STANDARD);
 
     this.lastPlatformY = 470;
     this.lastPlatformX = 200;
@@ -153,9 +153,9 @@ export class LevelGenerator {
   ) {
     group.children.each((child: any) => {
       if (child.y > playerY + WORLD.PLATFORM_CLEANUP_BUFFER) {
-        const shadowUpdateCallback = child.getData("shadowUpdateCallback");
-        if (shadowUpdateCallback) {
-          this.scene.events.off("update", shadowUpdateCallback);
+        for (const cbKey of ["shadowUpdateCallback", "circleUpdateCallback", "fig8UpdateCallback"]) {
+          const cb = child.getData(cbKey);
+          if (cb) this.scene.events.off("update", cb);
         }
         const shadow = child.getData("shadow") as
           | Phaser.GameObjects.Rectangle
@@ -181,10 +181,10 @@ export class LevelGenerator {
   private getDifficultyParams(altitude: number): DifficultyParams {
     const biomeKey = this.getBiomeKey(altitude);
 
-    // Lerp between anchor points: altitude 0 → 80/150, altitude 5000 → 150/300
+    // Lerp between anchor points: altitude 0 → 120/220, altitude 5000 → 200/400
     const t = Math.min(1, altitude / 5000);
-    const minGap = Math.round(80 + t * 70);
-    const maxGap = Math.round(150 + t * 150);
+    const minGap = Math.round(120 + t * 80);
+    const maxGap = Math.round(220 + t * 180);
 
     return { minGap, maxGap, biomeKey };
   }
@@ -252,6 +252,25 @@ export class LevelGenerator {
 
     // 85% safety margin — reject only clearly impossible jumps
     return dy <= maxHeight * 0.85 && dx <= maxHorizontal * 0.85;
+  }
+
+  /**
+   * Weighted random platform scale: favors medium (0.9-1.8) but occasionally
+   * produces tiny (0.4-0.6) or large (2.5-3.0) platforms.
+   * Distribution: ~15% tiny, ~60% medium, ~25% large.
+   */
+  private weightedPlatformScale(): number {
+    const roll = Math.random();
+    if (roll < 0.15) {
+      // Tiny platforms
+      return Phaser.Math.FloatBetween(0.4, 0.6);
+    } else if (roll < 0.75) {
+      // Medium platforms (the old range, roughly)
+      return Phaser.Math.FloatBetween(0.9, 1.8);
+    } else {
+      // Large platforms
+      return Phaser.Math.FloatBetween(2.5, 3.0);
+    }
   }
 
   // Fix 6: Progressive platform scale within multi-platform patterns
@@ -384,7 +403,7 @@ export class LevelGenerator {
         this.currentSide = this.currentSide === "left" ? "right" : "left";
         this.phase = "side";
         this.phaseProgress = 0;
-        this.phaseTarget = Phaser.Math.Between(2, 5);
+        this.phaseTarget = Phaser.Math.Between(2, 4);
 
         // 20% chance to run a special pattern for variety
         if (Math.random() < 0.2) {
@@ -473,7 +492,7 @@ export class LevelGenerator {
       y = this.lastPlatformY - Math.round(yGap * 0.6);
     }
 
-    const scale = Phaser.Math.FloatBetween(1.0, 2.0);
+    const scale = this.weightedPlatformScale();
     const type = this.rollPlatformType(params.biomeKey);
     this.lastPlatformY = this.createPlatform(x, y, scale, type);
     this.lastPlatformX = x;
@@ -503,7 +522,7 @@ export class LevelGenerator {
       x = Phaser.Math.Clamp(this.lastPlatformX + dir * 200, 200, 1720);
     }
 
-    const scale = Phaser.Math.FloatBetween(0.8, 1.5);
+    const scale = this.weightedPlatformScale();
     // Bridges are more likely to be moving platforms
     const type =
       Math.random() < 0.3
@@ -961,17 +980,73 @@ export class LevelGenerator {
         );
       }
 
+      // Random movement pattern: horizontal, vertical, circular, or figure-8
+      const pattern = Phaser.Math.Between(0, 3);
       const moveDist = 200;
-      const targetX = x + moveDist > 1850 ? x - moveDist : x + moveDist;
 
-      this.scene.tweens.add({
-        targets: platform,
-        x: targetX,
-        duration: 2000,
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.easeInOut",
-      });
+      if (pattern === 0) {
+        // Horizontal
+        const targetX = x + moveDist > 1850 ? x - moveDist : x + moveDist;
+        this.scene.tweens.add({
+          targets: platform,
+          x: targetX,
+          duration: 2000,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut",
+        });
+      } else if (pattern === 1) {
+        // Vertical
+        this.scene.tweens.add({
+          targets: platform,
+          y: y - moveDist,
+          duration: 2500,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut",
+        });
+      } else if (pattern === 2) {
+        // Circular
+        const radius = 120;
+        const speed = 0.001;
+        let angle = 0;
+        const originX = x;
+        const originY = y;
+        const circleUpdate = () => {
+          if (!platform.active) {
+            this.scene.events.off("update", circleUpdate);
+            return;
+          }
+          angle += speed * 16;
+          platform.x = originX + Math.cos(angle) * radius;
+          platform.y = originY + Math.sin(angle) * radius;
+          platform.body.position.x = platform.x - platform.body.halfWidth;
+          platform.body.position.y = platform.y - platform.body.halfHeight;
+        };
+        this.scene.events.on("update", circleUpdate);
+        platform.setData("circleUpdateCallback", circleUpdate);
+      } else {
+        // Figure-8
+        const radiusX = 150;
+        const radiusY = 80;
+        const speed = 0.001;
+        let angle = 0;
+        const originX = x;
+        const originY = y;
+        const fig8Update = () => {
+          if (!platform.active) {
+            this.scene.events.off("update", fig8Update);
+            return;
+          }
+          angle += speed * 16;
+          platform.x = originX + Math.sin(angle) * radiusX;
+          platform.y = originY + Math.sin(angle * 2) * radiusY;
+          platform.body.position.x = platform.x - platform.body.halfWidth;
+          platform.body.position.y = platform.y - platform.body.halfHeight;
+        };
+        this.scene.events.on("update", fig8Update);
+        platform.setData("fig8UpdateCallback", fig8Update);
+      }
     } else {
       const platform = this.staticPlatforms.create(x, y, textureKey);
       if (useProceduralTexture) {

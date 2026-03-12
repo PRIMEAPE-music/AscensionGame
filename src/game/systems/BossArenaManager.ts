@@ -59,7 +59,7 @@ export class BossArenaManager {
     this.bossCount++;
     const centerY = this.getArenaWorldY();
     const arenaWidth = WORLD.WIDTH;
-    const arenaHeight = 384;
+    const arenaHeight = 768;
 
     const topY = centerY - arenaHeight / 2;
     const bottomY = centerY + arenaHeight / 2;
@@ -90,57 +90,35 @@ export class BossArenaManager {
     const bottomBody = bottomBarrier.body as Phaser.Physics.Arcade.StaticBody;
     bottomBody.enable = false;
 
-    // Create arena platforms
-    // 0. Full-width floor platform just above the bottom barrier
-    const floorPlatform = staticPlatforms.create(
-      WORLD.WIDTH / 2,
-      bottomY - 16,
-      "ground",
-    );
-    // Scale to span the full arena width (ground texture is 400px wide)
-    floorPlatform.setScale(WORLD.WIDTH / 400, 1).refreshBody();
-    floorPlatform.setData("type", "STANDARD");
-    floorPlatform.setData("arenaPlat", true);
+    // Create arena platforms — 7 platforms spread across 768px height
+    const makePlat = (x: number, y: number, scale: number) => {
+      const p = staticPlatforms.create(x, y, "ground");
+      p.setScale(scale, 1).refreshBody();
+      p.setData("type", "STANDARD");
+      p.setData("arenaPlat", true);
+    };
 
-    // 1. Large center platform
-    const centerPlatform = staticPlatforms.create(
-      WORLD.WIDTH / 2,
-      centerY + arenaHeight / 4,
-      "ground",
-    );
-    centerPlatform.setScale(3.0, 1).refreshBody();
-    centerPlatform.setData("type", "STANDARD");
-    centerPlatform.setData("arenaPlat", true);
+    // 0. Full-width floor
+    const floorPlat = staticPlatforms.create(WORLD.WIDTH / 2, bottomY - 16, "ground");
+    floorPlat.setScale(WORLD.WIDTH / 400, 1).refreshBody();
+    floorPlat.setData("type", "STANDARD");
+    floorPlat.setData("arenaPlat", true);
 
-    // 2. Left mid-height platform
-    const leftPlatform = staticPlatforms.create(
-      WORLD.WIDTH * 0.25,
-      centerY - 20,
-      "ground",
-    );
-    leftPlatform.setScale(1.5, 1).refreshBody();
-    leftPlatform.setData("type", "STANDARD");
-    leftPlatform.setData("arenaPlat", true);
+    // 1-2. Lower left/right (25% up from bottom)
+    const lowerY = centerY + arenaHeight * 0.25;
+    makePlat(WORLD.WIDTH * 0.2, lowerY, 1.8);
+    makePlat(WORLD.WIDTH * 0.8, lowerY, 1.8);
 
-    // 3. Right mid-height platform
-    const rightPlatform = staticPlatforms.create(
-      WORLD.WIDTH * 0.75,
-      centerY - 20,
-      "ground",
-    );
-    rightPlatform.setScale(1.5, 1).refreshBody();
-    rightPlatform.setData("type", "STANDARD");
-    rightPlatform.setData("arenaPlat", true);
+    // 3. Center platform (at center)
+    makePlat(WORLD.WIDTH / 2, centerY, 2.5);
 
-    // 4. Small top platform
-    const topPlatform = staticPlatforms.create(
-      WORLD.WIDTH / 2,
-      centerY - arenaHeight / 4,
-      "ground",
-    );
-    topPlatform.setScale(1.0, 1).refreshBody();
-    topPlatform.setData("type", "STANDARD");
-    topPlatform.setData("arenaPlat", true);
+    // 4-5. Upper left/right (25% down from top)
+    const upperY = centerY - arenaHeight * 0.25;
+    makePlat(WORLD.WIDTH * 0.25, upperY, 1.5);
+    makePlat(WORLD.WIDTH * 0.75, upperY, 1.5);
+
+    // 6. Small top platform
+    makePlat(WORLD.WIDTH / 2, topY + 60, 1.0);
 
     const arena: BossArena = {
       centerX: WORLD.WIDTH / 2,
@@ -310,7 +288,7 @@ export class BossArenaManager {
   }
 
   getArenaHeight(): number {
-    return 384;
+    return 768;
   }
 
   setNextBossAltitude(altitude: number): void {

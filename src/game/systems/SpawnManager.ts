@@ -55,11 +55,13 @@ export class SpawnManager {
 
   private getSpawnInterval(altitude: number): number {
     // Spawn rate increases with altitude (shorter intervals)
+    // Use a power curve (exponent 1.8) so spawns ramp up faster at higher altitudes
     const progress = Math.min(altitude / 10000, 1);
+    const aggressiveProgress = Math.pow(progress, 1.8);
     const interval = Phaser.Math.Linear(
       SPAWNING.MAX_INTERVAL,
       SPAWNING.MIN_INTERVAL,
-      progress,
+      aggressiveProgress,
     );
     // Add randomness (+-20%)
     return interval * Phaser.Math.FloatBetween(0.8, 1.2);
@@ -166,13 +168,13 @@ export class SpawnManager {
 
     const { type, isElite } = this.selectEnemyType(altitude);
     if (isElite) {
-      this.spawnEliteWithWarning(type, spawnX, spawnY);
+      this.spawnEliteWithWarning(type, spawnX, spawnY, altitude);
     } else {
-      this.spawnEnemy(spawnX, spawnY, type);
+      this.spawnEnemy(spawnX, spawnY, type, false, altitude);
     }
   }
 
-  private spawnEliteWithWarning(enemyType: string, x: number, y: number): void {
+  private spawnEliteWithWarning(enemyType: string, x: number, y: number, altitude: number = 0): void {
     // Emit hazard-warning event for UI systems
     EventBus.emit('hazard-warning', { type: 'elite', x, y });
 
@@ -223,11 +225,11 @@ export class SpawnManager {
     this.scene.time.delayedCall(1000, () => {
       warning.destroy();
       circle.destroy();
-      this.spawnEnemy(x, y, enemyType, true);
+      this.spawnEnemy(x, y, enemyType, true, altitude);
     });
   }
 
-  spawnEnemy(x: number, y: number, type: string = "crawler", elite: boolean = false): Enemy {
+  spawnEnemy(x: number, y: number, type: string = "crawler", elite: boolean = false, altitude: number = 0): Enemy {
     const def = ENEMY_REGISTRY[type];
     let enemy: Enemy;
 
@@ -236,6 +238,11 @@ export class SpawnManager {
     } else {
       // Fallback to crawler if type not found
       enemy = ENEMY_REGISTRY["crawler"].factory(this.scene, x, y, this.player);
+    }
+
+    // Apply altitude-based stat scaling before elite modifiers
+    if (altitude > 0) {
+      enemy.applyAltitudeScaling(altitude);
     }
 
     if (elite) {
