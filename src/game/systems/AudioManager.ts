@@ -504,16 +504,16 @@ export const AudioManager = {
         }
     },
 
-    /** Play SPIRITS on death — fades out current music, plays death track */
+    /** Play SPIRITS on death — fully stops all music first, then plays death track */
     playDeathMusic(): void {
         if (!this.ctx || !this.musicGain) return;
-        this._stopFade();
 
-        // Stop whatever is playing
-        if (this._currentTrack) this._currentTrack.pause();
-        if (this._bossTrack) this._bossTrack.pause();
-        if (this._trackGain) this._trackGain.gain.value = 0;
-        if (this._bossGain) this._bossGain.gain.value = 0;
+        // Fully stop all current music (crossfades, gameplay, boss)
+        this._musicPlaying = false;
+        this._inBoss = false;
+        this._stopFade();
+        this._destroyTrack('_currentTrack', '_currentSource', '_trackGain');
+        this._destroyTrack('_bossTrack', '_bossSource', '_bossGain');
 
         const audio = new Audio(`${MUSIC_PATH}${DEATH_TRACK}.mp3`);
         audio.loop = false;
