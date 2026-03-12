@@ -58,6 +58,12 @@ export interface GameEvents {
     nextBossAltitude: number;
     biome: string;
   };
+  "achievement-unlocked": {
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+  };
 }
 
 export const EventBus = {

@@ -568,6 +568,9 @@ function App() {
 
     gameRef.current = new Phaser.Game(config);
 
+    // Set up achievement event listeners for real-time tracking during gameplay
+    AchievementManager.setupEventListeners();
+
     // Apply colorblind filter to the game canvas once it renders
     const applyColorblindFilter = () => {
       const canvas = document.querySelector('#phaser-game canvas') as HTMLElement | null;
@@ -775,6 +778,8 @@ function App() {
 
     return () => {
       clearTimeout(filterTimer);
+      // Clean up achievement event listeners
+      AchievementManager.cleanupEventListeners();
       // Remove colorblind filter from canvas
       const canvas = document.querySelector('#phaser-game canvas') as HTMLElement | null;
       if (canvas) ColorblindFilter.removeFilter(canvas);
