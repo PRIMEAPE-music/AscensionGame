@@ -27,6 +27,7 @@ import { CosmeticManager } from "../systems/CosmeticManager";
 import { GamepadManager } from "../systems/GamepadManager";
 import { TouchControls } from "../systems/TouchControls";
 import { KeyBindings } from "../systems/KeyBindings";
+import { MouseManager } from "../systems/MouseManager";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
@@ -407,10 +408,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const gp = GamepadManager.state;
 
     // Cache JustDown once per frame — Phaser consumes it on first read
-    // OR with gamepad and touch inputs so keyboard, controller, and touch all work simultaneously
+    // OR with gamepad, touch, and mouse inputs so all input methods work simultaneously
     const tc = this.touchControls;
     const rawJump = Phaser.Input.Keyboard.JustDown(this.cursors.space!) || gp.jumpJustPressed || (tc?.isButtonJustPressed('A') ?? false);
-    let rawDodge = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed || (tc?.isButtonJustPressed('X') ?? false);
+    let rawDodge = Phaser.Input.Keyboard.JustDown(this.dodgeKey) || gp.dodgeJustPressed || (tc?.isButtonJustPressed('X') ?? false) || (GameSettings.get().mouseAttackEnabled && MouseManager.isRightClicked());
     const rawGrapple = Phaser.Input.Keyboard.JustDown(this.grappleKey) || gp.grappleJustPressed;
 
     // Toggle dodge: pressing dodge toggles the dodge state on/off
@@ -1006,11 +1007,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     const gpCombat = GamepadManager.state;
     const tcCombat = this.touchControls;
+    const mouseAttack = GameSettings.get().mouseAttackEnabled;
     if (canAttack && !this.isWallSliding) {
-      if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpCombat.attackBJustPressed || (tcCombat?.isButtonJustPressed('B') ?? false)) {
+      if (Phaser.Input.Keyboard.JustDown(this.attackBKey) || gpCombat.attackBJustPressed || (tcCombat?.isButtonJustPressed('B') ?? false) || (mouseAttack && MouseManager.isLeftClicked())) {
         this.handleComboInput('B');
         this.tryAttack(AttackType.LIGHT);
-      } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpCombat.attackXJustPressed) {
+      } else if (Phaser.Input.Keyboard.JustDown(this.attackXKey) || gpCombat.attackXJustPressed || (mouseAttack && MouseManager.isMiddleClicked())) {
         this.handleComboInput('X');
         this.tryAttack(AttackType.HEAVY);
       } else if (Phaser.Input.Keyboard.JustDown(this.attackYKey) || gpCombat.attackYJustPressed || (tcCombat?.isButtonJustPressed('Y') ?? false)) {
@@ -2128,10 +2130,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.projectileCooldown = this.PROJECTILE_COOLDOWN;
 
-    const facingRight = !this.flipX;
-    const dirX = facingRight ? 1 : -1;
+    // Determine projectile direction: use mouse aim if enabled, else use facing direction
+    let dirX: number;
+    let dirY: number;
+    if (GameSettings.get().mouseAimEnabled) {
+      const aim = MouseManager.getAimDirection();
+      dirX = aim.x;
+      dirY = aim.y;
+    } else {
+      const facingRight = !this.flipX;
+      dirX = facingRight ? 1 : -1;
+      dirY = 0;
+    }
+
     const startX = this.x + dirX * 20;
-    const startY = this.y;
+    const startY = this.y + dirY * 20;
 
     // Create projectile sprite
     const projectile = this.scene.add.rectangle(startX, startY, 16, 8, 0x44aaff, 0.9);
@@ -2140,6 +2153,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const projBody = projectile.body as Phaser.Physics.Arcade.Body;
     projBody.setAllowGravity(false);
     projBody.setVelocityX(this.PROJECTILE_SPEED * dirX);
+    projBody.setVelocityY(this.PROJECTILE_SPEED * dirY);
 
     const damage = Math.round(
       COMBAT.BASE_DAMAGE * this.PROJECTILE_DAMAGE_MULT * this.classStats.attackDamage,

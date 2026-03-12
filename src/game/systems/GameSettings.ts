@@ -35,6 +35,10 @@ export interface GameSettingsData {
   jumpBufferWindow: number;
   coyoteTimeWindow: number;
   inputDelay: number;
+  // Mouse Controls
+  mouseAttackEnabled: boolean;
+  mouseAimEnabled: boolean;
+  mouseCameraLookahead: boolean;
 }
 
 const DEFAULTS: GameSettingsData = {
@@ -72,6 +76,10 @@ const DEFAULTS: GameSettingsData = {
   jumpBufferWindow: 150,
   coyoteTimeWindow: 100,
   inputDelay: 0,
+  // Mouse Controls
+  mouseAttackEnabled: false,
+  mouseAimEnabled: false,
+  mouseCameraLookahead: false,
 };
 
 export const GameSettings = {
@@ -123,6 +131,9 @@ export const GameSettings = {
           jumpBufferWindow: (parsed.jumpBufferWindow as number) ?? DEFAULTS.jumpBufferWindow,
           coyoteTimeWindow: (parsed.coyoteTimeWindow as number) ?? DEFAULTS.coyoteTimeWindow,
           inputDelay: (parsed.inputDelay as number) ?? DEFAULTS.inputDelay,
+          mouseAttackEnabled: (parsed.mouseAttackEnabled as boolean) ?? DEFAULTS.mouseAttackEnabled,
+          mouseAimEnabled: (parsed.mouseAimEnabled as boolean) ?? DEFAULTS.mouseAimEnabled,
+          mouseCameraLookahead: (parsed.mouseCameraLookahead as boolean) ?? DEFAULTS.mouseCameraLookahead,
         };
       }
     } catch {

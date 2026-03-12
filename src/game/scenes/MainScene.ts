@@ -32,6 +32,7 @@ import { RunSaveManager } from "../systems/RunSaveManager";
 import type { RunSaveData } from "../systems/RunSaveManager";
 import { GamepadManager } from "../systems/GamepadManager";
 import { TouchControls } from "../systems/TouchControls";
+import { MouseManager } from "../systems/MouseManager";
 import { TutorialManager } from "../systems/TutorialManager";
 import { ReplayManager } from "../systems/ReplayManager";
 import { SoundCueManager } from "../systems/SoundCueManager";
@@ -314,6 +315,9 @@ export class MainScene extends Phaser.Scene {
     // Bound camera to world edges: left=0, top=-Infinity (player ascends forever), right=WORLD.WIDTH, bottom=WORLD.HEIGHT
     this.cameras.main.setBounds(0, -Number.MAX_SAFE_INTEGER, WORLD.WIDTH, Number.MAX_SAFE_INTEGER + WORLD.HEIGHT);
 
+    // Mouse manager (click-to-attack, mouse aim, camera lookahead)
+    MouseManager.init(this);
+
     // Prevent Alt from triggering browser menu
     this.input.keyboard!.addCapture([
       Phaser.Input.Keyboard.KeyCodes.ALT,
@@ -584,6 +588,9 @@ export class MainScene extends Phaser.Scene {
       this.touchControls.update();
     }
 
+    // Update mouse manager (aim tracking, click detection)
+    MouseManager.update(this.player.x, this.player.y);
+
     // Gamepad pause: simulate Escape keydown so App.tsx's existing handler catches it
     if (GamepadManager.state.pauseJustPressed) {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
@@ -741,6 +748,17 @@ export class MainScene extends Phaser.Scene {
       this.player.takeDamage(1);
     }
 
+    // Mouse camera lookahead: offset camera follow target toward mouse position
+    if (GameSettings.get().mouseCameraLookahead) {
+      const offset = MouseManager.getCameraOffset();
+      this.cameras.main.setFollowOffset(-offset.x, -offset.y);
+    } else {
+      this.cameras.main.setFollowOffset(0, 0);
+    }
+
+    // Clear one-frame mouse click flags after all input consumers have read them
+    MouseManager.lateUpdate();
+
     // Update wall positions to follow camera
     this.updateWalls();
   }
@@ -860,6 +878,7 @@ export class MainScene extends Phaser.Scene {
   shutdown(): void {
     AudioManager.stopMusic();
     SoundCueManager.destroy();
+    MouseManager.destroy();
     this.tweens.killAll();
     this.time.removeAllEvents();
     this.touchControls?.destroy();
