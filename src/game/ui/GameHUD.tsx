@@ -5,6 +5,7 @@ import { EventBus } from "../systems/EventBus";
 import type { ItemData } from "../config/ItemConfig";
 import type { SynergyBonus } from "../systems/ItemSynergy";
 import { CosmeticManager } from "../systems/CosmeticManager";
+import { GameSettings } from "../systems/GameSettings";
 
 interface GameHUDProps {
   health: number;
@@ -703,44 +704,46 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       )}
 
       {/* Speed Meter */}
-      <div style={{
-        position: 'absolute',
-        bottom: '20px',
-        left: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '4px',
-        pointerEvents: 'none',
-        fontFamily: 'monospace',
-        zIndex: 10,
-      }}>
-        <div style={{ fontSize: '11px', color: '#888' }}>SPEED</div>
+      {GameSettings.get().showSpeedMeter && (
         <div style={{
-          width: '60px',
-          height: '8px',
-          background: 'rgba(0,0,0,0.5)',
-          border: '1px solid rgba(255,255,255,0.2)',
-          borderRadius: '4px',
-          overflow: 'hidden',
+          position: 'absolute',
+          bottom: '20px',
+          left: '20px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '4px',
+          pointerEvents: 'none',
+          fontFamily: 'monospace',
+          zIndex: 10,
         }}>
+          <div style={{ fontSize: '11px', color: '#888' }}>SPEED</div>
           <div style={{
-            width: `${Math.min(100, (speed / maxSpeed) * 100)}%`,
-            height: '100%',
-            background: getSpeedColor(speed, maxSpeed),
-            transition: 'width 0.1s, background 0.1s',
+            width: '60px',
+            height: '8px',
+            background: 'rgba(0,0,0,0.5)',
+            border: '1px solid rgba(255,255,255,0.2)',
             borderRadius: '4px',
-          }} />
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              width: `${Math.min(100, (speed / maxSpeed) * 100)}%`,
+              height: '100%',
+              background: getSpeedColor(speed, maxSpeed),
+              transition: 'width 0.1s, background 0.1s',
+              borderRadius: '4px',
+            }} />
+          </div>
+          <div style={{
+            fontSize: '14px',
+            fontWeight: 'bold',
+            color: getSpeedColor(speed, maxSpeed),
+            textShadow: '0 0 4px rgba(0,0,0,0.8)',
+          }}>
+            {speed}
+          </div>
         </div>
-        <div style={{
-          fontSize: '14px',
-          fontWeight: 'bold',
-          color: getSpeedColor(speed, maxSpeed),
-          textShadow: '0 0 4px rgba(0,0,0,0.8)',
-        }}>
-          {speed}
-        </div>
-      </div>
+      )}
     </>
   );
 };

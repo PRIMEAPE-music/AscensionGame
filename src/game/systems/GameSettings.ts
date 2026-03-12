@@ -1,9 +1,13 @@
 const STORAGE_KEY = "ascension_settings";
 
 export interface GameSettingsData {
-  screenShake: boolean;
+  screenShakeIntensity: "OFF" | "LOW" | "MEDIUM" | "HIGH";
   damageNumbers: boolean;
   particleEffects: "LOW" | "MEDIUM" | "HIGH";
+  fullscreen: boolean;
+  graphicsQuality: "LOW" | "MEDIUM" | "HIGH";
+  showFPS: boolean;
+  showSpeedMeter: boolean;
   // Accessibility — Assist Mode
   assistMode: boolean;
   extraIFrames: boolean;
@@ -18,9 +22,13 @@ export interface GameSettingsData {
 }
 
 const DEFAULTS: GameSettingsData = {
-  screenShake: true,
+  screenShakeIntensity: "MEDIUM",
   damageNumbers: true,
   particleEffects: "HIGH",
+  fullscreen: false,
+  graphicsQuality: "HIGH",
+  showFPS: false,
+  showSpeedMeter: true,
   // Accessibility — Assist Mode
   assistMode: false,
   extraIFrames: false,
@@ -41,20 +49,34 @@ export const GameSettings = {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as Partial<GameSettingsData>;
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+
+        // Backward compatibility: migrate old boolean screenShake to screenShakeIntensity
+        let screenShakeIntensity: GameSettingsData["screenShakeIntensity"] = DEFAULTS.screenShakeIntensity;
+        if (parsed.screenShakeIntensity !== undefined) {
+          screenShakeIntensity = parsed.screenShakeIntensity as GameSettingsData["screenShakeIntensity"];
+        } else if (parsed.screenShake !== undefined) {
+          // Old boolean format: true -> MEDIUM, false -> OFF
+          screenShakeIntensity = parsed.screenShake ? "MEDIUM" : "OFF";
+        }
+
         this._data = {
-          screenShake: parsed.screenShake ?? DEFAULTS.screenShake,
-          damageNumbers: parsed.damageNumbers ?? DEFAULTS.damageNumbers,
-          particleEffects: parsed.particleEffects ?? DEFAULTS.particleEffects,
-          assistMode: parsed.assistMode ?? DEFAULTS.assistMode,
-          extraIFrames: parsed.extraIFrames ?? DEFAULTS.extraIFrames,
-          slowerEnemies: parsed.slowerEnemies ?? DEFAULTS.slowerEnemies,
-          extraStartingHealth: parsed.extraStartingHealth ?? DEFAULTS.extraStartingHealth,
-          autoDodge: parsed.autoDodge ?? DEFAULTS.autoDodge,
-          reducedComboTiming: parsed.reducedComboTiming ?? DEFAULTS.reducedComboTiming,
-          highContrast: parsed.highContrast ?? DEFAULTS.highContrast,
-          flashReduction: parsed.flashReduction ?? DEFAULTS.flashReduction,
-          damageNumberSize: parsed.damageNumberSize ?? DEFAULTS.damageNumberSize,
+          screenShakeIntensity,
+          damageNumbers: (parsed.damageNumbers as boolean) ?? DEFAULTS.damageNumbers,
+          particleEffects: (parsed.particleEffects as GameSettingsData["particleEffects"]) ?? DEFAULTS.particleEffects,
+          fullscreen: (parsed.fullscreen as boolean) ?? DEFAULTS.fullscreen,
+          graphicsQuality: (parsed.graphicsQuality as GameSettingsData["graphicsQuality"]) ?? DEFAULTS.graphicsQuality,
+          showFPS: (parsed.showFPS as boolean) ?? DEFAULTS.showFPS,
+          showSpeedMeter: (parsed.showSpeedMeter as boolean) ?? DEFAULTS.showSpeedMeter,
+          assistMode: (parsed.assistMode as boolean) ?? DEFAULTS.assistMode,
+          extraIFrames: (parsed.extraIFrames as boolean) ?? DEFAULTS.extraIFrames,
+          slowerEnemies: (parsed.slowerEnemies as boolean) ?? DEFAULTS.slowerEnemies,
+          extraStartingHealth: (parsed.extraStartingHealth as boolean) ?? DEFAULTS.extraStartingHealth,
+          autoDodge: (parsed.autoDodge as boolean) ?? DEFAULTS.autoDodge,
+          reducedComboTiming: (parsed.reducedComboTiming as boolean) ?? DEFAULTS.reducedComboTiming,
+          highContrast: (parsed.highContrast as boolean) ?? DEFAULTS.highContrast,
+          flashReduction: (parsed.flashReduction as boolean) ?? DEFAULTS.flashReduction,
+          damageNumberSize: (parsed.damageNumberSize as GameSettingsData["damageNumberSize"]) ?? DEFAULTS.damageNumberSize,
         };
       }
     } catch {
@@ -75,8 +97,8 @@ export const GameSettings = {
     this.save();
   },
 
-  getScreenShake(): boolean {
-    return this._data.screenShake;
+  getScreenShakeIntensity(): "OFF" | "LOW" | "MEDIUM" | "HIGH" {
+    return this._data.screenShakeIntensity;
   },
 
   getDamageNumbers(): boolean {
