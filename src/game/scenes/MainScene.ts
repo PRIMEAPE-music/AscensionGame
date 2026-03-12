@@ -3,6 +3,7 @@ import { Player } from "../entities/Player";
 import { LevelGenerator } from "../systems/LevelGenerator";
 import { SpawnManager } from "../systems/SpawnManager";
 import { PortalPlatform } from "../entities/PortalPlatform";
+import { WindCurrent } from "../entities/WindCurrent";
 import { CombatManager } from "../systems/CombatManager";
 import { SlopeManager } from "../systems/SlopeManager";
 import { StyleManager } from "../systems/StyleManager";
@@ -51,6 +52,7 @@ export class MainScene extends Phaser.Scene {
   private enemies!: Phaser.Physics.Arcade.Group;
   private items!: Phaser.Physics.Arcade.Group;
   private portals!: Phaser.Physics.Arcade.Group;
+  private windCurrents!: Phaser.Physics.Arcade.StaticGroup;
   private levelGenerator!: LevelGenerator;
   private spawnManager!: SpawnManager;
   private combatManager!: CombatManager;
@@ -73,6 +75,7 @@ export class MainScene extends Phaser.Scene {
   private rightWall!: Phaser.GameObjects.Rectangle;
   private highestY: number = WORLD.PLAYER_SPAWN.y;
   private ridingPlatform: Phaser.GameObjects.GameObject | null = null;
+  private activeWindZones: Set<WindCurrent> = new Set();
 
   // Run tracking
   private killCount: number = 0;
@@ -125,6 +128,7 @@ export class MainScene extends Phaser.Scene {
     this.enemies = this.physics.add.group({ runChildUpdate: true });
     this.items = this.physics.add.group();
     this.portals = this.physics.add.group({ allowGravity: false });
+    this.windCurrents = this.physics.add.staticGroup();
 
     // Systems (order matters: background layers first)
     this.biomeRenderer = new BiomeRenderer(this);
@@ -231,6 +235,7 @@ export class MainScene extends Phaser.Scene {
       this.staticPlatforms,
     );
     this.spawnManager.setPortalGroup(this.portals);
+    this.spawnManager.setWindGroup(this.windCurrents);
     this.combatManager = new CombatManager(this, this.player, this.enemies);
     this.combatManager.setDamageNumberManager(new DamageNumberManager(this));
     this.combatManager.setParticleManager(this.particleManager);
@@ -292,6 +297,15 @@ export class MainScene extends Phaser.Scene {
       this.player,
       this.portals,
       (_p, portal) => this.handlePortalOverlap(portal as PortalPlatform),
+      undefined,
+      this,
+    );
+
+    // Wind current overlap — apply force to player when inside a wind zone
+    this.physics.add.overlap(
+      this.player,
+      this.windCurrents,
+      (_p, windZone) => this.handleWindOverlap(windZone as WindCurrent),
       undefined,
       this,
     );
@@ -657,6 +671,9 @@ export class MainScene extends Phaser.Scene {
     // Hazard system (stalactites, wind, portal effects)
     this.hazardManager.update(time, delta, altitude, this.cameras.main.scrollY);
 
+    // Wind zone exit detection: clear zones the player has left
+    this.updateWindZoneTracking();
+
     // Rising Darkness system
     this.risingDarkness.update(
       delta,
@@ -875,6 +892,57 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
+  private handleWindOverlap(windZone: WindCurrent): void {
+    if (!windZone.active || !windZone.isActive) return;
+
+    const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
+    if (!playerBody) return;
+
+    // Use a fixed delta estimate since overlap callbacks don't receive delta;
+    // the actual frame delta is used via the tracking set approach in update.
+    const delta = this.game.loop.delta;
+    windZone.applyForce(playerBody, delta);
+
+    // Track this zone as active for exit detection
+    this.activeWindZones.add(windZone);
+  }
+
+  private updateWindZoneTracking(): void {
+    // For each tracked wind zone, check if player is still overlapping.
+    // If not, clear the zone's player-in-zone state.
+    // We rely on the overlap callback re-adding it each frame if still inside.
+    const toRemove: WindCurrent[] = [];
+
+    for (const wind of this.activeWindZones) {
+      if (!wind.active) {
+        toRemove.push(wind);
+        continue;
+      }
+
+      // Check if the player is still overlapping this wind zone
+      const playerBody = this.player.body as Phaser.Physics.Arcade.Body;
+      const windBody = wind.body as Phaser.Physics.Arcade.StaticBody;
+      if (!playerBody || !windBody) {
+        toRemove.push(wind);
+        continue;
+      }
+
+      const overlapping = Phaser.Geom.Intersects.RectangleToRectangle(
+        playerBody.getBounds(new Phaser.Geom.Rectangle()),
+        windBody.getBounds(new Phaser.Geom.Rectangle()),
+      );
+
+      if (!overlapping) {
+        wind.clearPlayerInZone();
+        toRemove.push(wind);
+      }
+    }
+
+    for (const wind of toRemove) {
+      this.activeWindZones.delete(wind);
+    }
+  }
+
   shutdown(): void {
     AudioManager.stopMusic();
     SoundCueManager.destroy();
@@ -895,6 +963,17 @@ export class MainScene extends Phaser.Scene {
     if (this.portals) {
       this.portals.clear(true, true);
     }
+
+    // Clean up wind currents
+    if (this.windCurrents) {
+      this.windCurrents.children.each((child: any) => {
+        const wind = child as WindCurrent;
+        wind.destroy();
+        return true;
+      });
+      this.windCurrents.clear(true, true);
+    }
+    this.activeWindZones.clear();
 
     // Clean up Sacred Ground instances and listener
     this.sacredGrounds.forEach((sg) => sg.destroy());

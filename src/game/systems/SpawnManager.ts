@@ -3,6 +3,7 @@ import { Player } from "../entities/Player";
 import { Enemy } from "../entities/Enemy";
 import { ItemDrop } from "../entities/ItemDrop";
 import { PortalPlatform } from "../entities/PortalPlatform";
+import { WindCurrent, type WindType } from "../entities/WindCurrent";
 import { ITEMS } from "../config/ItemDatabase";
 import { SPAWNING, WORLD } from "../config/GameConfig";
 import type { ItemData, ItemQuality, ItemRarity } from "../config/ItemConfig";
@@ -13,6 +14,16 @@ import {
   type EnemyTier,
 } from "../config/EnemyConfig";
 import { EventBus } from "./EventBus";
+
+// Wind current spawn configuration
+const WIND_UPDRAFT_MIN_ALTITUDE = 300;
+const WIND_CROSSWIND_MIN_ALTITUDE = 800;
+const WIND_DOWNDRAFT_MIN_ALTITUDE = 1500;
+const WIND_SPAWN_MIN_INTERVAL = 400; // meters between wind zones
+const WIND_SPAWN_MAX_INTERVAL = 600;
+const WIND_STRENGTH_MIN = 100;
+const WIND_STRENGTH_MAX = 300;
+const WIND_PERIODIC_CHANCE = 0.3; // 30% chance a wind zone is periodic
 
 // Portal spawn configuration
 const BLUE_PORTAL_MIN_ALTITUDE = 500;
@@ -41,6 +52,11 @@ export class SpawnManager {
   private nextPortalSpawnInterval: number;
   private lastPortalSpawnAltitude: number = 0;
 
+  // Wind current spawning state
+  private windCurrents: Phaser.Physics.Arcade.StaticGroup | null = null;
+  private lastWindSpawnAltitude: number = 0;
+  private nextWindSpawnInterval: number;
+
   constructor(
     scene: Phaser.Scene,
     enemies: Phaser.Physics.Arcade.Group,
@@ -58,6 +74,10 @@ export class SpawnManager {
       PORTAL_SPAWN_MIN_INTERVAL,
       PORTAL_SPAWN_MAX_INTERVAL,
     );
+    this.nextWindSpawnInterval = Phaser.Math.Between(
+      WIND_SPAWN_MIN_INTERVAL,
+      WIND_SPAWN_MAX_INTERVAL,
+    );
   }
 
   /** Set the portal physics group (created in MainScene). */
@@ -68,6 +88,16 @@ export class SpawnManager {
   /** Get the portal physics group. */
   getPortalGroup(): Phaser.Physics.Arcade.Group | null {
     return this.portals;
+  }
+
+  /** Set the wind current static group (created in MainScene). */
+  setWindGroup(group: Phaser.Physics.Arcade.StaticGroup): void {
+    this.windCurrents = group;
+  }
+
+  /** Get the wind current static group. */
+  getWindGroup(): Phaser.Physics.Arcade.StaticGroup | null {
+    return this.windCurrents;
   }
 
   update(altitude: number, delta: number): void {
@@ -88,6 +118,12 @@ export class SpawnManager {
 
     // Update all active portals (cooldown timers, particle animation)
     this.updatePortals(delta);
+
+    // Wind current spawning (altitude-based)
+    this.updateWindSpawning(altitude);
+
+    // Update all active wind currents (periodic toggling, particles)
+    this.updateWindCurrents(delta);
 
     this.cleanup(this.player.y);
   }
@@ -479,6 +515,120 @@ export class SpawnManager {
     });
   }
 
+  // ─── Wind Current Spawning ────────────────────────────────────────
+
+  private updateWindSpawning(altitude: number): void {
+    if (!this.windCurrents) return;
+
+    // Need at least updraft altitude threshold
+    if (altitude < WIND_UPDRAFT_MIN_ALTITUDE) return;
+
+    // Check if we've traveled enough altitude since last wind spawn
+    const altitudeSinceLastWind = altitude - this.lastWindSpawnAltitude;
+    if (altitudeSinceLastWind < this.nextWindSpawnInterval) return;
+
+    // Select wind type based on altitude and weighted distribution
+    const windType = this.selectWindType(altitude);
+    if (!windType) return;
+
+    this.spawnWindCurrent(windType);
+
+    this.lastWindSpawnAltitude = altitude;
+    this.nextWindSpawnInterval = Phaser.Math.Between(
+      WIND_SPAWN_MIN_INTERVAL,
+      WIND_SPAWN_MAX_INTERVAL,
+    );
+  }
+
+  private selectWindType(altitude: number): WindType | null {
+    // Build weighted pool based on altitude thresholds
+    // 50% updraft, 25% crosswind, 25% downdraft (when available)
+    const pool: { type: WindType; weight: number }[] = [];
+
+    if (altitude >= WIND_UPDRAFT_MIN_ALTITUDE) {
+      pool.push({ type: "updraft", weight: 50 });
+    }
+    if (altitude >= WIND_CROSSWIND_MIN_ALTITUDE) {
+      pool.push({ type: "crosswind", weight: 25 });
+    }
+    if (altitude >= WIND_DOWNDRAFT_MIN_ALTITUDE) {
+      pool.push({ type: "downdraft", weight: 25 });
+    }
+
+    if (pool.length === 0) return null;
+
+    const totalWeight = pool.reduce((sum, entry) => sum + entry.weight, 0);
+    let roll = Math.random() * totalWeight;
+    for (const entry of pool) {
+      roll -= entry.weight;
+      if (roll <= 0) return entry.type;
+    }
+
+    return pool[pool.length - 1].type;
+  }
+
+  private spawnWindCurrent(windType: WindType): void {
+    if (!this.windCurrents) return;
+
+    const camY = this.scene.cameras.main.scrollY;
+
+    // Determine zone dimensions based on type
+    let zoneWidth: number;
+    let zoneHeight: number;
+    switch (windType) {
+      case "updraft":
+        zoneWidth = Phaser.Math.Between(48, 96);
+        zoneHeight = Phaser.Math.Between(192, 320);
+        break;
+      case "downdraft":
+        zoneWidth = Phaser.Math.Between(48, 96);
+        zoneHeight = Phaser.Math.Between(192, 320);
+        break;
+      case "crosswind":
+        zoneWidth = Phaser.Math.Between(192, 320);
+        zoneHeight = Phaser.Math.Between(96, 160);
+        break;
+    }
+
+    // Spawn position: above camera view, random X
+    const spawnX = Phaser.Math.Between(
+      zoneWidth / 2 + 50,
+      WORLD.WIDTH - zoneWidth / 2 - 50,
+    );
+    const spawnY = camY - Phaser.Math.Between(100, 400);
+
+    // Random strength
+    const strength = Phaser.Math.Between(WIND_STRENGTH_MIN, WIND_STRENGTH_MAX);
+
+    // 30% chance periodic
+    const isPeriodic = Math.random() < WIND_PERIODIC_CHANCE;
+
+    const windCurrent = new WindCurrent(
+      this.scene,
+      spawnX,
+      spawnY,
+      zoneWidth,
+      zoneHeight,
+      windType,
+      strength,
+      isPeriodic,
+    );
+
+    this.windCurrents.add(windCurrent);
+  }
+
+  private updateWindCurrents(delta: number): void {
+    if (!this.windCurrents) return;
+
+    this.windCurrents.children.each((child: any) => {
+      const wind = child as WindCurrent;
+      if (wind.active && wind.update) {
+        wind.update(delta);
+      }
+      return true;
+    });
+  }
+
   private cleanup(playerY: number): void {
     this.enemies.children.each((child: any) => {
       if (child.y > playerY + SPAWNING.CLEANUP_BUFFER) {
@@ -499,6 +649,17 @@ export class SpawnManager {
       this.portals.children.each((child: any) => {
         if (child.y > playerY + SPAWNING.CLEANUP_BUFFER) {
           this.portals!.remove(child, true, true);
+        }
+        return true;
+      });
+    }
+
+    // Clean up wind currents that are far below the camera
+    if (this.windCurrents) {
+      this.windCurrents.children.each((child: any) => {
+        if (child.y > playerY + SPAWNING.CLEANUP_BUFFER) {
+          const wind = child as WindCurrent;
+          wind.destroy();
         }
         return true;
       });

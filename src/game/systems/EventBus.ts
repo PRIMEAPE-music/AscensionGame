@@ -58,6 +58,8 @@ export interface GameEvents {
     nextBossAltitude: number;
     biome: string;
   };
+  "wind-zone-enter": { windType: string; strength: number };
+  "wind-zone-exit": {};
 }
 
 export const EventBus = {
