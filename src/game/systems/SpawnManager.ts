@@ -255,11 +255,30 @@ export class SpawnManager {
 
   private assignQuality(itemData: ItemData): ItemData {
     if (itemData.type !== 'SILVER') return itemData;
+
+    // Lucky Dice ability: improve quality rolls
+    const hasLuckyDice = this.player.abilities.has('lucky_dice');
+    const hasStackedLuckyDice = this.player.stackedAbilities.has('lucky_dice');
+
+    // Stacked Lucky Dice: always Pristine
+    if (hasStackedLuckyDice) {
+      return { ...itemData, quality: 'PRISTINE' as ItemQuality };
+    }
+
     const roll = Math.random();
     let quality: ItemQuality;
-    if (roll < 0.2) quality = 'DAMAGED';
-    else if (roll < 0.7) quality = 'NORMAL';
-    else quality = 'PRISTINE';
+
+    if (hasLuckyDice) {
+      // Lucky Dice: 0% Damaged, 30% Normal, 70% Pristine
+      if (roll < 0.3) quality = 'NORMAL';
+      else quality = 'PRISTINE';
+    } else {
+      // Default: 20% Damaged, 50% Normal, 30% Pristine
+      if (roll < 0.2) quality = 'DAMAGED';
+      else if (roll < 0.7) quality = 'NORMAL';
+      else quality = 'PRISTINE';
+    }
+
     return { ...itemData, quality };
   }
 

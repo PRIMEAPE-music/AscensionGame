@@ -358,6 +358,12 @@ export class MainScene extends Phaser.Scene {
         essenceReward = Math.round(essenceReward * 1.25);
       }
 
+      // Soul Collector ability: +15% bonus essence (stacked: +30%)
+      if (this.player.abilities.has('soul_collector')) {
+        const soulBonus = this.player.stackedAbilities.has('soul_collector') ? 0.30 : 0.15;
+        essenceReward = Math.round(essenceReward * (1 + soulBonus));
+      }
+
       this.essenceTotal += essenceReward;
       EventBus.emit("essence-change", {
         essence: this.essenceTotal,
