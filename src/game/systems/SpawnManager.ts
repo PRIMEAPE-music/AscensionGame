@@ -15,6 +15,8 @@ import {
 } from "../config/EnemyConfig";
 import { EventBus } from "./EventBus";
 import { CoopManager } from "./CoopManager";
+import { EliteManager } from "./EliteManager";
+import { EndlessManager } from "./EndlessManager";
 
 // Wind current spawn configuration
 const WIND_UPDRAFT_MIN_ALTITUDE = 300;
@@ -338,11 +340,54 @@ export class SpawnManager {
       enemy.applyElite();
     }
 
+    // Elite affix system: chance to apply affix-based elite status
+    // This works alongside the existing tier-based elite system.
+    // Non-elite enemies at altitude 500m+ have a chance to become affix elites.
+    // Tier-based elites also receive affixes for additional challenge.
+    if (!enemy.isSplitCopy && altitude >= 500) {
+      const shouldGetAffixes = elite || EliteManager.shouldSpawnElite(altitude, false);
+      // Endless mode: at 20000m+, all enemies get affixes
+      const endlessForceAffixes = EndlessManager.isActive() && EndlessManager.getMinAffixes(altitude) > 0;
+      if (shouldGetAffixes || endlessForceAffixes) {
+        let affixes = EliteManager.rollAffixes(altitude);
+        // Endless mode: ensure minimum affix count at high altitude
+        if (EndlessManager.isActive()) {
+          const minAffixes = EndlessManager.getMinAffixes(altitude);
+          while (affixes.length < minAffixes) {
+            const extra = EliteManager.rollAffixes(altitude);
+            for (const a of extra) {
+              if (!affixes.includes(a) && affixes.length < 3) {
+                affixes.push(a);
+              }
+            }
+            if (affixes.length >= minAffixes) break;
+            // Safety: prevent infinite loop
+            break;
+          }
+        }
+        EliteManager.applyEliteStatus(enemy, affixes);
+
+        // Store references on the scene for SPLITTING affix access
+        (this.scene as any)._eliteEnemiesGroup = this.enemies;
+        (this.scene as any)._enemyRegistry = ENEMY_REGISTRY;
+      }
+    }
+
     // Apply co-op HP scaling
     if (CoopManager.isActive()) {
       const mult = CoopManager.getEnemyHPMultiplier();
       enemy.health = Math.ceil(enemy.health * mult);
       enemy.maxHealth = Math.ceil(enemy.maxHealth * mult);
+    }
+
+    // Apply endless mode enemy HP scaling
+    if (EndlessManager.isActive()) {
+      const currentBoss = EndlessManager.getCurrentBossNumber();
+      const mult = EndlessManager.getEnemyHPMultiplier(currentBoss);
+      if (mult > 1) {
+        enemy.health = Math.ceil(enemy.health * mult);
+        enemy.maxHealth = Math.ceil(enemy.maxHealth * mult);
+      }
     }
 
     this.enemies.add(enemy);
@@ -390,9 +435,40 @@ export class SpawnManager {
 
   spawnRandomItem(x: number, y: number, altitude?: number): ItemDrop | null {
     const alt = altitude ?? 0;
+
+    // 5% chance to spawn a cursed item instead (only at altitude > 1000)
+    if (alt > 1000 && Math.random() < 0.05) {
+      const cursedItem = this.selectRandomCursedItem();
+      if (cursedItem) return this.spawnItem(x, y, cursedItem.id);
+    }
+
+    // In co-op mode: 15% chance to spawn a co-op gold item
+    if (CoopManager.isActive() && Math.random() < 0.15) {
+      const coopItem = this.selectRandomCoopItem();
+      if (coopItem) return this.spawnItem(x, y, coopItem.id);
+    }
+
     const selectedItem = this.selectSilverItemByAltitude(alt);
     if (!selectedItem) return null;
     return this.spawnItem(x, y, selectedItem.id);
+  }
+
+  /** Select a random cursed item from the database. */
+  private selectRandomCursedItem(): ItemData | null {
+    const cursedItems = Object.values(ITEMS).filter(
+      (i: ItemData) => i.type === "CURSED" && !i.coopOnly,
+    );
+    if (cursedItems.length === 0) return null;
+    return cursedItems[Math.floor(Math.random() * cursedItems.length)];
+  }
+
+  /** Select a random co-op exclusive item. */
+  private selectRandomCoopItem(): ItemData | null {
+    const coopItems = Object.values(ITEMS).filter(
+      (i: ItemData) => i.coopOnly === true,
+    );
+    if (coopItems.length === 0) return null;
+    return coopItems[Math.floor(Math.random() * coopItems.length)];
   }
 
   /**
@@ -401,8 +477,9 @@ export class SpawnManager {
    * At higher altitudes: favors UNCOMMON/RARE (T2/T3) items.
    */
   private selectSilverItemByAltitude(altitude: number): ItemData | null {
+    const isCoopActive = CoopManager.isActive();
     const silverItems = Object.values(ITEMS).filter(
-      (i: ItemData) => i.type === "SILVER",
+      (i: ItemData) => i.type === "SILVER" && (!i.coopOnly || isCoopActive),
     );
     if (silverItems.length === 0) return null;
 
@@ -421,6 +498,7 @@ export class SpawnManager {
       'UNCOMMON': uncommonWeight,
       'RARE': rareWeight,
       'LEGENDARY': 0, // Silver items don't use LEGENDARY
+      'CURSED': 0, // Cursed items handled separately
     };
 
     // Build weighted pool

@@ -6,7 +6,7 @@ interface GamblingUIProps {
   onClose: () => void;
 }
 
-type RewardType = "nothing" | "item" | "health" | "gold_item";
+type RewardType = "nothing" | "item" | "health" | "gold_item" | "cursed_item";
 
 interface RollResult {
   rewardType: RewardType;
@@ -17,18 +17,21 @@ function rollReward(tier: number): RollResult {
   const roll = Math.random();
   if (tier === 50) {
     if (roll < 0.70) return { rewardType: "nothing", reward: "Nothing" };
-    if (roll < 0.95) return { rewardType: "item", reward: "Silver Item" };
-    return { rewardType: "health", reward: "+1 Health" };
+    if (roll < 0.93) return { rewardType: "item", reward: "Silver Item" };
+    if (roll < 0.97) return { rewardType: "health", reward: "+1 Health" };
+    return { rewardType: "cursed_item", reward: "Cursed Item..." };
   } else if (tier === 100) {
     if (roll < 0.40) return { rewardType: "nothing", reward: "Nothing" };
-    if (roll < 0.85) return { rewardType: "item", reward: "Silver Item" };
-    if (roll < 0.95) return { rewardType: "health", reward: "+1 Health" };
+    if (roll < 0.80) return { rewardType: "item", reward: "Silver Item" };
+    if (roll < 0.90) return { rewardType: "health", reward: "+1 Health" };
+    if (roll < 0.95) return { rewardType: "cursed_item", reward: "Cursed Item..." };
     return { rewardType: "gold_item", reward: "Gold Item!" };
   } else {
     // 200
     if (roll < 0.20) return { rewardType: "nothing", reward: "Nothing" };
-    if (roll < 0.70) return { rewardType: "item", reward: "Silver Item" };
-    if (roll < 0.90) return { rewardType: "health", reward: "+1 Health" };
+    if (roll < 0.62) return { rewardType: "item", reward: "Silver Item" };
+    if (roll < 0.82) return { rewardType: "health", reward: "+1 Health" };
+    if (roll < 0.90) return { rewardType: "cursed_item", reward: "Cursed Item..." };
     return { rewardType: "gold_item", reward: "Gold Item!" };
   }
 }
@@ -46,6 +49,7 @@ const REWARD_COLORS: Record<RewardType, string> = {
   item: "#4488ff",
   health: "#44ff88",
   gold_item: "#ffcc00",
+  cursed_item: "#9933cc",
 };
 
 const REWARD_MESSAGES: Record<RewardType, string> = {
@@ -53,11 +57,12 @@ const REWARD_MESSAGES: Record<RewardType, string> = {
   item: "A treasure materializes!",
   health: "Healing energy flows through you!",
   gold_item: "LEGENDARY ARTIFACT!",
+  cursed_item: "A DARK POWER AWAKENS...",
 };
 
 const TIERS = [
-  { cost: 50, label: "Small Offering", odds: "70% nothing / 25% item / 5% heal" },
-  { cost: 100, label: "Medium Offering", odds: "40% nothing / 45% item / 10% heal / 5% gold" },
+  { cost: 50, label: "Small Offering", odds: "70% nothing / 23% item / 4% heal / 3% cursed" },
+  { cost: 100, label: "Medium Offering", odds: "40% nothing / 40% item / 10% heal / 5% cursed / 5% gold" },
   { cost: 200, label: "Grand Offering", odds: "20% nothing / 50% item / 20% heal / 10% gold" },
 ];
 
@@ -390,9 +395,11 @@ export const GamblingUI: React.FC<GamblingUIProps> = ({ essence, onClose }) => {
                   ? "0 0 30px rgba(255, 204, 0, 0.8), 0 0 60px rgba(255, 204, 0, 0.4), 0 0 90px rgba(255, 204, 0, 0.2)"
                   : result.rewardType === "health"
                     ? "0 0 30px rgba(68, 255, 136, 0.6)"
-                    : result.rewardType === "item"
-                      ? "0 0 30px rgba(68, 136, 255, 0.6)"
-                      : "0 0 15px rgba(136, 136, 136, 0.3)",
+                    : result.rewardType === "cursed_item"
+                      ? "0 0 30px rgba(153, 51, 204, 0.8), 0 0 60px rgba(153, 51, 204, 0.4)"
+                      : result.rewardType === "item"
+                        ? "0 0 30px rgba(68, 136, 255, 0.6)"
+                        : "0 0 15px rgba(136, 136, 136, 0.3)",
               animation:
                 result.rewardType === "gold_item"
                   ? "gamblingGlow 1s ease-in-out infinite alternate"
@@ -405,7 +412,9 @@ export const GamblingUI: React.FC<GamblingUIProps> = ({ essence, onClose }) => {
                 ? "\u2665"
                 : result.rewardType === "gold_item"
                   ? "\u2605"
-                  : "\u25C6"}
+                  : result.rewardType === "cursed_item"
+                    ? "\u2623"
+                    : "\u25C6"}
           </div>
 
           {/* Result message */}

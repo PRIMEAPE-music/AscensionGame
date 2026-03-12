@@ -44,9 +44,22 @@ import { LeaderboardScreen } from "./game/ui/LeaderboardScreen";
 import { ReplayManager } from "./game/systems/ReplayManager";
 import { ReplayScreen, PlaybackControls } from "./game/ui/ReplayScreen";
 import { CoopManager } from "./game/systems/CoopManager";
+import { SubclassSelect } from "./game/ui/SubclassSelect";
+import { CoopItemDraft } from "./game/ui/CoopItemDraft";
+import { UnlockManager } from "./game/systems/UnlockManager";
+import { EndlessManager } from "./game/systems/EndlessManager";
+import { WeeklyChallenge } from "./game/systems/WeeklyChallenge";
+import { TrainingScene } from "./game/scenes/TrainingScene";
+import { TrainingUI } from "./game/ui/TrainingUI";
+import { BossRushScene } from "./game/scenes/BossRushScene";
+import { BossRushUI } from "./game/ui/BossRushUI";
+import { RunHistory } from "./game/systems/RunHistory";
+import { ItemCodex } from "./game/systems/ItemCodex";
+import { RunHistoryUI } from "./game/ui/RunHistoryUI";
+import { ItemCodexUI } from "./game/ui/ItemCodexUI";
 import "./App.css";
 
-type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH";
+type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH" | "TRAINING" | "BOSS_RUSH";
 
 interface DeathStats {
   altitude: number;
@@ -58,8 +71,9 @@ interface DeathStats {
 
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null);
+  const bossRushGameRef = useRef<Phaser.Game | null>(null);
   const [gameState, setGameState] = useState<GameState>("MAIN_MENU");
-  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics" | "daily" | "leaderboard" | "replay">("main");
+  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics" | "daily" | "leaderboard" | "replay" | "run_history" | "item_codex">("main");
   const [replayPlaying, setReplayPlaying] = useState(false);
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
   const [isPaused, setIsPaused] = useState(false);
@@ -89,6 +103,7 @@ function App() {
     newItem: ItemData;
     currentItems: ItemData[];
   } | null>(null);
+  const [coopDraftItems, setCoopDraftItems] = useState<ItemData[] | null>(null);
   const [ascensionOpen, setAscensionOpen] = useState(false);
   const [ascensionBossNumber, setAscensionBossNumber] = useState(0);
   const [achievementPopup, setAchievementPopup] = useState<{
@@ -107,11 +122,13 @@ function App() {
   const [health2, setHealth2] = useState(3);
   const [maxHealth2, setMaxHealth2] = useState(3);
   const [tutorialHint, setTutorialHint] = useState<{ title: string; text: string } | null>(null);
+  const [subclassSelectOpen, setSubclassSelectOpen] = useState(false);
   const [fps, setFps] = useState(0);
   const maxComboRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
   const elapsedTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
+  const inventoryRef = useRef<ItemData[]>([]);
 
   // Load persistent data on mount
   useEffect(() => {
@@ -127,6 +144,9 @@ function App() {
     TutorialManager.onShowHint = (hint) => setTutorialHint(hint);
     TutorialManager.onHideHint = () => setTutorialHint(null);
     ReplayManager.load();
+    UnlockManager.load();
+    RunHistory.load();
+    ItemCodex.load();
 
     // Check for saved run
     setHasSavedRun(RunSaveManager.hasSave());
@@ -200,6 +220,21 @@ function App() {
     }
   }, [achievementPopup, achievementQueue]);
 
+  // Listen for feature-unlocked events and queue a notification popup
+  useEffect(() => {
+    const unsub = EventBus.on("feature-unlocked", (data) => {
+      setAchievementQueue((prev) => [
+        ...prev,
+        {
+          name: `NEW UNLOCK: ${data.featureName}`,
+          description: "Check the main menu for the new content!",
+          icon: "\u{1F513}", // unlocked lock
+        },
+      ]);
+    });
+    return unsub;
+  }, []);
+
   const handleStartRun = useCallback(() => {
     setGameState("CLASS_SELECT");
   }, []);
@@ -271,6 +306,41 @@ function App() {
     setMenuScreen("replay");
   }, []);
 
+  // Training Room handler
+  const handleTrainingRoom = useCallback(() => {
+    // Use the currently selected class, or default to MONK
+    (window as any).__trainingClass = selectedClass || "MONK";
+    setGameState("TRAINING");
+  }, [selectedClass]);
+
+  const handleBossRush = useCallback(() => {
+    setGameState("CLASS_SELECT");
+    (window as any).__bossRushPending = true;
+  }, []);
+
+  const handleEndlessMode = useCallback(() => {
+    // Endless mode: player selects class, then starts run with endless scaling active
+    EndlessManager.activate();
+    (window as any).__isEndlessMode = true;
+    setGameState("CLASS_SELECT");
+  }, []);
+
+  const handleWeeklyChallenge = useCallback(() => {
+    // Weekly challenge: pre-configured class + modifiers, 3x essence
+    const challenge = WeeklyChallenge.getCurrentChallenge();
+    setSelectedClass(challenge.class as ClassType);
+    (window as any).__selectedClass = challenge.class;
+    (window as any).__isWeeklyChallenge = true;
+    (window as any).__weeklyEssenceMultiplier = 3;
+    ActiveModifiers.setModifiers(challenge.modifiers);
+    ReplayManager.startRecording(challenge.class);
+    // Track weekly challenge run in DailyChallenge system
+    DailyChallenge.load();
+    setGameState("PLAYING");
+    startTimeRef.current = Date.now();
+    elapsedTimeRef.current = 0;
+  }, []);
+
   const handleWatchReplay = useCallback((replayIndex: number) => {
     const replay = ReplayManager.loadReplay(replayIndex);
     if (replay) {
@@ -309,6 +379,14 @@ function App() {
     elapsedTimeRef.current = 0;
   }, []);
 
+  const handleShowRunHistory = useCallback(() => {
+    setMenuScreen("run_history");
+  }, []);
+
+  const handleShowItemCodex = useCallback(() => {
+    setMenuScreen("item_codex");
+  }, []);
+
   const handleBackToMenu = useCallback(() => {
     setMenuScreen("main");
   }, []);
@@ -335,7 +413,12 @@ function App() {
 
   const handleGoldEquipConfirm = useCallback((equippedIds: string[]) => {
     (window as any).__equippedGoldItems = equippedIds;
-    setGameState("MODIFIERS");
+    if ((window as any).__bossRushPending) {
+      delete (window as any).__bossRushPending;
+      setGameState("BOSS_RUSH");
+    } else {
+      setGameState("MODIFIERS");
+    }
   }, []);
 
   const handleModifiersConfirm = useCallback((modifierIds: string[]) => {
@@ -400,14 +483,24 @@ function App() {
     setGamblingOpen(false);
     setGamblingEssence(0);
     setItemReplaceData(null);
+    setSubclassSelectOpen(false);
     ActiveModifiers.clear();
     GoldItemCollection.clearEquipped();
     delete (window as any).__isDailyChallenge;
     delete (window as any).__dailyChallengeSeed;
     delete (window as any).__isWeeklyChallenge;
     delete (window as any).__weeklySpecialRule;
+    delete (window as any).__isEndlessMode;
+    delete (window as any).__endlessModeNewBest;
+    delete (window as any).__weeklyEssenceMultiplier;
+    delete (window as any).__bossRushPending;
+    EndlessManager.deactivate();
     gameRef.current?.destroy(true);
     gameRef.current = null;
+    if (bossRushGameRef.current) {
+      bossRushGameRef.current.destroy(true);
+      bossRushGameRef.current = null;
+    }
     setHasSavedRun(false);
     setSavedRunInfo(null);
     setIsCoopMode(false);
@@ -453,6 +546,7 @@ function App() {
     setGamblingOpen(false);
     setGamblingEssence(0);
     setItemReplaceData(null);
+    setSubclassSelectOpen(false);
     ActiveModifiers.clear();
     GoldItemCollection.clearEquipped();
     // Update saved run state for the menu
@@ -462,6 +556,15 @@ function App() {
     delete (window as any).__dailyChallengeSeed;
     delete (window as any).__isWeeklyChallenge;
     delete (window as any).__weeklySpecialRule;
+    delete (window as any).__isEndlessMode;
+    delete (window as any).__endlessModeNewBest;
+    delete (window as any).__weeklyEssenceMultiplier;
+    delete (window as any).__bossRushPending;
+    EndlessManager.deactivate();
+    if (bossRushGameRef.current) {
+      bossRushGameRef.current.destroy(true);
+      bossRushGameRef.current = null;
+    }
     setIsCoopMode(false);
     setCoopSelectingPlayer(1);
     setSelectedClass2(null);
@@ -497,12 +600,17 @@ function App() {
     setGamblingOpen(false);
     setGamblingEssence(0);
     setItemReplaceData(null);
+    setSubclassSelectOpen(false);
     ActiveModifiers.clear();
     GoldItemCollection.clearEquipped();
     delete (window as any).__isDailyChallenge;
     delete (window as any).__dailyChallengeSeed;
     delete (window as any).__isWeeklyChallenge;
     delete (window as any).__weeklySpecialRule;
+    delete (window as any).__isEndlessMode;
+    delete (window as any).__endlessModeNewBest;
+    delete (window as any).__weeklyEssenceMultiplier;
+    EndlessManager.deactivate();
     setIsCoopMode(false);
     setCoopSelectingPlayer(1);
     setSelectedClass2(null);
@@ -519,6 +627,12 @@ function App() {
     AscensionManager.addBoost(stat);
     setAscensionOpen(false);
     EventBus.emit("ascension-chosen", { stat });
+  }, []);
+
+  // Subclass chosen handler
+  const handleSubclassSelect = useCallback((subclassId: string) => {
+    setSubclassSelectOpen(false);
+    EventBus.emit("subclass-chosen", { subclassId });
   }, []);
 
   // Shop purchase handler
@@ -558,6 +672,14 @@ function App() {
   const handleItemReplaceLeave = useCallback(() => {
     EventBus.emit("item-replace-decision", { action: "leave" });
     setItemReplaceData(null);
+    const scene = gameRef.current?.scene.getScene("MainScene");
+    if (scene) scene.scene.resume();
+  }, []);
+
+  // Co-op item draft handler
+  const handleCoopDraftComplete = useCallback((p1ItemId: string, p2ItemId: string) => {
+    setCoopDraftItems(null);
+    EventBus.emit("coop-draft-complete", { p1Item: p1ItemId, p2Item: p2ItemId });
     const scene = gameRef.current?.scene.getScene("MainScene");
     if (scene) scene.scene.resume();
   }, []);
@@ -681,7 +803,18 @@ function App() {
     };
 
     const handleInventoryChange = (e: CustomEvent) => {
-      setInventory(e.detail.inventory);
+      const newInventory = e.detail.inventory || [];
+      setInventory(newInventory);
+      inventoryRef.current = newInventory;
+      // Discover all items in current inventory for the Item Codex
+      try {
+        const ids = newInventory.map((item: ItemData) => item.id);
+        if (ids.length > 0) {
+          ItemCodex.discoverMany(ids);
+        }
+      } catch {
+        // Silently ignore
+      }
     };
 
     const handleStyleChange = (e: CustomEvent) => {
@@ -730,6 +863,45 @@ function App() {
       setDeathStats(stats);
       setGameState("DEATH");
 
+      // --- Run History & Item Codex ---
+      try {
+        const currentInventory = inventoryRef.current || [];
+        const itemIds = currentInventory.map((item: ItemData) => item.id);
+
+        // Determine game mode
+        let gameMode = "standard";
+        if ((window as any).__isDailyChallenge) gameMode = "daily";
+        else if ((window as any).__isWeeklyChallenge) gameMode = "weekly";
+        else if (EndlessManager.isActive()) gameMode = "endless";
+
+        // Record run in history
+        const runRecord = {
+          id: RunHistory.generateId(),
+          date: new Date().toISOString(),
+          classType: (window as any).__selectedClass || "UNKNOWN",
+          subclass: null as string | null,
+          altitude: stats.altitude,
+          timeMs: stats.timeMs,
+          kills: stats.kills,
+          bossesDefeated: stats.bossesDefeated,
+          itemsCollected: itemIds,
+          causeOfDeath: stats.altitude >= 5000 ? "victory" : "unknown",
+          essenceEarned: stats.essenceEarned,
+          maxCombo: maxComboRef.current,
+          gameMode,
+        };
+        RunHistory.addRun(runRecord);
+
+        // Discover all items the player collected this run
+        if (itemIds.length > 0) {
+          ItemCodex.discoverMany(itemIds);
+        }
+      } catch {
+        // Silently ignore errors in run history / codex recording
+      }
+      // Reset inventory ref for next run
+      inventoryRef.current = [];
+
       // Submit daily challenge run if applicable
       if ((window as any).__isDailyChallenge) {
         const isNewBest = DailyChallenge.submitRun(
@@ -750,6 +922,19 @@ function App() {
           stats.timeMs
         );
         (window as any).__weeklyChallengeNewBest = isNewBest;
+      }
+
+      // Submit endless mode run if applicable
+      if (EndlessManager.isActive()) {
+        const classType = (window as any).__selectedClass || "UNKNOWN";
+        const isNewBest = EndlessManager.submitRun(
+          stats.altitude,
+          stats.kills,
+          stats.bossesDefeated,
+          stats.timeMs,
+          classType
+        );
+        (window as any).__endlessModeNewBest = isNewBest;
       }
 
       // Check achievements after run ends
@@ -830,6 +1015,14 @@ function App() {
       handleItemReplacePrompt as EventListener,
     );
 
+    const handleCoopItemDraft = (e: CustomEvent) => {
+      setCoopDraftItems(e.detail.items);
+    };
+    window.addEventListener(
+      "coop-item-draft",
+      handleCoopItemDraft as EventListener,
+    );
+
     const handleAscensionOffer = (e: CustomEvent) => {
       setAscensionBossNumber(e.detail.bossNumber);
       setAscensionOpen(true);
@@ -845,6 +1038,28 @@ function App() {
     window.addEventListener(
       "ascension-chosen",
       handleAscensionChosen as EventListener,
+    );
+
+    // Subclass offer event: pause game and show subclass selection UI
+    const handleSubclassOffer = () => {
+      setSubclassSelectOpen(true);
+      const sc = gameRef.current?.scene.getScene("MainScene");
+      if (sc) sc.scene.pause();
+    };
+    window.addEventListener(
+      "subclass-offer",
+      handleSubclassOffer as EventListener,
+    );
+
+    // Subclass chosen event: close UI and resume game
+    const handleSubclassChosen = () => {
+      setSubclassSelectOpen(false);
+      const sc = gameRef.current?.scene.getScene("MainScene");
+      if (sc) sc.scene.resume();
+    };
+    window.addEventListener(
+      "subclass-chosen",
+      handleSubclassChosen as EventListener,
     );
 
     // Class mechanic event listeners
@@ -938,6 +1153,10 @@ function App() {
         handleItemReplacePrompt as EventListener,
       );
       window.removeEventListener(
+        "coop-item-draft",
+        handleCoopItemDraft as EventListener,
+      );
+      window.removeEventListener(
         "ascension-offer",
         handleAscensionOffer as EventListener,
       );
@@ -945,10 +1164,169 @@ function App() {
         "ascension-chosen",
         handleAscensionChosen as EventListener,
       );
+      window.removeEventListener(
+        "subclass-offer",
+        handleSubclassOffer as EventListener,
+      );
+      window.removeEventListener(
+        "subclass-chosen",
+        handleSubclassChosen as EventListener,
+      );
       gameRef.current?.destroy(true);
       gameRef.current = null;
     };
   }, [gameSessionId]);
+
+  // ── Training Room Phaser game lifecycle ──
+  const trainingGameRef = useRef<Phaser.Game | null>(null);
+
+  useEffect(() => {
+    if (gameState !== "TRAINING") {
+      if (trainingGameRef.current) {
+        trainingGameRef.current.destroy(true);
+        trainingGameRef.current = null;
+      }
+      return;
+    }
+
+    const config: Phaser.Types.Core.GameConfig = {
+      type: Phaser.AUTO,
+      width: 1920,
+      height: 1080,
+      parent: "training-game",
+      physics: {
+        default: "arcade",
+        arcade: {
+          gravity: { x: 0, y: 1000 },
+          debug: false,
+        },
+      },
+      scene: [TrainingScene],
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+      },
+    };
+
+    trainingGameRef.current = new Phaser.Game(config);
+
+    const handleTrainingSceneExit = () => {
+      if (trainingGameRef.current) {
+        trainingGameRef.current.destroy(true);
+        trainingGameRef.current = null;
+      }
+      setGameState("MAIN_MENU");
+      setMenuScreen("main");
+    };
+    window.addEventListener("training-scene-exit", handleTrainingSceneExit);
+
+    return () => {
+      window.removeEventListener("training-scene-exit", handleTrainingSceneExit);
+      if (trainingGameRef.current) {
+        trainingGameRef.current.destroy(true);
+        trainingGameRef.current = null;
+      }
+    };
+  }, [gameState]);
+
+  const handleTrainingExit = useCallback(() => {
+    EventBus.emit("training-exit", {});
+    if (trainingGameRef.current) {
+      trainingGameRef.current.destroy(true);
+      trainingGameRef.current = null;
+    }
+    setGameState("MAIN_MENU");
+    setMenuScreen("main");
+  }, []);
+
+  // ── Boss Rush Phaser game lifecycle ──
+  useEffect(() => {
+    if (gameState !== "BOSS_RUSH") {
+      if (bossRushGameRef.current) {
+        bossRushGameRef.current.destroy(true);
+        bossRushGameRef.current = null;
+      }
+      return;
+    }
+
+    const config: Phaser.Types.Core.GameConfig = {
+      type: Phaser.AUTO,
+      width: 1920,
+      height: 1080,
+      parent: "boss-rush-game",
+      physics: {
+        default: "arcade",
+        arcade: {
+          gravity: { x: 0, y: 1000 },
+          debug: false,
+        },
+      },
+      scene: [BossRushScene],
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+      },
+    };
+
+    bossRushGameRef.current = new Phaser.Game(config);
+
+    // Listen for health/essence/inventory changes from boss rush scene
+    const handleBRHealthChange = (e: CustomEvent) => {
+      const idx = e.detail.playerIndex ?? 0;
+      if (idx === 0) {
+        setHealth(e.detail.health);
+        if (e.detail.maxHealth) setMaxHealth(e.detail.maxHealth);
+      }
+    };
+    const handleBREssenceChange = (e: CustomEvent) => {
+      setEssence(e.detail.essence);
+    };
+    const handleBRInventoryChange = (e: CustomEvent) => {
+      setInventory(e.detail.inventory);
+    };
+    const handleBRComboUpdate = (e: CustomEvent) => {
+      setComboCount(e.detail.count);
+      setComboMultiplier(e.detail.multiplier);
+    };
+
+    window.addEventListener("health-change", handleBRHealthChange as EventListener);
+    window.addEventListener("essence-change", handleBREssenceChange as EventListener);
+    window.addEventListener("inventory-change", handleBRInventoryChange as EventListener);
+    window.addEventListener("combo-update", handleBRComboUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener("health-change", handleBRHealthChange as EventListener);
+      window.removeEventListener("essence-change", handleBREssenceChange as EventListener);
+      window.removeEventListener("inventory-change", handleBRInventoryChange as EventListener);
+      window.removeEventListener("combo-update", handleBRComboUpdate as EventListener);
+      if (bossRushGameRef.current) {
+        bossRushGameRef.current.destroy(true);
+        bossRushGameRef.current = null;
+      }
+    };
+  }, [gameState]);
+
+  const handleBossRushExit = useCallback(() => {
+    if (bossRushGameRef.current) {
+      bossRushGameRef.current.destroy(true);
+      bossRushGameRef.current = null;
+    }
+    // Reset HUD state
+    setHealth(3);
+    setMaxHealth(3);
+    setEssence(0);
+    setInventory([]);
+    setComboCount(0);
+    setComboMultiplier(1.0);
+    setFlowMeter(0);
+    setFlowMaxFlow(100);
+    setIsShieldGuarding(false);
+    setSacredGroundCooldown({ remaining: 0, total: 15000 });
+    delete (window as any).__bossRushPending;
+    setGameState("MAIN_MENU");
+    setMenuScreen("main");
+    setSelectedClass(null);
+  }, []);
 
   return (
     <div
@@ -974,13 +1352,17 @@ function App() {
           onLeaderboard={handleShowLeaderboard}
           onReplay={handleShowReplay}
           onCoopStart={handleCoopStart}
+          onTrainingRoom={handleTrainingRoom}
+          onBossRush={handleBossRush}
+          onEndlessMode={handleEndlessMode}
+          onWeeklyChallenge={handleWeeklyChallenge}
         />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "stats" && (
-        <StatsScreen onBack={handleBackToMenu} />
+        <StatsScreen onBack={handleBackToMenu} onRunHistory={handleShowRunHistory} />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "collection" && (
-        <CollectionGallery onBack={handleBackToMenu} />
+        <CollectionGallery onBack={handleBackToMenu} onItemCodex={handleShowItemCodex} />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "settings" && (
         <SettingsScreen onBack={handleBackToMenu} />
@@ -996,6 +1378,12 @@ function App() {
           onBack={handleBackToMenu}
           onWatch={handleWatchReplay}
         />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "run_history" && (
+        <RunHistoryUI onBack={handleBackToMenu} />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "item_codex" && (
+        <ItemCodexUI onBack={handleBackToMenu} />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "daily" && (
         <DailyChallengeScreen
@@ -1015,6 +1403,58 @@ function App() {
       )}
       {gameState === "MODIFIERS" && (
         <RunModifierSelect onConfirm={handleModifiersConfirm} />
+      )}
+      {gameState === "TRAINING" && (
+        <>
+          <div id="training-game" style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", zIndex: 0 }} />
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+              zIndex: 1,
+            }}
+          >
+            <TrainingUI onExit={handleTrainingExit} />
+          </div>
+        </>
+      )}
+      {gameState === "BOSS_RUSH" && (
+        <>
+          <div id="boss-rush-game" style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", zIndex: 0 }} />
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+              zIndex: 1,
+            }}
+          >
+            <GameHUD
+              health={health}
+              maxHealth={maxHealth}
+              altitude={0}
+              inventory={inventory}
+              className={selectedClass ? CLASSES[selectedClass].name : undefined}
+              styleMeter={0}
+              styleTier="D"
+              essence={essence}
+              comboCount={comboCount}
+              comboMultiplier={comboMultiplier}
+              flowMeter={flowMeter}
+              flowMaxFlow={flowMaxFlow}
+              isShieldGuarding={isShieldGuarding}
+              sacredGroundCooldown={sacredGroundCooldown}
+            />
+            <BossRushUI onReturnToMenu={handleBossRushExit} />
+          </div>
+        </>
       )}
       {(gameState === "PLAYING" || gameState === "DEATH") && (
         <>
@@ -1085,6 +1525,12 @@ function App() {
                   onLeave={handleItemReplaceLeave}
                 />
               )}
+              {coopDraftItems && (
+                <CoopItemDraft
+                  items={coopDraftItems}
+                  onComplete={handleCoopDraftComplete}
+                />
+              )}
               {tutorialHint && (
                 <TutorialOverlay
                   hint={tutorialHint}
@@ -1098,6 +1544,12 @@ function App() {
                 <AscensionScreen
                   bossNumber={ascensionBossNumber}
                   onChosen={handleAscensionChosen}
+                />
+              )}
+              {subclassSelectOpen && selectedClass && (
+                <SubclassSelect
+                  classType={selectedClass}
+                  onSelect={handleSubclassSelect}
                 />
               )}
             </div>

@@ -10,6 +10,8 @@ import type { PlatformTextureManager } from "./PlatformTextureManager";
 import type { PlatformEffectsManager } from "./PlatformEffectsManager";
 import type { BossArenaManager } from "./BossArenaManager";
 import { CosmeticManager } from "./CosmeticManager";
+import { EndlessManager } from "./EndlessManager";
+import { SecretRoomManager } from "./SecretRoomManager";
 
 interface DifficultyParams {
   minGap: number;
@@ -23,10 +25,23 @@ const SIDE_ZONES = {
   right: { min: 1320, max: 1800 },
 };
 
+// Vertical wall configuration
+const VERTICAL_WALL = {
+  WIDTH: 40,
+  MIN_HEIGHT: 200,
+  MAX_HEIGHT: 500,
+  COLOR: 0x555566,
+  // Chance to spawn a vertical wall alongside a platform
+  SIDE_CHANCE: 0.12,
+  BRIDGE_CHANCE: 0.18,
+  MIN_ALTITUDE: 50, // Don't spawn walls in the very first area
+};
+
 export class LevelGenerator {
   private scene: Phaser.Scene;
   private staticPlatforms: Phaser.Physics.Arcade.StaticGroup;
   private movingPlatforms: Phaser.Physics.Arcade.Group;
+  private verticalWalls: Phaser.Physics.Arcade.StaticGroup | null = null;
   private slopeManager: SlopeManager;
   private textureManager: PlatformTextureManager | null = null;
   private platformEffectsManager: PlatformEffectsManager | null = null;
@@ -46,6 +61,14 @@ export class LevelGenerator {
   private lastGamblingAltitude: number = 0;
   private nextGamblingDist: number = 0;
 
+  // NPC platform spawning
+  private lastNPCAltitude: number = 0;
+  private nextNPCDist: number = 0;
+
+  // Secret room (cracked wall) spawning
+  private lastSecretRoomAltitude: number = 0;
+  private nextSecretRoomDist: number = 0;
+
   // Tower-climb state: alternates between side climbing and bridging
   private currentSide: "left" | "right" = "left";
   private phase: "side" | "bridge" = "side";
@@ -64,6 +87,10 @@ export class LevelGenerator {
     this.slopeManager = slopeManager;
     this.lastPlatformY = WORLD.BASE_PLATFORM_Y;
     this.lastPlatformX = 960;
+  }
+
+  setVerticalWalls(group: Phaser.Physics.Arcade.StaticGroup) {
+    this.verticalWalls = group;
   }
 
   setTextureManager(textureManager: PlatformTextureManager) {
@@ -90,6 +117,14 @@ export class LevelGenerator {
     return Phaser.Math.Between(500, 800);
   }
 
+  private nextNPCInterval(): number {
+    return Phaser.Math.Between(600, 1000);
+  }
+
+  private nextSecretRoomInterval(): number {
+    return Phaser.Math.Between(800, 1200);
+  }
+
   init() {
     this.lastShopAltitude = 0;
     this.nextShopDist = this.nextShopInterval();
@@ -97,6 +132,10 @@ export class LevelGenerator {
     this.nextPortalDist = this.nextPortalInterval();
     this.lastGamblingAltitude = 0;
     this.nextGamblingDist = this.nextGamblingInterval();
+    this.lastNPCAltitude = 0;
+    this.nextNPCDist = this.nextNPCInterval();
+    this.lastSecretRoomAltitude = 0;
+    this.nextSecretRoomDist = this.nextSecretRoomInterval();
 
     // Wide starting platform (keep large for safe spawn)
     this.createPlatform(960, WORLD.BASE_PLATFORM_Y, 10, PlatformType.STANDARD);
@@ -144,6 +183,7 @@ export class LevelGenerator {
 
     this.cleanupPlatforms(this.staticPlatforms, playerY);
     this.cleanupPlatforms(this.movingPlatforms, playerY);
+    if (this.verticalWalls) this.cleanupPlatforms(this.verticalWalls, playerY);
     this.slopeManager.cleanup(playerY, WORLD.PLATFORM_CLEANUP_BUFFER);
   }
 
@@ -162,6 +202,12 @@ export class LevelGenerator {
           | undefined;
         if (shadow) {
           shadow.destroy();
+        }
+        const highlight = child.getData("highlight") as
+          | Phaser.GameObjects.Rectangle
+          | undefined;
+        if (highlight) {
+          highlight.destroy();
         }
         group.remove(child, true, true);
       }
@@ -183,8 +229,15 @@ export class LevelGenerator {
 
     // Lerp between anchor points: altitude 0 → 120/220, altitude 5000 → 200/400
     const t = Math.min(1, altitude / 5000);
-    const minGap = Math.round(120 + t * 80);
-    const maxGap = Math.round(220 + t * 180);
+    let minGap = Math.round(120 + t * 80);
+    let maxGap = Math.round(220 + t * 180);
+
+    // Endless mode: scale platform gaps based on progression past boss #15
+    if (EndlessManager.isActive()) {
+      const gapMult = EndlessManager.getPlatformGapMultiplier(EndlessManager.getCurrentBossNumber());
+      minGap = Math.round(minGap * gapMult);
+      maxGap = Math.round(maxGap * gapMult);
+    }
 
     return { minGap, maxGap, biomeKey };
   }
@@ -468,6 +521,37 @@ export class LevelGenerator {
       this.lastGamblingAltitude = altitude;
       this.nextGamblingDist = this.nextGamblingInterval();
     }
+
+    // NPC platform check — spawn a teal NPC platform at regular intervals
+    if (!isInBossArena && altitude >= 300 && altitude - this.lastNPCAltitude >= this.nextNPCDist) {
+      const npcY = this.lastPlatformY - Phaser.Math.Between(params.minGap, params.maxGap);
+      const npcX = Phaser.Math.Clamp(
+        this.lastPlatformX + Phaser.Math.Between(-200, 200),
+        300,
+        WORLD.WIDTH - 300,
+      );
+      const npcScale = Phaser.Math.FloatBetween(2.0, 2.5);
+      this.lastPlatformY = this.createPlatform(npcX, npcY, npcScale, PlatformType.NPC);
+      this.lastPlatformX = npcX;
+      this.lastNPCAltitude = altitude;
+      this.nextNPCDist = this.nextNPCInterval();
+    }
+
+    // Secret room cracked wall check — spawn a cracked wall at regular intervals
+    if (!isInBossArena && altitude >= 200 && altitude - this.lastSecretRoomAltitude >= this.nextSecretRoomDist) {
+      const wallY = this.lastPlatformY - Phaser.Math.Between(50, 100);
+      // Place the cracked wall near the current climbing path but offset
+      const wallX = Phaser.Math.Clamp(
+        this.lastPlatformX + Phaser.Math.Between(-200, 200),
+        100,
+        WORLD.WIDTH - 100,
+      );
+      const wallHeight = Phaser.Math.Between(180, 350);
+      const secretType = SecretRoomManager.pickRoomType();
+      this.createCrackedWall(wallX, wallY, wallHeight, secretType);
+      this.lastSecretRoomAltitude = altitude;
+      this.nextSecretRoomDist = this.nextSecretRoomInterval();
+    }
   }
 
   // Place a platform on the current side (hugging left or right wall)
@@ -496,6 +580,17 @@ export class LevelGenerator {
     const type = this.rollPlatformType(params.biomeKey);
     this.lastPlatformY = this.createPlatform(x, y, scale, type);
     this.lastPlatformX = x;
+
+    // Occasionally place a vertical wall pillar near the platform
+    const altitude = Math.max(0, (WORLD.BASE_PLATFORM_Y - y) / WORLD.ALTITUDE_SCALE);
+    if (altitude >= VERTICAL_WALL.MIN_ALTITUDE && Math.random() < VERTICAL_WALL.SIDE_CHANCE) {
+      const wallHeight = Phaser.Math.Between(VERTICAL_WALL.MIN_HEIGHT, VERTICAL_WALL.MAX_HEIGHT);
+      // Place wall on the opposite side from the current climbing side
+      const wallX = this.currentSide === "left"
+        ? x + Phaser.Math.Between(200, 400)
+        : x - Phaser.Math.Between(200, 400);
+      this.createVerticalWall(wallX, y, wallHeight);
+    }
   }
 
   // Bridge platforms that step across the middle toward the opposite side
@@ -530,6 +625,15 @@ export class LevelGenerator {
         : this.rollPlatformType(params.biomeKey);
     this.lastPlatformY = this.createPlatform(x, y, scale, type);
     this.lastPlatformX = x;
+
+    // Occasionally place a vertical wall in the middle area during bridging
+    const altitude = Math.max(0, (WORLD.BASE_PLATFORM_Y - y) / WORLD.ALTITUDE_SCALE);
+    if (altitude >= VERTICAL_WALL.MIN_ALTITUDE && Math.random() < VERTICAL_WALL.BRIDGE_CHANCE) {
+      const wallHeight = Phaser.Math.Between(VERTICAL_WALL.MIN_HEIGHT, VERTICAL_WALL.MAX_HEIGHT);
+      // Place wall offset from the platform so it's useful for wall-jumping
+      const wallX = x + Phaser.Math.Between(-250, 250);
+      this.createVerticalWall(wallX, y + 50, wallHeight);
+    }
   }
 
   // Fix 4 & 6: Biome-weighted types + progressive scale
@@ -560,11 +664,19 @@ export class LevelGenerator {
     }
   }
 
-  // Fix 4 exception: Wall jumps keep STANDARD
+  // Fix 4 exception: Wall jumps keep STANDARD — now also places vertical wall pillars
   private generateWallJumpSection(params: DifficultyParams) {
     const steps = Phaser.Math.Between(3, 6);
     const yGap = Math.min(150, params.maxGap);
-    const wallX = Math.random() > 0.5 ? 200 : 1720;
+    const side = Math.random() > 0.5 ? "right" : "left";
+    const wallX = side === "left" ? 200 : 1720;
+
+    // Place a tall vertical wall pillar that spans most of the section
+    const totalHeight = steps * yGap;
+    const pillarX = side === "left"
+      ? Phaser.Math.Between(500, 700)
+      : Phaser.Math.Between(1220, 1420);
+    this.createVerticalWall(pillarX, this.lastPlatformY, Math.min(totalHeight, VERTICAL_WALL.MAX_HEIGHT));
 
     for (let i = 0; i < steps; i++) {
       const y = this.lastPlatformY - yGap;
@@ -834,11 +946,46 @@ export class LevelGenerator {
     );
   }
 
+  /**
+   * Creates a vertical wall pillar that players can wall-jump off.
+   * These are thin, tall static bodies — not one-way, so they block from all sides.
+   */
+  private createVerticalWall(x: number, y: number, height: number): void {
+    if (!this.verticalWalls) return;
+
+    // Clamp position to stay within playable area (away from boundary walls)
+    x = Phaser.Math.Clamp(x, 80, WORLD.WIDTH - 80);
+
+    const wall = this.scene.add.rectangle(
+      x,
+      y - height / 2, // y is the bottom of the wall, center it vertically
+      VERTICAL_WALL.WIDTH,
+      height,
+      VERTICAL_WALL.COLOR,
+    );
+    wall.setAlpha(0.85);
+    this.verticalWalls.add(wall);
+    (wall.body as Phaser.Physics.Arcade.StaticBody).updateFromGameObject();
+
+    // Subtle highlight edge on the left side of the wall
+    const highlight = this.scene.add.rectangle(
+      x - VERTICAL_WALL.WIDTH / 2 + 2,
+      y - height / 2,
+      4,
+      height,
+      0x888899,
+    );
+    highlight.setAlpha(0.4);
+    highlight.setDepth(wall.depth + 1);
+    wall.setData("highlight", highlight);
+  }
+
   /** Special platform types that should not be affected by cosmetic theme tinting. */
   private static readonly SPECIAL_PLATFORM_TYPES = new Set([
     PlatformType.SHOP,
     PlatformType.PORTAL,
     PlatformType.GAMBLING,
+    PlatformType.NPC,
   ]);
 
   /**

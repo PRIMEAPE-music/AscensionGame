@@ -5,13 +5,16 @@ import type { ItemData } from "../config/ItemConfig";
 
 interface CollectionGalleryProps {
   onBack: () => void;
+  onItemCodex?: () => void;
 }
 
 export const CollectionGallery: React.FC<CollectionGalleryProps> = ({
   onBack,
+  onItemCodex,
 }) => {
   const [unlockedIds, setUnlockedIds] = useState<string[]>([]);
   const [backHover, setBackHover] = useState(false);
+  const [codexHover, setCodexHover] = useState(false);
 
   // All gold items from the database
   const allGoldItems: ItemData[] = Object.values(ITEMS).filter(
@@ -161,12 +164,41 @@ export const CollectionGallery: React.FC<CollectionGalleryProps> = ({
         })}
       </div>
 
-      {/* Back button */}
+      {/* Bottom buttons */}
       <div
         style={{
+          display: "flex",
+          gap: "16px",
           padding: "10px 0 40px",
         }}
       >
+        {onItemCodex && (
+          <button
+            onClick={onItemCodex}
+            onMouseEnter={() => setCodexHover(true)}
+            onMouseLeave={() => setCodexHover(false)}
+            style={{
+              padding: "14px 36px",
+              fontSize: "16px",
+              fontFamily: "monospace",
+              fontWeight: "bold",
+              letterSpacing: "2px",
+              textTransform: "uppercase",
+              background: codexHover
+                ? "rgba(255, 215, 0, 0.15)"
+                : "rgba(255, 215, 0, 0.06)",
+              color: codexHover ? "#ffd700" : "rgba(255, 215, 0, 0.5)",
+              border: `1px solid ${codexHover ? "rgba(255, 215, 0, 0.35)" : "rgba(255, 215, 0, 0.15)"}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+              outline: "none",
+              transform: codexHover ? "scale(1.03)" : "scale(1)",
+            }}
+          >
+            Item Codex
+          </button>
+        )}
         <button
           onClick={onBack}
           onMouseEnter={() => setBackHover(true)}

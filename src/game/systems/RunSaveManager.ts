@@ -32,6 +32,8 @@ export interface RunSaveData {
     damageTaken: number;
     perfectDodges: number;
     itemsCollected: number;
+    // Subclass specialization (chosen after boss #2)
+    subclass?: string;
 }
 
 export const RunSaveManager = {

@@ -63,3 +63,13 @@
     opacity: 0.5;
   }
 }
+
+/* Combo counter pulse on increment */
+@keyframes combo-pulse {
+  0% {
+    transform: translateY(-50%) scale(1.25);
+  }
+  100% {
+    transform: translateY(-50%) scale(1);
+  }
+}

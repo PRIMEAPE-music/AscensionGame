@@ -15,6 +15,7 @@ const RARITY_COLORS: Record<string, string> = {
   UNCOMMON: "#00ff00",
   RARE: "#4444ff",
   LEGENDARY: "#ffd700",
+  CURSED: "#9933cc",
 };
 
 const STAT_LABELS: Record<string, string> = {

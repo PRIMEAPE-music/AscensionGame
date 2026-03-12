@@ -5,6 +5,7 @@
 
 import { CosmeticManager } from "./CosmeticManager";
 import { EventBus } from "./EventBus";
+import { UnlockManager } from "./UnlockManager";
 
 const STORAGE_KEY = "ascension_achievements";
 
@@ -403,6 +404,138 @@ const ACHIEVEMENTS: Achievement[] = [
     condition: () => false, // Tracked via modifier tracking
     hint: "Stack the odds against yourself... and still triumph",
   },
+
+  // ─── Unlock-Gated Achievements (trigger feature unlocks) ──────────────
+  {
+    id: "first_blood",
+    name: "First Blood",
+    description: "Kill your first enemy",
+    icon: "\u{1FA78}", // drop of blood
+    category: "combat",
+    condition: (s) => s.run.kills >= 1 || s.totalKills >= 1,
+    hint: "Every journey begins with a single strike",
+    progress: (s) => ({
+      current: Math.min(1, s.run.kills + s.totalKills),
+      target: 1,
+    }),
+  },
+  {
+    id: "boss_slayer",
+    name: "Boss Vanquisher",
+    description: "Defeat any boss",
+    icon: "\u{2620}\u{FE0F}", // skull and crossbones
+    category: "combat",
+    condition: (s) => s.run.bossesDefeated >= 1 || s.lifetime.totalBossesDefeated >= 1,
+    hint: "Face and conquer a mighty foe",
+    progress: (s) => ({
+      current: Math.min(1, s.run.bossesDefeated + s.lifetime.totalBossesDefeated),
+      target: 1,
+    }),
+  },
+  {
+    id: "ascended",
+    name: "Ascended",
+    description: "Complete an ascension at boss #15",
+    icon: "\u{1F4AB}", // dizzy (ascending star)
+    category: "meta",
+    // Tracked via boss-defeated event when bossNumber % 15 === 0 and ascension chosen
+    condition: () => false, // Only unlocked via ascension-chosen event tracking
+    hint: "Reach the pinnacle of your climb and ascend",
+  },
+  {
+    id: "completionist",
+    name: "Completionist",
+    description: "Collect 50 unique items across all runs",
+    icon: "\u{1F9F0}", // toolbox
+    category: "collection",
+    // Checked via uniqueItemsCollected stored count
+    condition: () => false, // Checked via stored unique items count
+    hint: "Diversity is the spice of roguelike life",
+  },
+  {
+    id: "untouchable",
+    name: "Ghost Runner",
+    description: "Reach 500m altitude without taking any damage",
+    icon: "\u{1F47B}", // ghost
+    category: "exploration",
+    // Checked at end of run: damageTakenThisRun === 0 && altitude >= 500
+    condition: () => false, // Tracked via per-run damage tracking
+    hint: "Not a scratch — reach the clouds unharmed",
+  },
+  {
+    id: "combo_master",
+    name: "Combo Virtuoso",
+    description: "Reach a 50x combo in a single run",
+    icon: "\u{1F3B5}", // musical note
+    category: "combat",
+    condition: (s) => s.maxComboThisRun >= 50,
+    hint: "Chain your attacks into a masterwork of destruction",
+    progress: (s) => ({
+      current: Math.min(50, s.maxComboThisRun),
+      target: 50,
+    }),
+  },
+  {
+    id: "champion",
+    name: "Champion",
+    description: "Defeat all 5 boss types",
+    icon: "\u{1F396}\u{FE0F}", // military medal
+    category: "combat",
+    // Tracked via bossTypesDefeated stored set
+    condition: () => false, // Only unlocked via boss-defeated tracking
+    hint: "Each boss archetype must fall before you",
+  },
+  {
+    id: "paladin_5k",
+    name: "Paladin Ascendant",
+    description: "Reach 5,000m altitude with Paladin",
+    icon: "\u{1F6E1}\u{FE0F}", // shield
+    category: "meta",
+    condition: (s) => {
+      const paladinBest = s.lifetime.highestAltitude["PALADIN"] || 0;
+      const currentRunPaladin = s.currentClass === "PALADIN" ? s.run.altitude : 0;
+      return Math.max(paladinBest, currentRunPaladin) >= 5000;
+    },
+    hint: "The Paladin must ascend to the highest reaches",
+    progress: (s) => ({
+      current: Math.min(5000, Math.max(s.lifetime.highestAltitude["PALADIN"] || 0, s.currentClass === "PALADIN" ? s.run.altitude : 0)),
+      target: 5000,
+    }),
+  },
+  {
+    id: "monk_5k",
+    name: "Monk Ascendant",
+    description: "Reach 5,000m altitude with Monk",
+    icon: "\u{262F}\u{FE0F}", // yin-yang
+    category: "meta",
+    condition: (s) => {
+      const monkBest = s.lifetime.highestAltitude["MONK"] || 0;
+      const currentRunMonk = s.currentClass === "MONK" ? s.run.altitude : 0;
+      return Math.max(monkBest, currentRunMonk) >= 5000;
+    },
+    hint: "The Monk must reach enlightenment at the summit",
+    progress: (s) => ({
+      current: Math.min(5000, Math.max(s.lifetime.highestAltitude["MONK"] || 0, s.currentClass === "MONK" ? s.run.altitude : 0)),
+      target: 5000,
+    }),
+  },
+  {
+    id: "priest_5k",
+    name: "Priest Ascendant",
+    description: "Reach 5,000m altitude with Priest",
+    icon: "\u{271D}\u{FE0F}", // cross
+    category: "meta",
+    condition: (s) => {
+      const priestBest = s.lifetime.highestAltitude["PRIEST"] || 0;
+      const currentRunPriest = s.currentClass === "PRIEST" ? s.run.altitude : 0;
+      return Math.max(priestBest, currentRunPriest) >= 5000;
+    },
+    hint: "The Priest must channel divine power to the highest altar",
+    progress: (s) => ({
+      current: Math.min(5000, Math.max(s.lifetime.highestAltitude["PRIEST"] || 0, s.currentClass === "PRIEST" ? s.run.altitude : 0)),
+      target: 5000,
+    }),
+  },
 ];
 
 // ─── Internal State ──────────────────────────────────────────────────────────
@@ -439,6 +572,16 @@ interface StoredAchievements {
   activeModifierCount: number;
   /** Daily challenge completions for streak tracking */
   dailyChallengeCompletions: string[];
+  /** Unique item IDs collected across all runs (for completionist achievement) */
+  uniqueItemsCollected: string[];
+  /** Boss types defeated across all runs (for champion achievement) */
+  bossTypesDefeated: string[];
+  /** Per-run tracking: total damage taken this run (for untouchable achievement) */
+  damageTakenThisRun: number;
+  /** Per-run tracking: highest altitude reached with zero damage (for untouchable) */
+  maxAltitudeThisRun: number;
+  /** Whether player has completed an ascension (boss #15) */
+  hasAscended: boolean;
 }
 
 const defaultState = (): StoredAchievements => ({
@@ -458,6 +601,11 @@ const defaultState = (): StoredAchievements => ({
   runStartTime: 0,
   activeModifierCount: 0,
   dailyChallengeCompletions: [],
+  uniqueItemsCollected: [],
+  bossTypesDefeated: [],
+  damageTakenThisRun: 0,
+  maxAltitudeThisRun: 0,
+  hasAscended: false,
 });
 
 let state: StoredAchievements = defaultState();
@@ -487,6 +635,9 @@ export const AchievementManager = {
           maxCombo: typeof parsed.maxCombo === "number" ? parsed.maxCombo : 0,
           totalParries: typeof parsed.totalParries === "number" ? parsed.totalParries : 0,
           dailyChallengeCompletions: Array.isArray(parsed.dailyChallengeCompletions) ? parsed.dailyChallengeCompletions : [],
+          uniqueItemsCollected: Array.isArray(parsed.uniqueItemsCollected) ? parsed.uniqueItemsCollected : [],
+          bossTypesDefeated: Array.isArray(parsed.bossTypesDefeated) ? parsed.bossTypesDefeated : [],
+          hasAscended: typeof parsed.hasAscended === "boolean" ? parsed.hasAscended : false,
         };
       } else {
         state = defaultState();
@@ -507,6 +658,9 @@ export const AchievementManager = {
         maxCombo: state.maxCombo,
         totalParries: state.totalParries,
         dailyChallengeCompletions: state.dailyChallengeCompletions,
+        uniqueItemsCollected: state.uniqueItemsCollected,
+        bossTypesDefeated: state.bossTypesDefeated,
+        hasAscended: state.hasAscended,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(persistData));
     } catch {
@@ -530,6 +684,8 @@ export const AchievementManager = {
     state.playerHpAtBossDefeat = 0;
     state.runStartTime = Date.now();
     state.activeModifierCount = 0;
+    state.damageTakenThisRun = 0;
+    state.maxAltitudeThisRun = 0;
 
     // Check active modifiers
     try {
@@ -622,8 +778,8 @@ export const AchievementManager = {
     });
     eventCleanups.push(unsubHealth);
 
-    // Track boss defeats for boss rush timing
-    const unsubBossDefeated = EventBus.on("boss-defeated", () => {
+    // Track boss defeats for boss rush timing and boss type tracking (champion)
+    const unsubBossDefeated = EventBus.on("boss-defeated", (data) => {
       state.bossDefeatTimestamps.push(Date.now());
       state.playerHpAtBossDefeat = currentPlayerHp;
 
@@ -634,8 +790,93 @@ export const AchievementManager = {
           this.tryUnlock("boss_rush");
         }
       }
+
+      // Track boss type defeated for champion achievement
+      // Boss types cycle: 1=MagmaTyrant, 2=VoidWingArchon, 3=ChronoDemon, 4=LegionMaster, 5=PlatformDevourer
+      const BOSS_TYPE_NAMES = ["MagmaTyrant", "VoidWingArchon", "ChronoDemon", "LegionMaster", "PlatformDevourer"];
+      const bossIndex = ((data.bossNumber - 1) % 5);
+      const bossTypeName = BOSS_TYPE_NAMES[bossIndex];
+      if (bossTypeName && !state.bossTypesDefeated.includes(bossTypeName)) {
+        state.bossTypesDefeated.push(bossTypeName);
+        this.save();
+
+        // Check champion achievement: all 5 boss types defeated
+        if (state.bossTypesDefeated.length >= 5) {
+          this.tryUnlock("champion");
+        }
+      }
     });
     eventCleanups.push(unsubBossDefeated);
+
+    // Track first kill for first_blood achievement
+    const unsubEnemyKilled = EventBus.on("enemy-killed", () => {
+      this.tryUnlock("first_blood");
+    });
+    eventCleanups.push(unsubEnemyKilled);
+
+    // Track first boss defeat for boss_slayer achievement
+    const unsubBossSlayer = EventBus.on("boss-defeated", () => {
+      this.tryUnlock("boss_slayer");
+    });
+    eventCleanups.push(unsubBossSlayer);
+
+    // Track damage taken this run for untouchable (Ghost Runner) achievement
+    const unsubDamage = EventBus.on("health-change", (data) => {
+      // Detect damage: health decreased (not from healing or max health change)
+      if (data.health < currentPlayerHp) {
+        state.damageTakenThisRun += (currentPlayerHp - data.health);
+      }
+    });
+    eventCleanups.push(unsubDamage);
+
+    // Track altitude for untouchable check
+    const unsubAltitude = EventBus.on("altitude-change", (data) => {
+      if (data.altitude > state.maxAltitudeThisRun) {
+        state.maxAltitudeThisRun = data.altitude;
+      }
+      // Check untouchable: 500m with zero damage taken
+      if (state.damageTakenThisRun === 0 && state.maxAltitudeThisRun >= 500) {
+        this.tryUnlock("untouchable");
+      }
+    });
+    eventCleanups.push(unsubAltitude);
+
+    // Track item pickups for unique items (completionist achievement)
+    const unsubItemPickup = EventBus.on("inventory-change", (data) => {
+      let changed = false;
+      for (const item of data.inventory) {
+        if (item.id && !state.uniqueItemsCollected.includes(item.id)) {
+          state.uniqueItemsCollected.push(item.id);
+          changed = true;
+        }
+      }
+      if (changed) {
+        this.save();
+        // Check completionist: 50 unique items
+        if (state.uniqueItemsCollected.length >= 50) {
+          this.tryUnlock("completionist");
+        }
+      }
+    });
+    eventCleanups.push(unsubItemPickup);
+
+    // Track ascension completion
+    const unsubAscension = EventBus.on("ascension-chosen", () => {
+      if (!state.hasAscended) {
+        state.hasAscended = true;
+        this.save();
+        this.tryUnlock("ascended");
+      }
+    });
+    eventCleanups.push(unsubAscension);
+
+    // Track combo for combo_master (50x) achievement in real-time
+    const unsubCombo = EventBus.on("combo-update", (data) => {
+      if (data.count >= 50) {
+        this.tryUnlock("combo_master");
+      }
+    });
+    eventCleanups.push(unsubCombo);
   },
 
   /** Remove all event listeners. */
@@ -657,6 +898,9 @@ export const AchievementManager = {
     state.unlockDates[id] = new Date().toISOString();
     this.save();
     CosmeticManager.checkAchievementUnlocks(id);
+
+    // Check if this achievement unlocks any game features
+    UnlockManager.checkUnlocks(id);
 
     // Emit event for popup notification
     EventBus.emit("achievement-unlocked", {
@@ -717,9 +961,10 @@ export const AchievementManager = {
     if (newlyUnlocked.length > 0) {
       this.save();
 
-      // Trigger cosmetic unlocks and event notifications for each newly unlocked achievement
+      // Trigger cosmetic unlocks, feature unlocks, and event notifications for each newly unlocked achievement
       for (const achievementId of newlyUnlocked) {
         CosmeticManager.checkAchievementUnlocks(achievementId);
+        UnlockManager.checkUnlocks(achievementId);
 
         const achievement = ACHIEVEMENTS.find((a) => a.id === achievementId);
         if (achievement) {
@@ -863,5 +1108,25 @@ export const AchievementManager = {
   /** Get highest combo ever achieved. */
   getMaxCombo(): number {
     return state.maxCombo;
+  },
+
+  /** Get count of unique items collected across all runs. */
+  getUniqueItemCount(): number {
+    return state.uniqueItemsCollected.length;
+  },
+
+  /** Get array of boss type names defeated across all runs. */
+  getBossTypesDefeated(): string[] {
+    return [...state.bossTypesDefeated];
+  },
+
+  /** Whether the player has completed an ascension. */
+  getHasAscended(): boolean {
+    return state.hasAscended;
+  },
+
+  /** Get damage taken in the current run. */
+  getDamageTakenThisRun(): number {
+    return state.damageTakenThisRun;
   },
 };

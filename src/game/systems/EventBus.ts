@@ -12,7 +12,8 @@ export interface GameEvents {
   "health-change": { health: number; maxHealth: number; playerIndex?: number };
   "altitude-change": { altitude: number };
   "inventory-change": { inventory: ItemData[]; maxSlots?: number };
-  "enemy-killed": { enemyType: string; x: number; y: number };
+  "enemy-killed": { enemyType: string; x: number; y: number; finishingMove?: boolean; isElite?: boolean; affixes?: string[] };
+  "elite-killed": { affixes: string[] };
   "player-died": { playerIndex?: number };
   "coop-respawn": { playerIndex: number; timeRemaining: number };
   "boss-warning": { distance: number };
@@ -47,7 +48,7 @@ export interface GameEvents {
   "sacred-ground-cooldown": { remaining: number; total: number };
   "gambling-open": { essence: number };
   "gambling-close": {};
-  "gambling-result": { bet: number; reward: string; rewardType: "nothing" | "item" | "health" | "gold_item" };
+  "gambling-result": { bet: number; reward: string; rewardType: "nothing" | "item" | "health" | "gold_item" | "cursed_item" };
   "item-replace-prompt": { newItem: ItemData; currentItems: ItemData[] };
   "item-replace-decision": { action: "take" | "leave"; replaceIndex?: number };
   "parry-success": { reflectedDamage: number };
@@ -65,7 +66,9 @@ export interface GameEvents {
   };
   "wind-zone-enter": { windType: string; strength: number };
   "synergy-change": { synergies: Array<{ rarity: string; count: number; bonus: number }> };
+  "synergy-activated": { synergyId: string; name: string; description: string; color: number };
   "wind-zone-exit": {};
+  "finishing-move": { x: number; y: number };
   "achievement-unlocked": {
     id: string;
     name: string;
@@ -74,6 +77,61 @@ export interface GameEvents {
   };
   "ascension-offer": { bossNumber: number };
   "ascension-chosen": { stat: string };
+  "subclass-offer": { classType: string };
+  "subclass-chosen": { subclassId: string };
+  "subclass-ability-used": { subclassId: string };
+  "feature-unlocked": { featureId: string; featureName: string };
+  "corruption-update": { level: number };
+  "corruption-modifier": { modifierId: string };
+
+  // Boss Rush events
+  "boss-rush-round": { round: number; totalRounds: number; bossName: string; state: string };
+  "boss-rush-timer": { timeMs: number };
+  "boss-rush-item-select": { round: number; offerings: import("../config/ItemConfig").ItemData[] };
+  "boss-rush-item-chosen": { item: import("../config/ItemConfig").ItemData };
+  "boss-rush-victory": { timeMs: number; essenceEarned: number; bonusEssence: number };
+  "boss-rush-defeat": { round: number; timeMs: number; bossName: string };
+
+  // Training Room events
+  "training-spawn-boss": { bossId: string };
+  "training-toggle-infinite-hp": { enabled: boolean };
+  "training-toggle-dummy-attack": { enabled: boolean };
+  "training-reset": {};
+  "training-exit": {};
+  "training-dps-update": { dps: number };
+
+  // Secret Room events
+  "secret-room-found": { type: string; x: number; y: number };
+  "secret-room-shrine-open": { buffs: Array<{ id: string; label: string; description: string }> };
+  "secret-room-shrine-choose": { buffId: string };
+  "secret-room-shrine-close": {};
+  "secret-room-challenge-start": { enemyCount: number; timeLimit: number };
+  "secret-room-challenge-timer": { remaining: number };
+  "secret-room-challenge-complete": { success: boolean };
+  "secret-room-lore-open": { text: string; title: string };
+  "secret-room-lore-close": {};
+
+  // NPC encounter events
+  "npc-interact": {
+    npcType: string;
+    npcId: string;
+    inventory: import("../config/ItemConfig").ItemData[];
+    essence: number;
+    nextBossNumber: number;
+  };
+  "npc-dismiss": {};
+  "npc-quest-start": { questType: string; killTarget: number; timeLimit: number };
+  "npc-quest-complete": { reward: string };
+  "npc-quest-fail": {};
+  "npc-blacksmith-upgrade": { itemIndex: number; cost: number };
+  "npc-cursed-purchase": { itemId: string; cost: number };
+  "npc-seer-reveal": {};
+
+  // Co-op item draft events
+  "coop-item-draft": { items: import("../config/ItemConfig").ItemData[] };
+  "coop-draft-p1-pick": { itemId: string };
+  "coop-draft-p2-pick": { itemId: string };
+  "coop-draft-complete": { p1Item: string; p2Item: string };
 }
 
 export const EventBus = {

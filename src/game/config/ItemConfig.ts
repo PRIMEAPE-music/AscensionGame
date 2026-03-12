@@ -1,5 +1,5 @@
-export type ItemType = 'SILVER' | 'GOLD';
-export type ItemRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'LEGENDARY';
+export type ItemType = 'SILVER' | 'GOLD' | 'CURSED';
+export type ItemRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'LEGENDARY' | 'CURSED';
 export type StatType = 'health' | 'moveSpeed' | 'jumpHeight' | 'attackDamage' | 'attackSpeed' | 'armor';
 export type EffectOperation = 'ADD' | 'MULTIPLY';
 export type ItemQuality = 'DAMAGED' | 'NORMAL' | 'PRISTINE';
@@ -41,4 +41,10 @@ export interface ItemData {
     armorHits?: number;     // For defense items: number of hits absorbed before breaking
     stackable?: boolean;    // Gold items: can equip same item twice if player owns duplicates
     stackDescription?: string; // Description of the enhanced stacking effect
+    tags?: string[];         // Synergy tags for themed synergy sets (e.g., "fire", "defense", "speed")
+    curseId?: string;        // Cursed items: identifier for the curse effect
+    coopOnly?: boolean;      // If true, item only appears in item pools when co-op mode is active
 }
+
+/** Color used for cursed item rarity in UIs */
+export const CURSED_RARITY_COLOR = '#9933cc';

@@ -128,15 +128,17 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const healthPercentage = (health / maxHealth) * 100;
   const tierColor = TIER_COLORS[styleTier] || "#666";
 
-  // Combo color progression
+  // Combo color tiers: white (1-4), yellow (5-9), orange (10-19), red (20-49), purple (50+)
   const comboColor =
-    comboCount >= 10
-      ? "#ff4444"
-      : comboCount >= 6
-        ? "#ff8800"
-        : comboCount >= 3
-          ? "#ffcc00"
-          : "#ffffff";
+    comboCount >= 50
+      ? "#cc44ff"
+      : comboCount >= 20
+        ? "#ff4444"
+        : comboCount >= 10
+          ? "#ff8800"
+          : comboCount >= 5
+            ? "#ffcc00"
+            : "#ffffff";
 
   // Boss fight state
   const [bossActive, setBossActive] = useState(false);
@@ -163,9 +165,34 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   // Synergy bonuses
   const [synergies, setSynergies] = useState<SynergyBonus[]>([]);
 
+  // Active themed synergy set badges (persists in bottom bar)
+  const [activeThemedSynergies, setActiveThemedSynergies] = useState<
+    Array<{ name: string; color: string }>
+  >([]);
+
+  // Themed synergy set activation notification
+  const [synergyNotification, setSynergyNotification] = useState<{
+    name: string;
+    description: string;
+    color: string;
+  } | null>(null);
+  const [synergyNotifOpacity, setSynergyNotifOpacity] = useState(1);
+  const synergyNotifTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const synergyFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Combo string name display
   const [comboName, setComboName] = useState<string | null>(null);
   const comboNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Finishing move flash
+  const [showFinish, setShowFinish] = useState(false);
+  const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Parry flash display
+  const [showParryFlash, setShowParryFlash] = useState(false);
+  const [parryFlashOpacity, setParryFlashOpacity] = useState(1);
+  const parryFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const parryFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Progress indicator state
   const [progressData, setProgressData] = useState<{
@@ -173,6 +200,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     nextBossAltitude: number;
     biome: string;
   } | null>(null);
+
+  // Corruption meter (Endless Mode)
+  const [corruption, setCorruption] = useState(0);
+  const [corruptionModifier, setCorruptionModifier] = useState<string | null>(null);
+  const isEndlessMode = !!(window as any).__isEndlessMode;
 
   // Essence flash animation
   const [essenceFlash, setEssenceFlash] = useState(false);
@@ -269,6 +301,67 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       setProgressData(data);
     });
 
+    const unsubFinish = EventBus.on("finishing-move", () => {
+      setShowFinish(true);
+      if (finishTimerRef.current) clearTimeout(finishTimerRef.current);
+      finishTimerRef.current = setTimeout(() => setShowFinish(false), 500);
+    });
+
+    const unsubParry = EventBus.on("parry-success", () => {
+      setShowParryFlash(true);
+      setParryFlashOpacity(1);
+      // Start fade after 200ms
+      if (parryFadeTimerRef.current) clearTimeout(parryFadeTimerRef.current);
+      parryFadeTimerRef.current = setTimeout(() => {
+        setParryFlashOpacity(0);
+      }, 200);
+      // Remove after 700ms total (200ms solid + 500ms fade)
+      if (parryFlashTimerRef.current) clearTimeout(parryFlashTimerRef.current);
+      parryFlashTimerRef.current = setTimeout(() => {
+        setShowParryFlash(false);
+      }, 700);
+    });
+
+    const unsubCorruption = EventBus.on("corruption-update", (data) => {
+      setCorruption(data.level);
+    });
+
+    const unsubCorruptionMod = EventBus.on("corruption-modifier", (data) => {
+      setCorruptionModifier(data.modifierId);
+      // Auto-clear notification after 3 seconds
+      setTimeout(() => setCorruptionModifier(null), 3000);
+    });
+
+    const unsubSynergyActivated = EventBus.on("synergy-activated", (data) => {
+      const hex = (data.color ?? 0xffffff).toString(16).padStart(6, '0');
+      const colorStr = `#${hex}`;
+
+      // Add to persistent list of active themed synergies
+      setActiveThemedSynergies(prev => {
+        // Avoid duplicates
+        if (prev.some(s => s.name === data.name)) return prev;
+        return [...prev, { name: data.name, color: colorStr }];
+      });
+
+      // Show temporary notification
+      setSynergyNotification({
+        name: data.name,
+        description: data.description,
+        color: colorStr,
+      });
+      setSynergyNotifOpacity(1);
+      // Start fade after 2 seconds
+      if (synergyFadeTimerRef.current) clearTimeout(synergyFadeTimerRef.current);
+      synergyFadeTimerRef.current = setTimeout(() => {
+        setSynergyNotifOpacity(0);
+      }, 2000);
+      // Remove after 3 seconds total
+      if (synergyNotifTimerRef.current) clearTimeout(synergyNotifTimerRef.current);
+      synergyNotifTimerRef.current = setTimeout(() => {
+        setSynergyNotification(null);
+      }, 3000);
+    });
+
     return () => {
       unsubSpawn();
       unsubHealth();
@@ -280,9 +373,19 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       unsubInventory();
       unsubComboString();
       unsubProgress();
+      unsubFinish();
+      unsubParry();
+      unsubCorruption();
+      unsubCorruptionMod();
+      unsubSynergyActivated();
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
       if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
       if (comboNameTimerRef.current) clearTimeout(comboNameTimerRef.current);
+      if (finishTimerRef.current) clearTimeout(finishTimerRef.current);
+      if (parryFlashTimerRef.current) clearTimeout(parryFlashTimerRef.current);
+      if (parryFadeTimerRef.current) clearTimeout(parryFadeTimerRef.current);
+      if (synergyNotifTimerRef.current) clearTimeout(synergyNotifTimerRef.current);
+      if (synergyFadeTimerRef.current) clearTimeout(synergyFadeTimerRef.current);
     };
   }, []);
 
@@ -335,6 +438,107 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       )}
 
+      {/* Finishing Move Flash */}
+      {showFinish && (
+        <div
+          style={{
+            position: "absolute",
+            top: "30%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            fontFamily: "monospace",
+            fontSize: "56px",
+            fontWeight: "bold",
+            color: "#ffd700",
+            textShadow:
+              "0 0 20px rgba(255, 215, 0, 0.9), 0 0 40px rgba(255, 170, 0, 0.5), 2px 2px 4px rgba(0, 0, 0, 0.9)",
+            letterSpacing: "8px",
+            textTransform: "uppercase",
+            zIndex: 25,
+            pointerEvents: "none",
+            animation: "hud-pulse 0.3s ease-out",
+          }}
+        >
+          FINISH!
+        </div>
+      )}
+
+      {/* Parry Flash */}
+      {showParryFlash && (
+        <div
+          style={{
+            position: "absolute",
+            top: "35%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            fontFamily: "monospace",
+            fontSize: "42px",
+            fontWeight: "bold",
+            color: "#ffd700",
+            textShadow:
+              "0 0 16px rgba(255, 215, 0, 0.9), 0 0 32px rgba(255, 255, 255, 0.5), 2px 2px 4px rgba(0, 0, 0, 0.9)",
+            letterSpacing: "6px",
+            textTransform: "uppercase",
+            zIndex: 25,
+            pointerEvents: "none",
+            opacity: parryFlashOpacity,
+            transition: "opacity 0.5s ease-out",
+          }}
+        >
+          PARRY!
+        </div>
+      )}
+
+      {/* Themed Synergy Set Activation Notification */}
+      {synergyNotification && (
+        <div
+          style={{
+            position: "absolute",
+            top: "22%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "6px",
+            pointerEvents: "none",
+            zIndex: 30,
+            opacity: synergyNotifOpacity,
+            transition: "opacity 1s ease-out",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "monospace",
+              fontSize: "42px",
+              fontWeight: "bold",
+              color: synergyNotification.color,
+              textShadow:
+                `0 0 20px ${synergyNotification.color}, 0 0 40px ${synergyNotification.color}88, 2px 2px 4px rgba(0, 0, 0, 0.9)`,
+              letterSpacing: "8px",
+              textTransform: "uppercase",
+              animation: "hud-pulse 0.4s ease-out",
+            }}
+          >
+            {synergyNotification.name}
+          </div>
+          <div
+            style={{
+              fontFamily: "monospace",
+              fontSize: "14px",
+              fontWeight: "bold",
+              color: "rgba(255, 255, 255, 0.85)",
+              textShadow: "1px 1px 3px rgba(0, 0, 0, 0.9)",
+              letterSpacing: "1px",
+              textAlign: "center",
+              maxWidth: "400px",
+            }}
+          >
+            SYNERGY ACTIVE: {synergyNotification.description}
+          </div>
+        </div>
+      )}
+
       {/* P2 Health Panel (co-op) */}
       {player2Health !== undefined && (
         <div
@@ -368,6 +572,89 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Corruption Meter (Endless Mode) */}
+      {isEndlessMode && corruption > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 80,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '4px',
+            pointerEvents: 'none',
+            zIndex: 15,
+            fontFamily: 'monospace',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '11px',
+              fontWeight: 'bold',
+              color: corruption >= 80 ? '#cc44ff' : '#9944cc',
+              letterSpacing: '2px',
+              textShadow: corruption >= 80
+                ? '0 0 10px rgba(204, 68, 255, 0.8)'
+                : '0 0 4px rgba(153, 68, 204, 0.4)',
+              animation: corruption >= 90 ? 'hud-pulse 0.8s ease-in-out infinite' : 'none',
+            }}
+          >
+            CORRUPTION: {Math.floor(corruption)}%
+          </div>
+          <div
+            style={{
+              width: '180px',
+              height: '8px',
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              border: `1px solid ${corruption >= 80 ? 'rgba(204, 68, 255, 0.6)' : 'rgba(153, 68, 204, 0.3)'}`,
+              borderRadius: '4px',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${corruption}%`,
+                height: '100%',
+                background: corruption >= 80
+                  ? 'linear-gradient(to right, #7722aa, #cc44ff, #ff44ff)'
+                  : 'linear-gradient(to right, #442266, #7722aa, #9944cc)',
+                transition: 'width 0.3s ease-out',
+                borderRadius: '3px',
+                boxShadow: corruption >= 80
+                  ? '0 0 8px rgba(204, 68, 255, 0.6)'
+                  : 'none',
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Corruption Modifier Activation Flash */}
+      {corruptionModifier && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '25%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            fontFamily: 'monospace',
+            fontSize: '36px',
+            fontWeight: 'bold',
+            color: '#cc44ff',
+            textShadow: '0 0 20px rgba(204, 68, 255, 0.9), 0 0 40px rgba(153, 68, 204, 0.5), 2px 2px 4px rgba(0, 0, 0, 0.9)',
+            letterSpacing: '4px',
+            textTransform: 'uppercase',
+            zIndex: 25,
+            pointerEvents: 'none',
+            animation: 'hud-pulse 0.4s ease-out',
+          }}
+        >
+          CORRUPTED!
         </div>
       )}
 
@@ -791,6 +1078,37 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               ))}
             </div>
           )}
+          {activeThemedSynergies.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                flexWrap: "wrap",
+                justifyContent: "center",
+                marginTop: "2px",
+              }}
+            >
+              {activeThemedSynergies.map((s, i) => (
+                <div
+                  key={i}
+                  style={{
+                    fontSize: "10px",
+                    fontWeight: "bold",
+                    color: s.color,
+                    textShadow: `0 0 8px ${s.color}88`,
+                    letterSpacing: "1px",
+                    textTransform: "uppercase",
+                    padding: "1px 6px",
+                    border: `1px solid ${s.color}44`,
+                    borderRadius: "4px",
+                    background: `${s.color}11`,
+                  }}
+                >
+                  {s.name}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -806,26 +1124,19 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             fontFamily: "monospace",
             pointerEvents: "none",
             zIndex: 15,
+            animation: "combo-pulse 0.15s ease-out",
           }}
+          key={`combo-${comboCount}`}
         >
           <div
             style={{
-              fontSize: `${Math.min(72, 36 + comboCount * 4)}px`,
+              fontSize: `${Math.min(72, 36 + comboCount * 2)}px`,
               fontWeight: "bold",
               color: comboColor,
-              textShadow: `0 0 20px ${comboColor}`,
+              textShadow: `0 0 20px ${comboColor}, 0 0 40px ${comboColor}44`,
             }}
           >
             {comboCount}
-          </div>
-          <div
-            style={{
-              fontSize: "20px",
-              color: comboColor,
-              opacity: 0.8,
-            }}
-          >
-            {comboMultiplier.toFixed(1)}x
           </div>
           <div
             style={{
@@ -836,6 +1147,31 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           >
             COMBO
           </div>
+          <div
+            style={{
+              fontSize: "20px",
+              fontWeight: "bold",
+              color: comboColor,
+              opacity: 0.9,
+              textShadow: `0 0 10px ${comboColor}88`,
+              marginTop: "2px",
+            }}
+          >
+            {comboMultiplier.toFixed(1)}x
+          </div>
+          {comboMultiplier > 1.0 && (
+            <div
+              style={{
+                fontSize: "11px",
+                color: comboColor,
+                opacity: 0.6,
+                letterSpacing: "1px",
+                marginTop: "2px",
+              }}
+            >
+              ESSENCE BONUS
+            </div>
+          )}
         </div>
       )}
 

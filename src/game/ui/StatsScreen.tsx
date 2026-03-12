@@ -6,6 +6,7 @@ import type { Achievement, AchievementCategory, AchievementCheckStats } from "..
 
 interface StatsScreenProps {
   onBack: () => void;
+  onRunHistory?: () => void;
 }
 
 type TabId = "overview" | "classes" | "history" | "combat" | "achievements";
@@ -609,10 +610,11 @@ function CombatTab({ stats }: { stats: LifetimeStats }) {
 
 // ─── Main Stats Screen ──────────────────────────────────────────────
 
-export const StatsScreen: React.FC<StatsScreenProps> = ({ onBack }) => {
+export const StatsScreen: React.FC<StatsScreenProps> = ({ onBack, onRunHistory }) => {
   const [stats, setStats] = useState<LifetimeStats | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [backHover, setBackHover] = useState(false);
+  const [runHistoryHover, setRunHistoryHover] = useState(false);
 
   useEffect(() => {
     try {
@@ -812,8 +814,35 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ onBack }) => {
         </div>
       )}
 
-      {/* Back button */}
-      <div style={{ padding: "24px 0 36px" }}>
+      {/* Bottom buttons */}
+      <div style={{ display: "flex", gap: "16px", padding: "24px 0 36px" }}>
+        {onRunHistory && (
+          <button
+            onClick={onRunHistory}
+            onMouseEnter={() => setRunHistoryHover(true)}
+            onMouseLeave={() => setRunHistoryHover(false)}
+            style={{
+              padding: "14px 36px",
+              fontSize: "16px",
+              fontFamily: "monospace",
+              fontWeight: "bold",
+              letterSpacing: "2px",
+              textTransform: "uppercase",
+              background: runHistoryHover
+                ? "rgba(224, 208, 160, 0.15)"
+                : "rgba(224, 208, 160, 0.06)",
+              color: runHistoryHover ? "#e0d0a0" : "rgba(224, 208, 160, 0.5)",
+              border: `1px solid ${runHistoryHover ? "rgba(224, 208, 160, 0.35)" : "rgba(224, 208, 160, 0.15)"}`,
+              borderRadius: "6px",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+              outline: "none",
+              transform: runHistoryHover ? "scale(1.03)" : "scale(1)",
+            }}
+          >
+            Detailed Run History
+          </button>
+        )}
         <button
           onClick={onBack}
           onMouseEnter={() => setBackHover(true)}

@@ -9,6 +9,7 @@ import { ChronoDemon } from "../entities/bosses/ChronoDemon";
 import { LegionMaster } from "../entities/bosses/LegionMaster";
 import { PlatformDevourer } from "../entities/bosses/PlatformDevourer";
 import { CoopManager } from "./CoopManager";
+import { EndlessManager } from "./EndlessManager";
 
 export interface BossArena {
   centerX: number;
@@ -98,9 +99,11 @@ export class BossArenaManager {
     bottomBody.enable = false;
 
     // Create arena platforms — 7 platforms spread across 768px height
+    const ARENA_PLAT_COLOR = 0x111111; // Black arena platforms
     const makePlat = (x: number, y: number, scale: number) => {
       const p = staticPlatforms.create(x, y, "ground");
       p.setScale(scale, 1).refreshBody();
+      p.setTint(ARENA_PLAT_COLOR);
       p.setData("type", "STANDARD");
       p.setData("arenaPlat", true);
     };
@@ -108,6 +111,7 @@ export class BossArenaManager {
     // 0. Full-width floor
     const floorPlat = staticPlatforms.create(WORLD.WIDTH / 2, bottomY - 16, "ground");
     floorPlat.setScale(WORLD.WIDTH / 400, 1).refreshBody();
+    floorPlat.setTint(ARENA_PLAT_COLOR);
     floorPlat.setData("type", "STANDARD");
     floorPlat.setData("arenaPlat", true);
 
@@ -223,6 +227,13 @@ export class BossArenaManager {
     // Apply co-op boss HP scaling
     if (CoopManager.isActive()) {
       const mult = CoopManager.getBossHPMultiplier();
+      boss.health = Math.ceil(boss.health * mult);
+      boss.maxHealth = Math.ceil(boss.maxHealth * mult);
+    }
+
+    // Apply endless mode boss HP scaling
+    if (EndlessManager.isActive()) {
+      const mult = EndlessManager.getBossHPMultiplier(bossNumber);
       boss.health = Math.ceil(boss.health * mult);
       boss.maxHealth = Math.ceil(boss.maxHealth * mult);
     }

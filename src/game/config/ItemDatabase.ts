@@ -13,7 +13,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'COMMON',
         effects: [{ targetStat: 'attackDamage', value: 0.10, operation: 'ADD' }],
-        iconColor: 0xaaaaaa
+        iconColor: 0xaaaaaa,
+        tags: ['attack', 'weapon'],
     },
     'battle_gauntlet': {
         id: 'battle_gauntlet',
@@ -22,7 +23,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'UNCOMMON',
         effects: [{ targetStat: 'attackDamage', value: 0.25, operation: 'ADD' }],
-        iconColor: 0xcc6600
+        iconColor: 0xcc6600,
+        tags: ['attack', 'weapon'],
     },
     'berserker_mark': {
         id: 'berserker_mark',
@@ -31,7 +33,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'RARE',
         effects: [{ targetStat: 'attackDamage', value: 0.50, operation: 'ADD' }],
-        iconColor: 0xff2200
+        iconColor: 0xff2200,
+        tags: ['attack', 'damage', 'fire'],
     },
 
     // --- DEFENSE ARMOR (3 tiers) — NEW MECHANIC ---
@@ -43,7 +46,8 @@ export const ITEMS: Record<string, ItemData> = {
         rarity: 'COMMON',
         effects: [{ targetStat: 'armor', value: 1, operation: 'ADD' }],
         armorHits: 1,
-        iconColor: 0x885522
+        iconColor: 0x885522,
+        tags: ['defense', 'shield'],
     },
     'iron_shield': {
         id: 'iron_shield',
@@ -53,7 +57,8 @@ export const ITEMS: Record<string, ItemData> = {
         rarity: 'UNCOMMON',
         effects: [{ targetStat: 'armor', value: 2, operation: 'ADD' }],
         armorHits: 2,
-        iconColor: 0x888888
+        iconColor: 0x888888,
+        tags: ['defense', 'shield', 'armor'],
     },
     'diamond_shield': {
         id: 'diamond_shield',
@@ -63,7 +68,8 @@ export const ITEMS: Record<string, ItemData> = {
         rarity: 'RARE',
         effects: [{ targetStat: 'armor', value: 3, operation: 'ADD' }],
         armorHits: 3,
-        iconColor: 0x44ddff
+        iconColor: 0x44ddff,
+        tags: ['defense', 'shield', 'armor'],
     },
 
     // --- MOVEMENT SPEED (3 tiers) ---
@@ -77,7 +83,8 @@ export const ITEMS: Record<string, ItemData> = {
             { targetStat: 'moveSpeed', value: 0.15, operation: 'ADD' },
             { targetStat: 'attackSpeed', value: -0.15, operation: 'ADD' }
         ],
-        iconColor: 0x00ffff
+        iconColor: 0x00ffff,
+        tags: ['speed', 'mobility'],
     },
     'mercury_sandals': {
         id: 'mercury_sandals',
@@ -89,7 +96,8 @@ export const ITEMS: Record<string, ItemData> = {
             { targetStat: 'moveSpeed', value: 0.30, operation: 'ADD' },
             { targetStat: 'attackSpeed', value: -0.30, operation: 'ADD' }
         ],
-        iconColor: 0x00ddff
+        iconColor: 0x00ddff,
+        tags: ['speed', 'mobility'],
     },
     'tempest_boots': {
         id: 'tempest_boots',
@@ -101,7 +109,8 @@ export const ITEMS: Record<string, ItemData> = {
             { targetStat: 'moveSpeed', value: 0.50, operation: 'ADD' },
             { targetStat: 'attackSpeed', value: -0.50, operation: 'ADD' }
         ],
-        iconColor: 0x0088ff
+        iconColor: 0x0088ff,
+        tags: ['speed', 'mobility'],
     },
 
     // --- HEALTH UPGRADE (3 tiers) ---
@@ -112,7 +121,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'COMMON',
         effects: [{ targetStat: 'health', value: 1, operation: 'ADD' }],
-        iconColor: 0xff4444
+        iconColor: 0xff4444,
+        tags: ['health', 'heal', 'defense'],
     },
     'heart_container': {
         id: 'heart_container',
@@ -121,7 +131,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'UNCOMMON',
         effects: [{ targetStat: 'health', value: 2, operation: 'ADD' }],
-        iconColor: 0xff0000
+        iconColor: 0xff0000,
+        tags: ['health', 'heal'],
     },
     'heart_crystal': {
         id: 'heart_crystal',
@@ -130,7 +141,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'RARE',
         effects: [{ targetStat: 'health', value: 3, operation: 'ADD' }],
-        iconColor: 0xff0000
+        iconColor: 0xff0000,
+        tags: ['health', 'heal'],
     },
 
     // --- JUMP HEIGHT (3 tiers) ---
@@ -141,7 +153,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'COMMON',
         effects: [{ targetStat: 'jumpHeight', value: 0.10, operation: 'ADD' }],
-        iconColor: 0xcccc00
+        iconColor: 0xcccc00,
+        tags: ['jump', 'mobility'],
     },
     'moon_stone': {
         id: 'moon_stone',
@@ -150,7 +163,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'UNCOMMON',
         effects: [{ targetStat: 'jumpHeight', value: 0.15, operation: 'ADD' }],
-        iconColor: 0xaaaa00
+        iconColor: 0xaaaa00,
+        tags: ['jump', 'mobility'],
     },
     'sky_crystal': {
         id: 'sky_crystal',
@@ -159,7 +173,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'RARE',
         effects: [{ targetStat: 'jumpHeight', value: 0.25, operation: 'ADD' }],
-        iconColor: 0xffff00
+        iconColor: 0xffff00,
+        tags: ['jump', 'mobility'],
     },
 
     // --- ATTACK SPEED (2 tiers) ---
@@ -170,7 +185,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'COMMON',
         effects: [{ targetStat: 'attackSpeed', value: -0.15, operation: 'ADD' }], // Lower is faster
-        iconColor: 0x0000ff
+        iconColor: 0x0000ff,
+        tags: ['attack', 'weapon'],
     },
     'chronos_edge': {
         id: 'chronos_edge',
@@ -179,7 +195,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'SILVER',
         rarity: 'RARE',
         effects: [{ targetStat: 'attackSpeed', value: -0.30, operation: 'ADD' }],
-        iconColor: 0x2244ff
+        iconColor: 0x2244ff,
+        tags: ['attack', 'weapon', 'cooldown'],
     },
 
     // GOLD ITEMS (Abilities)
@@ -193,6 +210,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0xffd700,
         stackable: true,
         stackDescription: 'Triple Jump instead of Double Jump',
+        tags: ['jump', 'mobility'],
     },
     'vampiric_fang': {
         id: 'vampiric_fang',
@@ -201,7 +219,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'vampirism',
-        iconColor: 0xff0044
+        iconColor: 0xff0044,
+        tags: ['heal', 'regen', 'attack'],
     },
     'phoenix_plume': {
         id: 'phoenix_plume',
@@ -210,7 +229,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'revive',
-        iconColor: 0xff6600
+        iconColor: 0xff6600,
+        tags: ['heal', 'fire', 'defense'],
     },
     'shadow_cloak': {
         id: 'shadow_cloak',
@@ -219,7 +239,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'shadow_dodge',
-        iconColor: 0x440066
+        iconColor: 0x440066,
+        tags: ['dodge', 'stealth', 'evasion'],
     },
     'titans_grip': {
         id: 'titans_grip',
@@ -228,7 +249,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'mega_knockback',
-        iconColor: 0x884400
+        iconColor: 0x884400,
+        tags: ['attack', 'weapon', 'damage'],
     },
     'essence_magnet': {
         id: 'essence_magnet',
@@ -237,7 +259,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'essence_boost',
-        iconColor: 0xcc44ff
+        iconColor: 0xcc44ff,
+        tags: ['essence', 'gold', 'luck'],
     },
     'wind_runner': {
         id: 'wind_runner',
@@ -249,6 +272,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x88ccff,
         stackable: true,
         stackDescription: 'Air Dash cooldown reduced to 0.8s',
+        tags: ['speed', 'mobility'],
     },
     'spider_silk': {
         id: 'spider_silk',
@@ -257,7 +281,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'wall_climb',
-        iconColor: 0xcccccc
+        iconColor: 0xcccccc,
+        tags: ['mobility', 'stealth'],
     },
     'chain_hook': {
         id: 'chain_hook',
@@ -266,7 +291,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'grappling_hook',
-        iconColor: 0x886644
+        iconColor: 0x886644,
+        tags: ['mobility', 'weapon'],
     },
     'life_spring': {
         id: 'life_spring',
@@ -278,6 +304,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x44ff44,
         stackable: true,
         stackDescription: 'Regen timer reduced to 20s',
+        tags: ['heal', 'regen', 'health'],
     },
     'phantom_step': {
         id: 'phantom_step',
@@ -289,6 +316,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x8844ff,
         stackable: true,
         stackDescription: 'Adds damaging afterimage trail on dodge',
+        tags: ['dodge', 'evasion', 'speed'],
     },
     'mirror_shield': {
         id: 'mirror_shield',
@@ -300,6 +328,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x44ddff,
         stackable: true,
         stackDescription: '60% damage reflection instead of 30%',
+        tags: ['defense', 'shield', 'damage'],
     },
     'guardian_angel': {
         id: 'guardian_angel',
@@ -311,6 +340,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0xffdd44,
         stackable: true,
         stackDescription: 'Second activation after 5 minutes',
+        tags: ['defense', 'heal'],
     },
     'cataclysm_orb': {
         id: 'cataclysm_orb',
@@ -319,7 +349,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'cataclysm',
-        iconColor: 0xff2200
+        iconColor: 0xff2200,
+        tags: ['fire', 'damage', 'ability', 'ultimate'],
     },
     'chrono_shard': {
         id: 'chrono_shard',
@@ -331,6 +362,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x22aaff,
         stackable: true,
         stackDescription: 'Time slow lasts 8s instead of 5s',
+        tags: ['cooldown', 'ability', 'ultimate'],
     },
     'divine_halo': {
         id: 'divine_halo',
@@ -339,7 +371,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'divine_intervention',
-        iconColor: 0xffffaa
+        iconColor: 0xffffaa,
+        tags: ['defense', 'ability', 'ultimate'],
     },
     'essence_crystal': {
         id: 'essence_crystal',
@@ -348,7 +381,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'essence_burst',
-        iconColor: 0xcc44ff
+        iconColor: 0xcc44ff,
+        tags: ['essence', 'ability', 'gold'],
     },
     'counter_slash': {
         id: 'counter_slash',
@@ -357,7 +391,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'counter_stance',
-        iconColor: 0xff8844
+        iconColor: 0xff8844,
+        tags: ['attack', 'dodge', 'evasion'],
     },
     'ground_slam': {
         id: 'ground_slam',
@@ -366,7 +401,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'ground_slam',
-        iconColor: 0x886633
+        iconColor: 0x886633,
+        tags: ['attack', 'damage', 'fire'],
     },
     'projectile_shot': {
         id: 'projectile_shot',
@@ -375,7 +411,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'projectile_shot',
-        iconColor: 0x44aaff
+        iconColor: 0x44aaff,
+        tags: ['attack', 'ability', 'cooldown'],
     },
     'charged_devastation': {
         id: 'charged_devastation',
@@ -384,7 +421,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'charged_attack',
-        iconColor: 0xff4400
+        iconColor: 0xff4400,
+        tags: ['attack', 'damage', 'fire'],
     },
 
     // --- Missing Design-Doc Gold Items ---
@@ -400,6 +438,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x00ff88,
         stackable: true,
         stackDescription: '+60% Move Speed instead of 30%',
+        tags: ['speed', 'mobility'],
     },
 
     // Combat
@@ -413,6 +452,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0xff2222,
         stackable: true,
         stackDescription: '35% crit chance instead of 20%',
+        tags: ['attack', 'crit', 'damage'],
     },
     'phantom_blade': {
         id: 'phantom_blade',
@@ -424,6 +464,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0xaa66ff,
         stackable: true,
         stackDescription: 'Piercing attacks also deal +25% damage',
+        tags: ['attack', 'weapon'],
     },
     'berserker_heart': {
         id: 'berserker_heart',
@@ -435,6 +476,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0xcc0000,
         stackable: true,
         stackDescription: '+100% damage at 1 HP instead of 50%',
+        tags: ['attack', 'damage', 'fire'],
     },
 
     // Defense
@@ -448,6 +490,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x44ff88,
         stackable: true,
         stackDescription: 'Second Wind can trigger twice per run',
+        tags: ['heal', 'regen', 'defense'],
     },
     'thorns_aura': {
         id: 'thorns_aura',
@@ -459,6 +502,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x44aa44,
         stackable: true,
         stackDescription: '2 damage per second instead of 1',
+        tags: ['damage', 'fire', 'defense'],
     },
     'absorption_shield': {
         id: 'absorption_shield',
@@ -470,6 +514,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x4488cc,
         stackable: true,
         stackDescription: 'Shield recharges every 20 seconds instead of 30',
+        tags: ['defense', 'shield', 'armor'],
     },
 
     // Utility
@@ -483,6 +528,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0xff4488,
         stackable: true,
         stackDescription: 'Even larger pull range',
+        tags: ['luck', 'essence'],
     },
     'lucky_dice': {
         id: 'lucky_dice',
@@ -494,6 +540,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x44ff44,
         stackable: true,
         stackDescription: 'Silver items are always Pristine',
+        tags: ['luck', 'gold'],
     },
     'scout_lens': {
         id: 'scout_lens',
@@ -502,7 +549,8 @@ export const ITEMS: Record<string, ItemData> = {
         type: 'GOLD',
         rarity: 'LEGENDARY',
         abilityId: 'item_radar',
-        iconColor: 0xffaa00
+        iconColor: 0xffaa00,
+        tags: ['luck', 'stealth'],
     },
     'soul_collector': {
         id: 'soul_collector',
@@ -514,6 +562,7 @@ export const ITEMS: Record<string, ItemData> = {
         iconColor: 0x8844cc,
         stackable: true,
         stackDescription: '+30% bonus essence instead of 15%',
+        tags: ['essence', 'gold', 'luck'],
     },
 
     // --- CLASS-SPECIFIC GOLD ITEMS (Boss 10 Reward) ---
@@ -526,6 +575,7 @@ export const ITEMS: Record<string, ItemData> = {
         abilityId: 'divine_aegis',
         iconColor: 0x3355ff,
         stackable: false,
+        tags: ['defense', 'shield'],
     },
     'eternal_flow': {
         id: 'eternal_flow',
@@ -536,6 +586,7 @@ export const ITEMS: Record<string, ItemData> = {
         abilityId: 'eternal_flow',
         iconColor: 0xffaa00,
         stackable: false,
+        tags: ['speed', 'ability'],
     },
     'sacred_relic': {
         id: 'sacred_relic',
@@ -546,5 +597,185 @@ export const ITEMS: Record<string, ItemData> = {
         abilityId: 'sacred_relic',
         iconColor: 0xffffff,
         stackable: false,
+        tags: ['heal', 'cooldown', 'ability'],
+    },
+
+    // ==========================================
+    // CURSED ITEMS — Powerful benefits with significant downsides
+    // ==========================================
+
+    'blood_blade': {
+        id: 'blood_blade',
+        name: 'Blood Blade',
+        description: '+75% Attack Damage. CURSE: Lose 1 HP every 10 kills.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'blood_blade',
+        abilityId: 'curse_blood_blade',
+        effects: [{ targetStat: 'attackDamage', value: 0.75, operation: 'ADD' }],
+        iconColor: 0x9933cc,
+        tags: ['attack', 'damage'],
+    },
+    'glass_cannon': {
+        id: 'glass_cannon',
+        name: 'Glass Cannon',
+        description: '+100% Attack Damage. CURSE: Max HP capped at 3.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'glass_cannon',
+        abilityId: 'curse_glass_cannon',
+        effects: [{ targetStat: 'attackDamage', value: 1.00, operation: 'ADD' }],
+        iconColor: 0x9933cc,
+        tags: ['attack', 'damage'],
+    },
+    'temporal_drain': {
+        id: 'temporal_drain',
+        name: 'Temporal Drain',
+        description: 'Cooldowns reduced 50%. CURSE: Move 20% slower.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'temporal_drain',
+        abilityId: 'curse_temporal_drain',
+        effects: [{ targetStat: 'moveSpeed', value: -0.20, operation: 'ADD' }],
+        iconColor: 0x9933cc,
+        tags: ['cooldown', 'ability'],
+    },
+    'chaos_orb': {
+        id: 'chaos_orb',
+        name: 'Chaos Orb',
+        description: 'Random bonus on each attack. CURSE: Take 1 damage every 60 seconds.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'chaos_orb',
+        abilityId: 'curse_chaos_orb',
+        iconColor: 0x9933cc,
+        tags: ['attack', 'fire'],
+    },
+    'soul_siphon': {
+        id: 'soul_siphon',
+        name: 'Soul Siphon',
+        description: 'Kills heal 1 HP. CURSE: Essence gain reduced 50%.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'soul_siphon',
+        abilityId: 'curse_soul_siphon',
+        iconColor: 0x9933cc,
+        tags: ['heal', 'essence'],
+    },
+    'cursed_phantom_step': {
+        id: 'cursed_phantom_step',
+        name: 'Phantom Step',
+        description: 'Grants Triple Jump. CURSE: Wall-jump disabled.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'phantom_step',
+        abilityId: 'curse_phantom_step',
+        iconColor: 0x9933cc,
+        tags: ['jump', 'mobility'],
+    },
+    'berserkers_rage': {
+        id: 'berserkers_rage',
+        name: "Berserker's Rage",
+        description: '+10% damage per missing HP. CURSE: Cannot heal above 50% max HP.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'berserkers_rage',
+        abilityId: 'curse_berserkers_rage',
+        iconColor: 0x9933cc,
+        tags: ['attack', 'damage', 'fire'],
+    },
+    'echo_strike': {
+        id: 'echo_strike',
+        name: 'Echo Strike',
+        description: 'Every attack hits twice. CURSE: Attack speed reduced 30%.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'echo_strike',
+        abilityId: 'curse_echo_strike',
+        effects: [{ targetStat: 'attackSpeed', value: 0.30, operation: 'ADD' }],
+        iconColor: 0x9933cc,
+        tags: ['attack', 'weapon'],
+    },
+    'graviton_core': {
+        id: 'graviton_core',
+        name: 'Graviton Core',
+        description: 'Enemies pulled toward you. CURSE: Fall 30% faster.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'graviton_core',
+        abilityId: 'curse_graviton_core',
+        iconColor: 0x9933cc,
+        tags: ['damage', 'defense'],
+    },
+    'dark_pact': {
+        id: 'dark_pact',
+        name: 'Dark Pact',
+        description: 'Start each floor with a random buff. CURSE: Take 1 damage at each floor start.',
+        type: 'CURSED',
+        rarity: 'CURSED',
+        curseId: 'dark_pact',
+        abilityId: 'curse_dark_pact',
+        iconColor: 0x9933cc,
+        tags: ['ability', 'luck'],
+    },
+
+    // ==========================================
+    // CO-OP ITEMS — Only available in co-op mode
+    // ==========================================
+
+    'soul_link': {
+        id: 'soul_link',
+        name: 'Soul Link',
+        description: 'When either player takes lethal damage, split it between both',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'soul_link',
+        iconColor: 0xff4488,
+        tags: ['defense', 'heal'],
+        coopOnly: true,
+    },
+    'phoenix_feather': {
+        id: 'phoenix_feather',
+        name: 'Phoenix Feather',
+        description: 'One-time auto-revive with full HP when you die',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'phoenix_feather',
+        iconColor: 0xff8800,
+        tags: ['defense', 'heal', 'fire'],
+        coopOnly: true,
+    },
+    'shared_vigor': {
+        id: 'shared_vigor',
+        name: 'Shared Vigor',
+        description: 'Both players gain +2 max HP',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'shared_vigor',
+        iconColor: 0x44ff88,
+        tags: ['health', 'heal', 'defense'],
+        coopOnly: true,
+    },
+    'battle_bond': {
+        id: 'battle_bond',
+        name: 'Battle Bond',
+        description: 'Both players deal +15% damage when within 200px of each other',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'battle_bond',
+        iconColor: 0xffaa44,
+        tags: ['attack', 'damage'],
+        coopOnly: true,
+    },
+    'rescue_rush': {
+        id: 'rescue_rush',
+        name: 'Rescue Rush',
+        description: 'Co-op revive timer reduced to 2 seconds',
+        type: 'GOLD',
+        rarity: 'LEGENDARY',
+        abilityId: 'rescue_rush',
+        iconColor: 0x44ddff,
+        tags: ['defense', 'speed'],
+        coopOnly: true,
     },
 };

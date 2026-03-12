@@ -15,7 +15,7 @@ export class SacredGround {
   private hasHealed: boolean = false;
   private centerX: number;
   private centerY: number;
-  private readonly RADIUS = 150;
+  private readonly RADIUS: number;
   private readonly HEAL_THRESHOLD = 3000; // 3 seconds to heal
   private readonly ENEMY_DAMAGE_INTERVAL = 1000; // 1 second between damage ticks
   private enemyDamageTimer: number = 0;
@@ -27,7 +27,9 @@ export class SacredGround {
     enemies: Phaser.Physics.Arcade.Group,
     x: number,
     y: number,
+    radiusMultiplier: number = 1,
   ) {
+    this.RADIUS = 150 * radiusMultiplier;
     this.scene = scene;
     this.player = player;
     this.enemies = enemies;

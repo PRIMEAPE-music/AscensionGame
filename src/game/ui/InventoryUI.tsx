@@ -8,6 +8,7 @@ interface InventoryUIProps {
 }
 
 function getItemBorderColor(item: ItemData): string {
+    if (item.type === 'CURSED') return '#9933cc';
     if (item.type === 'GOLD') return '#ffd700';
     if (item.quality) return QUALITY_COLORS[item.quality];
     return '#ffffff'; // default NORMAL
@@ -21,9 +22,10 @@ function getItemTooltip(item: ItemData): string {
 }
 
 export const InventoryUI: React.FC<InventoryUIProps> = ({ items, maxSlots = 1 }) => {
-    // Separate silver items for slot display
+    // Separate items by type for slot display
     const silverItems = items.filter(i => i.type === 'SILVER');
     const goldItems = items.filter(i => i.type === 'GOLD');
+    const cursedItems = items.filter(i => i.type === 'CURSED');
     const emptySlotCount = Math.max(0, maxSlots - silverItems.length);
 
     return (
@@ -60,8 +62,31 @@ export const InventoryUI: React.FC<InventoryUIProps> = ({ items, maxSlots = 1 })
                     </div>
                 );
             })}
-            {/* Divider between gold and silver if both present */}
-            {goldItems.length > 0 && (silverItems.length > 0 || emptySlotCount > 0) && (
+            {/* Cursed items (no slot limit, purple border) */}
+            {cursedItems.map((item) => {
+                const borderColor = getItemBorderColor(item);
+                return (
+                    <div key={item.id} title={getItemTooltip(item)} style={{
+                        width: '32px',
+                        height: '32px',
+                        backgroundColor: '#' + item.iconColor.toString(16).padStart(6, '0'),
+                        border: `2px solid ${borderColor}`,
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#000',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        cursor: 'help',
+                        boxShadow: `0 0 8px ${borderColor}88, inset 0 0 4px rgba(0,0,0,0.5)`
+                    }}>
+                        {item.name[0]}
+                    </div>
+                );
+            })}
+            {/* Divider between gold/cursed and silver if both present */}
+            {(goldItems.length > 0 || cursedItems.length > 0) && (silverItems.length > 0 || emptySlotCount > 0) && (
                 <div style={{
                     width: '1px',
                     height: '24px',

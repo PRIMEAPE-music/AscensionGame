@@ -17,6 +17,7 @@ export interface KeyBindingMap {
   groundSlam: string;
   projectile: string;
   chargedAttack: string;
+  subclassAbility: string;
   pause: string;
 }
 
@@ -39,6 +40,7 @@ const DEFAULT_BINDINGS: KeyBindingMap = {
   groundSlam: 'T',
   projectile: 'Y',
   chargedAttack: 'H',
+  subclassAbility: 'N',
   pause: 'ESC',
 };
 
@@ -61,6 +63,7 @@ export const ACTION_LABELS: Record<keyof KeyBindingMap, string> = {
   groundSlam: 'Ground Slam',
   projectile: 'Projectile',
   chargedAttack: 'Charged Attack',
+  subclassAbility: 'Subclass Ability',
   pause: 'Pause',
 };
 
@@ -76,7 +79,7 @@ export const ACTION_GROUPS: { label: string; actions: (keyof KeyBindingMap)[] }[
   },
   {
     label: 'Abilities',
-    actions: ['cataclysm', 'temporalRift', 'divineIntervention', 'essenceBurst', 'counterSlash', 'groundSlam', 'projectile', 'chargedAttack'],
+    actions: ['cataclysm', 'temporalRift', 'divineIntervention', 'essenceBurst', 'counterSlash', 'groundSlam', 'projectile', 'chargedAttack', 'subclassAbility'],
   },
   {
     label: 'System',

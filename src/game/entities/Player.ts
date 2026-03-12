@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import { ClassType, type ClassStats, CLASSES } from "../config/ClassConfig";
+import { SUBCLASSES } from "../config/SubclassConfig";
+import type { SubclassDef } from "../config/SubclassConfig";
 import type { ItemData, StatType } from "../config/ItemConfig";
 import { QUALITY_MULTIPLIERS } from "../config/ItemConfig";
 import { getSynergyMultiplier, calculateSynergies } from "../systems/ItemSynergy";
@@ -30,6 +32,7 @@ import { TouchControls } from "../systems/TouchControls";
 import { KeyBindings } from "../systems/KeyBindings";
 import { MouseManager } from "../systems/MouseManager";
 import { CoopManager } from "../systems/CoopManager";
+import { SynergyManager } from "../systems/SynergyManager";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private static VALID_PLATFORM_TYPES = new Set(Object.values(PlatformType));
@@ -71,12 +74,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private comboStringMultiplier: number = 1.0;
   private pendingFinisher: ComboDefinition | null = null;
 
-  // Perfect Parry State
+  // Perfect Parry State (attack-based parry)
   private attackStartTime: number = 0;
   private parryInvincibilityTimer: number = 0;
   private readonly PARRY_WINDOW: number = 150; // ms from attack start where parry is active
   private readonly PARRY_INVINCIBILITY_DURATION: number = 500; // 0.5s invincibility after parry
   private readonly PARRY_REFLECT_MULTIPLIER: number = 2.0; // 200% damage reflected back
+
+  // Dodge/Block Parry Window State
+  private _parryWindowActive: boolean = false;
+  private _parryWindowTimer: number = 0;
+  private _parryWindowDuration: number = 150; // set based on class in constructor
+  private _parryCooldown: number = 0; // prevent spam, 500ms cooldown
+  private readonly _PARRY_COOLDOWN_DURATION: number = 500;
+  private readonly _PARRY_STUN_DURATION: number = 1500; // 1.5s stun on attacker
+  private readonly _PARRY_REFLECT_PERCENT: number = 0.5; // 50% damage reflected
 
   // Dodge State
   private isDodging: boolean = false;
@@ -207,6 +219,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Second Wind
   private secondWindUsed: number = 0; // How many times triggered this run
 
+  // Phoenix Feather (co-op)
+  private phoenixFeatherUsed: boolean = false;
+
+  // Battle Bond (co-op)
+  private battleBondGlowActive: boolean = false;
+  private battleBondCheckTimer: number = 0;
+
   // Thorns Aura
   private thornsAuraTimer: number = 0;
   private readonly THORNS_AURA_INTERVAL = 1000; // 1 second tick
@@ -229,6 +248,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private readonly ITEM_RADAR_UPDATE_INTERVAL = 500; // Update indicators every 500ms
   private readonly ITEM_RADAR_RANGE = 800; // Detection range
 
+  // === Cursed Item State ===
+  public curses: Set<string> = new Set(); // Active curse IDs
+  private bloodBladeKillCount: number = 0;
+  private chaosOrbTimer: number = 0;
+  private readonly CHAOS_ORB_DAMAGE_INTERVAL = 60000; // 60 seconds
+  private readonly GRAVITON_PULL_RANGE = 250;
+  private readonly GRAVITON_PULL_SPEED = 120;
+  public darkPactLastBiome: string = '';
+
   // === Paladin: Shield Guard ===
   private standStillTimer: number = 0;
   public isShieldGuarding: boolean = false;
@@ -247,9 +275,37 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private flowJumpHeightMod: number = 0;
   private flowAttackDamageMod: number = 0;
 
+  // === Themed Synergy Set State ===
+  private infernoAuraTimer: number = 0;
+  private readonly INFERNO_AURA_INTERVAL = 1000;  // 1s tick
+  private readonly INFERNO_AURA_RADIUS = 100;     // px
+  private fortressApplied: boolean = false;
+  private lifelineRegenTimer: number = 0;
+  private readonly LIFELINE_REGEN_INTERVAL = 20000; // 20s
+
   // === Priest: Sacred Ground ===
   public sacredGroundCooldown: number = 0;
   private readonly SACRED_GROUND_COOLDOWN_TOTAL = 15000; // ms
+
+  // === Subclass System ===
+  public subclass: string | null = null;
+  private subclassDef: SubclassDef | null = null;
+  private subclassAbilityCooldown: number = 0;
+  private subclassAbilityKey!: Phaser.Input.Keyboard.Key;
+  // Crusader: smite passive (15% chance 2x damage)
+  // Templar: enhanced block (+50% block effectiveness, block heals 1 HP), divine shield
+  private divineShieldActive: boolean = false;
+  private divineShieldTimer: number = 0;
+  private readonly DIVINE_SHIELD_DURATION = 3000; // 3s
+  // Shadow Dancer: dodge invisibility, stealth crit bonus
+  private shadowDancerInvisible: boolean = false;
+  private shadowDancerInvisTimer: number = 0;
+  // Iron Fist: consecutive hit tracker
+  private ironFistConsecutiveHits: number = 0;
+  private ironFistComboTimer: number = 0;
+  private readonly IRON_FIST_COMBO_TIMEOUT = 2000; // 2s to keep combo alive
+  // Oracle: sacred ground radius multiplier
+  public oracleDoubleRadius: boolean = false;
 
   // === Gold Ultimate Abilities ===
   // Cataclysm
@@ -377,6 +433,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Scene already applies PHYSICS.GRAVITY globally — don't double it
     this.setBounce(0);
 
+    // Set parry window duration based on class
+    if (this.classType === ClassType.PALADIN) {
+      this._parryWindowDuration = 200; // Most forgiving
+    } else {
+      this._parryWindowDuration = 150; // Monk and Priest
+    }
+
     this.initInput();
 
     // Listen for land animation completion
@@ -438,6 +501,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.groundSlamKey = kb.addKey(bindings.groundSlam);
     this.projectileKey = kb.addKey(bindings.projectile);
     this.chargeKey = kb.addKey(bindings.chargedAttack);
+
+    // Subclass Ability Key
+    this.subclassAbilityKey = kb.addKey(bindings.subclassAbility);
   }
 
   private getStat(
@@ -550,9 +616,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.handleGroundSlam();
     this.handleProjectile();
     this.handleChargedAttack(delta);
+    this.handleSubclassAbility();
+    this.updateSubclassTimers(delta);
     this.updateInvincibility(delta);
     this.updateClassMechanics(delta);
     this.updateItemRadar(delta);
+    this.updateBattleBondVisual(delta);
     this.updateAnimation();
 
     // Safety net: re-enable gravity if it's off and we're not in a state that needs it off
@@ -649,6 +718,18 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
+    // Dodge/Block parry window timer
+    if (this._parryWindowTimer > 0) {
+      this._parryWindowTimer -= delta;
+      if (this._parryWindowTimer <= 0) {
+        this._parryWindowActive = false;
+        this._parryWindowTimer = 0;
+      }
+    }
+    if (this._parryCooldown > 0) {
+      this._parryCooldown -= delta;
+    }
+
     // Gold Attack Ability cooldowns
     if (this.counterCooldown > 0) this.counterCooldown -= delta;
     if (this.groundSlamCooldown > 0) this.groundSlamCooldown -= delta;
@@ -672,10 +753,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
           : this.HEALTH_REGEN_INTERVAL;
         if (this.healthRegenTimer >= regenInterval) {
           this.healthRegenTimer = 0;
-          if (this.health < this.maxHealth) {
-            this.health++;
-            EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
-          }
+          this.healPlayer(1);
         }
       }
     }
@@ -719,9 +797,42 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
+    // === Themed Synergy Set Updates ===
+    // Inferno: passive fire aura damage to nearby enemies
+    if (SynergyManager.isActive('inferno')) {
+      this.updateInfernoAura(delta);
+    }
+    // Lifeline: passive HP regen every 20 seconds (always, no out-of-combat requirement)
+    if (SynergyManager.isActive('lifeline')) {
+      this.updateLifelineRegen(delta);
+    }
+
     // Magnet Pull: attract nearby items toward the player
     if (this.abilities.has('magnet_pull')) {
       this.applyMagnetPull();
+    }
+
+    // === Cursed Item Timers ===
+
+    // Chaos Orb curse: take 1 damage every 60 seconds
+    if (this.curses.has('chaos_orb')) {
+      this.chaosOrbTimer += delta;
+      if (this.chaosOrbTimer >= this.CHAOS_ORB_DAMAGE_INTERVAL) {
+        this.chaosOrbTimer = 0;
+        this.takeDamage(1);
+        // Purple flash to indicate curse damage
+        if (this.active) {
+          this.setTint(0x9933cc);
+          this.scene.time.delayedCall(200, () => {
+            if (this.active) this.restoreDefaultTint();
+          });
+        }
+      }
+    }
+
+    // Graviton Core curse: pull enemies toward player (benefit) + increased fall speed (curse)
+    if (this.curses.has('graviton_core')) {
+      this.applyGravitonPull();
     }
   }
 
@@ -1021,7 +1132,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         }
       }
 
-      if (this.jumpJustPressed && this.consecutiveWallJumps < this.MAX_WALL_JUMPS) {
+      if (this.jumpJustPressed && this.consecutiveWallJumps < this.MAX_WALL_JUMPS && !this.isWallJumpDisabled()) {
         const jumpDir = onLeftWall ? 1 : -1;
         const jumpForceY = this.getStat(
           "jumpHeight",
@@ -1168,6 +1279,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
           this.scene.time.delayedCall(1000, () => {
             if (this.active && !this.isDodging) this.setAlpha(1);
           });
+        } else if (this.subclass === 'shadow_dancer') {
+          // Shadow Dancer subclass: dodge grants 1s invisibility
+          this.applyShadowDancerInvisibility();
         } else {
           this.setAlpha(1);
         }
@@ -1200,6 +1314,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.dodgeCooldown = dodgeCooldown;
       this.dodgeStartTime = this.scene.time.now;
       EventBus.emit("player-dodge", { perfect: false });
+
+      // Activate parry window on dodge press (all classes use dodge key for parry)
+      if (this._parryCooldown <= 0) {
+        this._parryWindowActive = true;
+        this._parryWindowTimer = this._parryWindowDuration;
+      }
 
       // Horizontal velocity burst based on input direction
       const { left: dodgeLeft, right: dodgeRight } = this.cursors;
@@ -1636,6 +1756,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.setAlpha(0.5);
     }
 
+    // Dodge/Block parry check — if parry window is active, negate damage and counter
+    if (this._parryWindowActive && this._parryCooldown <= 0) {
+      return this.tryParry(attackerRef, amount);
+    }
+
     // Dodge i-frames — skip damage but check for perfect dodge
     if (this.dodgeTimer > 0) {
       const timeSinceDodgeStart = this.scene.time.now - this.dodgeStartTime;
@@ -1671,7 +1796,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.counterStanceActive) {
       this.counterStanceActive = false;
       this.counterStanceTimer = 0;
-      this.counterCooldown = this.COUNTER_COOLDOWN;
+      this.counterCooldown = this.COUNTER_COOLDOWN * this.getCooldownMultiplier();
 
       // Counter-attack: find nearest enemy and deal 1.5x base damage
       const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
@@ -1766,6 +1891,37 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       return false; // Damage absorbed
     }
 
+    // Synergy: Shadow — 15% chance to dodge any attack entirely
+    if (SynergyManager.isActive('shadow') && Math.random() < 0.15) {
+      // Visual feedback: purple flash for shadow dodge
+      if (!GameSettings.get().flashReduction) {
+        this.setTint(0x8844cc);
+        this.scene.time.delayedCall(200, () => {
+          if (this.active) this.restoreDefaultTint();
+        });
+      }
+      // Show "SHADOW" text
+      const shadowText = this.scene.add.text(this.x, this.y - 40, 'SHADOW', {
+        fontSize: '18px',
+        fontFamily: 'monospace',
+        color: '#8844cc',
+        stroke: '#000000',
+        strokeThickness: 3,
+        fontStyle: 'bold',
+      });
+      shadowText.setOrigin(0.5);
+      shadowText.setDepth(101);
+      this.scene.tweens.add({
+        targets: shadowText,
+        y: this.y - 80,
+        alpha: 0,
+        duration: 800,
+        ease: 'Power2',
+        onComplete: () => shadowText.destroy(),
+      });
+      return false; // Attack entirely dodged
+    }
+
     // Reset out-of-combat timer (Health Regen ability)
     this.outOfCombatTimer = 0;
     this.healthRegenTimer = 0;
@@ -1785,16 +1941,25 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         (facingRight && attackFromRight) ||
         (!facingRight && !attackFromRight)
       ) {
+        // Templar: +50% block effectiveness (0.25 instead of 0.5), and heal 1 HP
+        const blockReduction = this.getTemplarBlockReduction();
         finalAmount = Math.max(
           1,
-          Math.round(amount * this.SHIELD_GUARD_DAMAGE_REDUCTION),
+          Math.round(amount * blockReduction),
         );
         // Visual feedback for blocked hit
         this.setTint(0x6666ff);
         this.scene.time.delayedCall(150, () => {
           if (this.active && this.isShieldGuarding) this.setTint(0x4444ff);
         });
+        // Templar: blocking heals 1 HP
+        this.onTemplarBlock();
       }
+    }
+
+    // Synergy: Fortress — reduce all incoming damage by 1 (min 1)
+    if (SynergyManager.isActive('fortress') && finalAmount > 1) {
+      finalAmount = Math.max(1, finalAmount - 1);
     }
 
     // Monk: reset flow on taking damage
@@ -1804,8 +1969,101 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.emitFlowChange();
     }
 
-    this.health -= finalAmount;
-    PersistentStats.addDamageTaken(finalAmount);
+    // Soul Link (co-op): if this damage would be lethal and partner has soul_link,
+    // split the damage between both players
+    let soulLinkHandled = false;
+    if (this.health - finalAmount <= 0 && CoopManager.isActive()) {
+      const partner = CoopManager.getPartner(this);
+      if (partner && partner.active && partner.health > 0) {
+        const eitherHasSoulLink = this.abilities.has('soul_link') || partner.abilities.has('soul_link');
+        if (eitherHasSoulLink) {
+          soulLinkHandled = true;
+          const halfDamage = Math.ceil(finalAmount / 2);
+          // Apply split damage to this player
+          this.health -= halfDamage;
+          PersistentStats.addDamageTaken(halfDamage);
+          // Apply split damage to partner (bypass their defenses for the split portion)
+          partner.health -= (finalAmount - halfDamage);
+          EventBus.emit("health-change", {
+            health: partner.health,
+            maxHealth: partner.maxHealth,
+            playerIndex: partner.playerIndex,
+          });
+          // Visual: red line connecting both players briefly
+          const line = this.scene.add.graphics();
+          line.setDepth(100);
+          line.lineStyle(3, 0xff4488, 0.8);
+          line.lineBetween(this.x, this.y, partner.x, partner.y);
+          this.scene.tweens.add({
+            targets: line,
+            alpha: 0,
+            duration: 500,
+            onComplete: () => line.destroy(),
+          });
+          // Show "SOUL LINK" text
+          const slText = this.scene.add.text(
+            (this.x + partner.x) / 2,
+            Math.min(this.y, partner.y) - 40,
+            'SOUL LINK',
+            {
+              fontSize: '18px',
+              fontFamily: 'monospace',
+              color: '#ff4488',
+              stroke: '#000000',
+              strokeThickness: 3,
+              fontStyle: 'bold',
+            }
+          );
+          slText.setOrigin(0.5);
+          slText.setDepth(101);
+          this.scene.tweens.add({
+            targets: slText,
+            y: slText.y - 40,
+            alpha: 0,
+            duration: 800,
+            ease: 'Power2',
+            onComplete: () => slText.destroy(),
+          });
+
+          // Check if partner died from split
+          if (partner.health <= 0) {
+            EventBus.emit("player-died", { playerIndex: partner.playerIndex });
+            partner.setVisible(false);
+            partner.setActive(false);
+            (partner.body as Phaser.Physics.Arcade.Body).enable = false;
+          }
+
+          // If this player survived the split, apply invincibility and return
+          if (this.health > 0) {
+            this.resetComboString();
+            EventBus.emit("health-change", {
+              health: this.health,
+              maxHealth: this.maxHealth,
+              playerIndex: this.playerIndex,
+            });
+            if (this.invincibilityTimer <= 0) {
+              let iFrameDuration = COMBAT.INVINCIBILITY_DURATION;
+              const iframeSettings = GameSettings.get();
+              if (iframeSettings.assistMode && iframeSettings.extraIFrames) {
+                iFrameDuration *= 2;
+              }
+              this.invincibilityTimer = iFrameDuration;
+              this.flashTimer = 0;
+            }
+            if (!GameSettings.get().flashReduction) {
+              this.setTint(0xff0000);
+            }
+            return false;
+          }
+          // If health <= 0 after soul link, fall through to death-prevention checks below
+        }
+      }
+    }
+
+    if (!soulLinkHandled) {
+      this.health -= finalAmount;
+      PersistentStats.addDamageTaken(finalAmount);
+    }
 
     // Reset combo string on taking damage
     this.resetComboString();
@@ -1857,6 +2115,63 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       return false; // Don't die
     }
 
+    // Phoenix Feather (co-op): one-time auto-revive with full HP
+    if (this.health <= 0 && this.abilities.has('phoenix_feather') && !this.phoenixFeatherUsed) {
+      this.phoenixFeatherUsed = true;
+      this.health = this.maxHealth;
+      this.invincibilityTimer = 3000;
+      this.flashTimer = 0;
+      // Remove the ability (consumed on use)
+      this.abilities.delete('phoenix_feather');
+      // Golden burst effect
+      this.setTint(0xff8800);
+      this.scene.time.delayedCall(600, () => {
+        if (this.active) this.restoreDefaultTint();
+      });
+      // "PHOENIX!" text
+      const phoenixText = this.scene.add.text(this.x, this.y - 50, 'PHOENIX!', {
+        fontSize: '24px',
+        fontFamily: 'monospace',
+        color: '#ff8800',
+        stroke: '#000000',
+        strokeThickness: 4,
+        fontStyle: 'bold',
+      });
+      phoenixText.setOrigin(0.5);
+      phoenixText.setDepth(101);
+      this.scene.tweens.add({
+        targets: phoenixText,
+        y: this.y - 110,
+        alpha: 0,
+        scale: 1.5,
+        duration: 1200,
+        ease: 'Power2',
+        onComplete: () => phoenixText.destroy(),
+      });
+      // Golden burst particles
+      for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        const particle = this.scene.add.rectangle(
+          this.x, this.y, 4, 4, 0xff8800
+        );
+        particle.setDepth(100);
+        this.scene.tweens.add({
+          targets: particle,
+          x: this.x + Math.cos(angle) * 60,
+          y: this.y + Math.sin(angle) * 60,
+          alpha: 0,
+          duration: 500,
+          ease: 'Power2',
+          onComplete: () => particle.destroy(),
+        });
+      }
+      EventBus.emit("health-change", {
+        health: this.health,
+        maxHealth: this.maxHealth,
+      });
+      return false; // Don't die
+    }
+
     // Temporary Shield ability: invincibility when health drops to 1 (once per run, or twice if stacked)
     if (this.health === 1 && this.abilities.has('temp_shield') && !this.tempShieldUsed) {
       this.tempShieldUsed = true;
@@ -1896,7 +2211,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this.health <= 0) {
       EventBus.emit("player-died", { playerIndex: this.playerIndex });
-      this.scene.scene.restart();
+      // In co-op mode, don't restart — MainScene handles respawn.
+      // Just hide/disable this player.
+      if (CoopManager.isActive()) {
+        this.setVisible(false);
+        this.setActive(false);
+        (this.body as Phaser.Physics.Arcade.Body).enable = false;
+      } else {
+        this.scene.scene.restart();
+      }
     }
     return false;
   }
@@ -2003,6 +2326,109 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     EventBus.emit("parry-success", { reflectedDamage });
   }
 
+  /**
+   * Dodge/Block Parry: check if the parry window is active when damage is incoming.
+   * If the window is active, negate damage, stun the attacker, reflect damage back,
+   * and apply class-specific bonuses.
+   * Returns true if the damage was parried.
+   */
+  public tryParry(attacker: any, damage: number): boolean {
+    if (!this._parryWindowActive) return false;
+
+    // Consume the parry window
+    this._parryWindowActive = false;
+    this._parryWindowTimer = 0;
+    this._parryCooldown = this._PARRY_COOLDOWN_DURATION;
+
+    // Stun the attacker
+    if (attacker && attacker.active) {
+      if (typeof attacker.enterStun === 'function') {
+        attacker.enterStun(this._PARRY_STUN_DURATION);
+      } else if (typeof attacker.stun === 'function') {
+        attacker.stun(this._PARRY_STUN_DURATION);
+      }
+    }
+
+    // Reflect 50% damage back to attacker
+    const reflectedDamage = Math.max(1, Math.round(damage * this._PARRY_REFLECT_PERCENT * this.classStats.attackDamage));
+    if (attacker && attacker.active && typeof attacker.takeDamage === 'function') {
+      attacker.takeDamage(reflectedDamage);
+      PersistentStats.addDamageDealt(reflectedDamage);
+    }
+
+    // Screen flash effect
+    if (!GameSettings.get().flashReduction) {
+      this.scene.cameras.main.flash(50, 255, 255, 255, true);
+    }
+
+    // Camera shake for feedback
+    this.scene.cameras.main.shake(80, 0.005);
+
+    // Hit-stop effect
+    this.scene.time.timeScale = 0.15;
+    this.scene.time.delayedCall(60, () => {
+      this.scene.time.timeScale = 1;
+    });
+
+    // Visual feedback: white-gold flash on player
+    this.setTint(0xffffff);
+    this.scene.time.delayedCall(80, () => {
+      if (this.active) {
+        this.setTint(0xffd700);
+        this.scene.time.delayedCall(200, () => {
+          if (this.active) this.restoreDefaultTint();
+        });
+      }
+    });
+
+    // "PARRY!" floating text
+    const parryLabel = this.scene.add.text(this.x, this.y - 40, 'PARRY!', {
+      fontSize: '28px',
+      fontFamily: 'monospace',
+      color: '#ffd700',
+      stroke: '#000000',
+      strokeThickness: 4,
+      fontStyle: 'bold',
+    });
+    parryLabel.setOrigin(0.5);
+    parryLabel.setDepth(101);
+    this.scene.tweens.add({
+      targets: parryLabel,
+      y: this.y - 100,
+      alpha: 0,
+      scale: 1.8,
+      duration: 1000,
+      ease: 'Power2',
+      onComplete: () => parryLabel.destroy(),
+    });
+
+    // Class-specific bonuses
+    if (this.classType === ClassType.MONK) {
+      // Monk: grant +1 flow stack (FLOW_HIT_GAIN amount)
+      this.flowMeter = Math.min(this.FLOW_MAX, this.flowMeter + this.FLOW_HIT_GAIN);
+      this.flowDecayTimer = 0;
+      this.applyFlowBuffs();
+      this.emitFlowChange();
+    } else if (this.classType === ClassType.PRIEST) {
+      // Priest: heal 1 HP on successful parry
+      if (this.health < this.maxHealth) {
+        this.health = Math.min(this.health + 1, this.maxHealth);
+        EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
+      }
+    }
+
+    // Brief invincibility after parry
+    this.parryInvincibilityTimer = Math.max(this.parryInvincibilityTimer, 300);
+
+    // Track stat
+    PersistentStats.addPerfectParry();
+
+    // Emit parry event for HUD
+    EventBus.emit("parry-success", { reflectedDamage });
+
+    return true;
+  }
+
   // ─── Gold Ultimate Abilities ────────────────────────────────────────
 
   private handleCataclysm(): void {
@@ -2014,7 +2440,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const _useGpCataclysm = !_isCoopCataclysm || this.playerIndex === 1;
     if (!(_useKbCataclysm && Phaser.Input.Keyboard.JustDown(this.cataclysmKey)) && !(_useGpCataclysm && _gpCataclysm.cataclysmJustPressed) && !(_useKbCataclysm && (this.touchControls?.wasSwipeDetected('up') ?? false))) return;
 
-    this.cataclysmCooldown = this.CATACLYSM_COOLDOWN;
+    this.cataclysmCooldown = (SynergyManager.isActive('arcane')
+      ? this.CATACLYSM_COOLDOWN * 0.7
+      : this.CATACLYSM_COOLDOWN) * this.getCooldownMultiplier();
 
     // Damage all enemies in radius
     const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
@@ -2058,7 +2486,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const _useGpTemporal = !_isCoopTemporal || this.playerIndex === 1;
     if (!(_useKbTemporal && Phaser.Input.Keyboard.JustDown(this.temporalKey)) && !(_useGpTemporal && _gpTemporal.temporalRiftJustPressed) && !(_useKbTemporal && (this.touchControls?.wasSwipeDetected('up') ?? false))) return;
 
-    this.temporalCooldown = this.TEMPORAL_COOLDOWN;
+    this.temporalCooldown = (SynergyManager.isActive('arcane')
+      ? this.TEMPORAL_COOLDOWN * 0.7
+      : this.TEMPORAL_COOLDOWN) * this.getCooldownMultiplier();
 
     // Slow time
     this.scene.time.timeScale = this.TEMPORAL_SLOW;
@@ -2101,7 +2531,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const _useGpDivine = !_isCoopDivine || this.playerIndex === 1;
     if (!(_useKbDivine && Phaser.Input.Keyboard.JustDown(this.divineKey)) && !(_useGpDivine && _gpDivine.divineInterventionJustPressed) && !(_useKbDivine && (this.touchControls?.wasSwipeDetected('up') ?? false))) return;
 
-    this.divineCooldown = this.DIVINE_COOLDOWN;
+    this.divineCooldown = (SynergyManager.isActive('arcane')
+      ? this.DIVINE_COOLDOWN * 0.7
+      : this.DIVINE_COOLDOWN) * this.getCooldownMultiplier();
     this.invincibilityTimer = this.DIVINE_DURATION;
 
     // Golden glow effect
@@ -2202,7 +2634,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             checkLanding.destroy();
             this.isGroundSlamming = false;
             this.createGroundSlamShockwave();
-            this.groundSlamCooldown = this.GROUND_SLAM_COOLDOWN;
+            this.groundSlamCooldown = this.GROUND_SLAM_COOLDOWN * this.getCooldownMultiplier();
           }
         },
       });
@@ -2217,7 +2649,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     } else {
       // Grounded: immediate shockwave
       this.createGroundSlamShockwave();
-      this.groundSlamCooldown = this.GROUND_SLAM_COOLDOWN;
+      this.groundSlamCooldown = this.GROUND_SLAM_COOLDOWN * this.getCooldownMultiplier();
     }
   }
 
@@ -2272,7 +2704,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const _useGpProjectile = !_isCoopProjectile || this.playerIndex === 1;
     if (!(_useKbProjectile && Phaser.Input.Keyboard.JustDown(this.projectileKey)) && !(_useGpProjectile && _gpProjectile.groundSlamJustPressed)) return;
 
-    this.projectileCooldown = this.PROJECTILE_COOLDOWN;
+    this.projectileCooldown = this.PROJECTILE_COOLDOWN * this.getCooldownMultiplier();
 
     // Determine projectile direction: use mouse aim if enabled, else use facing direction
     let dirX: number;
@@ -2539,6 +2971,48 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
   }
 
+  /** Graviton Core: pull enemies toward the player */
+  private applyGravitonPull(): void {
+    const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+    if (!enemies) return;
+
+    enemies.children.each((enemy: any) => {
+      if (!enemy.active) return true;
+      const dx = this.x - enemy.x;
+      const dy = this.y - enemy.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= this.GRAVITON_PULL_RANGE && dist > 10) {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const dt = this.scene.game.loop.delta / 1000;
+        enemy.x += nx * this.GRAVITON_PULL_SPEED * dt;
+        enemy.y += ny * this.GRAVITON_PULL_SPEED * dt;
+      }
+      return true;
+    });
+  }
+
+  private updateBattleBondVisual(delta: number): void {
+    if (!CoopManager.isActive()) return;
+    this.battleBondCheckTimer -= delta;
+    if (this.battleBondCheckTimer > 0) return;
+    this.battleBondCheckTimer = 500; // Check every 500ms
+
+    const bondActive = CoopManager.getBattleBondMultiplier(this) > 1.0;
+    if (bondActive && !this.battleBondGlowActive) {
+      this.battleBondGlowActive = true;
+      // Subtle orange-gold tint pulse to indicate bond is active
+      if (!this.isInvincible && !this.isShieldGuarding) {
+        this.setTint(0xffcc66);
+        this.scene.time.delayedCall(200, () => {
+          if (this.active && !this.isInvincible) this.restoreDefaultTint();
+        });
+      }
+    } else if (!bondActive && this.battleBondGlowActive) {
+      this.battleBondGlowActive = false;
+    }
+  }
+
   private updateItemRadar(delta: number): void {
     if (!this.abilities.has('item_radar')) {
       // Clean up any existing indicators
@@ -2707,19 +3181,55 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.flowDecayTimer = 0;
       this.emitFlowChange();
     }
+
+    // Iron Fist subclass: track consecutive hits
+    this.onIronFistHit();
   }
 
-  /** Called by MainScene when an enemy is killed (Vampirism ability). */
+  /** Called by MainScene when an enemy is killed (Vampirism ability + curse effects). */
   public onEnemyKilled(): void {
     if (this.abilities.has('vampirism')) {
       this.vampirismKillCount++;
       if (this.vampirismKillCount >= 10) {
         this.vampirismKillCount = 0;
         if (this.health < this.maxHealth) {
-          this.health++;
-          EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
+          this.healPlayer(1);
         }
       }
+    }
+
+    // Soul Siphon curse: kills heal 1 HP
+    if (this.curses.has('soul_siphon')) {
+      this.healPlayer(1);
+    }
+
+    // Blood Blade curse: lose 1 HP every 10 kills
+    if (this.curses.has('blood_blade')) {
+      this.bloodBladeKillCount++;
+      if (this.bloodBladeKillCount >= 10) {
+        this.bloodBladeKillCount = 0;
+        this.takeDamage(1);
+        // Purple flash for curse damage
+        if (this.active) {
+          this.setTint(0x9933cc);
+          this.scene.time.delayedCall(200, () => {
+            if (this.active) this.restoreDefaultTint();
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Heal the player, respecting curse caps (e.g., berserkers_rage caps healing at 50% max HP).
+   */
+  public healPlayer(amount: number): void {
+    const healCap = this.curses.has('berserkers_rage')
+      ? Math.floor(this.maxHealth * 0.5)
+      : this.maxHealth;
+    if (this.health < healCap) {
+      this.health = Math.min(this.health + amount, healCap);
+      EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
     }
   }
 
@@ -2883,6 +3393,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
+    // Cursed items always collected (like gold, no slot limit)
+    if (item.type === 'CURSED') {
+      this.applyItem(item);
+      return;
+    }
+
     // Silver items — check slot limit
     const silverItems = this.inventory.filter(i => i.type === 'SILVER');
     if (silverItems.length >= this.maxSilverItems) {
@@ -2914,6 +3430,34 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
+    // Cursed items: register curse effects on pickup
+    if (item.type === 'CURSED' && item.curseId) {
+      this.curses.add(item.curseId);
+      this.applyCurseOnPickup(item.curseId);
+    }
+
+    // Shared Vigor (co-op): both players gain +2 max HP and heal by 2
+    if (item.abilityId === 'shared_vigor' && CoopManager.isActive()) {
+      const partner = CoopManager.getPartner(this);
+      if (partner && partner.active) {
+        partner.maxHealth += 2;
+        partner.health = Math.min(partner.health + 2, partner.maxHealth);
+        EventBus.emit("health-change", {
+          health: partner.health,
+          maxHealth: partner.maxHealth,
+          playerIndex: partner.playerIndex,
+        });
+      }
+      // Apply to self as well
+      this.maxHealth += 2;
+      this.health = Math.min(this.health + 2, this.maxHealth);
+      EventBus.emit("health-change", {
+        health: this.health,
+        maxHealth: this.maxHealth,
+        playerIndex: this.playerIndex,
+      });
+    }
+
     // Armor items: track hits for absorption
     if (item.armorHits) {
       this.armorItems.set(item.id, item.armorHits);
@@ -2926,9 +3470,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const qualityLabel = item.quality && item.quality !== 'NORMAL'
       ? ` [${item.quality[0] + item.quality.slice(1).toLowerCase()}]`
       : '';
+    const isCursed = item.type === 'CURSED';
+    const pickupColor = isCursed ? '#9933cc' : '#ffff00';
     const text = this.scene.add.text(this.x, this.y - 50, `+ ${item.name}${qualityLabel}`, {
       fontSize: "16px",
-      color: "#ffff00",
+      color: pickupColor,
       stroke: "#000",
       strokeThickness: 3,
     });
@@ -2942,6 +3488,67 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     EventBus.emit("inventory-change", { inventory: this.inventory, maxSlots: this.maxSilverItems });
     EventBus.emit("synergy-change", { synergies: calculateSynergies(this.inventory) });
+
+    // Check themed synergy sets and apply effects for newly activated ones
+    const newSynergies = SynergyManager.checkSynergies(this.inventory);
+    for (const synergyId of newSynergies) {
+      this.applySynergyEffects(synergyId);
+    }
+  }
+
+  /**
+   * Apply immediate curse effects that happen on pickup.
+   */
+  private applyCurseOnPickup(curseId: string): void {
+    switch (curseId) {
+      case 'glass_cannon':
+        // Cap max HP at 3, clamp current health
+        if (this.maxHealth > 3) {
+          this.maxHealth = 3;
+          this.health = Math.min(this.health, 3);
+          EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
+        }
+        break;
+
+      case 'phantom_step':
+        // Grant triple jump by adding double_jump and stacking it
+        if (!this.abilities.has('double_jump')) {
+          this.abilities.add('double_jump');
+        }
+        this.stackedAbilities.add('double_jump'); // Makes it triple jump
+        break;
+
+      case 'temporal_drain':
+        // Reduce all cooldowns by 50% (applied via cooldown multiplier checked at usage sites)
+        // The move speed penalty is handled via the effects array
+        break;
+
+      case 'graviton_core': {
+        // Increase gravity/fall speed by 30% for this player
+        const body = this.body as Phaser.Physics.Arcade.Body;
+        body.setGravityY(body.gravity.y + (body.gravity.y > 0 ? body.gravity.y * 0.3 : 300));
+        break;
+      }
+
+      default:
+        // Other curses are handled via ongoing checks (blood_blade, chaos_orb, etc.)
+        break;
+    }
+  }
+
+  /**
+   * Returns the cooldown multiplier accounting for Temporal Drain curse.
+   * 1.0 = normal, 0.5 = 50% reduced cooldowns.
+   */
+  public getCooldownMultiplier(): number {
+    return this.curses.has('temporal_drain') ? 0.5 : 1.0;
+  }
+
+  /**
+   * Check if wall jumping is disabled by a curse.
+   */
+  public isWallJumpDisabled(): boolean {
+    return this.curses.has('phantom_step');
   }
 
   private removeArmorItem(itemId: string): void {
@@ -2996,9 +3603,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     let bonusHealth = 0;
 
     for (const item of this.inventory) {
-      if (item.type !== 'SILVER' || !item.effects) continue;
-      const qualityMult = QUALITY_MULTIPLIERS[item.quality ?? 'NORMAL'];
-      const synergyMult = getSynergyMultiplier(item, this.inventory);
+      if ((item.type !== 'SILVER' && item.type !== 'CURSED') || !item.effects) continue;
+      const qualityMult = item.type === 'CURSED' ? 1.0 : QUALITY_MULTIPLIERS[item.quality ?? 'NORMAL'];
+      const synergyMult = item.type === 'CURSED' ? 1.0 : getSynergyMultiplier(item, this.inventory);
 
       for (const effect of item.effects) {
         // Armor is handled separately via armorItems tracking
@@ -3015,7 +3622,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // Apply health bonus (recalculate from base)
     const baseHealth = this.classStats.health;
-    const newMaxHealth = baseHealth + bonusHealth;
+    let newMaxHealth = baseHealth + bonusHealth;
+
+    // Glass Cannon curse: cap max HP at 3
+    if (this.curses.has('glass_cannon')) {
+      newMaxHealth = Math.min(newMaxHealth, 3);
+    }
+
     const healthDiff = newMaxHealth - this.maxHealth;
     this.maxHealth = newMaxHealth;
     // If max health increased, grant the extra HP; if decreased, clamp
@@ -3073,5 +3686,815 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public addSilverItemSlot(): void {
     this.maxSilverItems++;
     EventBus.emit('inventory-change', { inventory: [...this.inventory], maxSlots: this.maxSilverItems });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  THEMED SYNERGY SET EFFECTS
+  // ══════════════════════════════════════════════════════════════════════
+
+  private applySynergyEffects(synergyId: string): void {
+    switch (synergyId) {
+      case 'fortress': {
+        if (!this.fortressApplied) {
+          this.fortressApplied = true;
+          const bonus = Math.max(1, Math.round(this.maxHealth * 0.25));
+          this.maxHealth += bonus;
+          this.health += bonus;
+          EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
+        }
+        break;
+      }
+      case 'tempest': {
+        const currentSpeed = this.statModifiers.get('moveSpeed') || 0;
+        this.statModifiers.set('moveSpeed', currentSpeed + 0.30);
+        break;
+      }
+      case 'arsenal': {
+        const currentAS = this.statModifiers.get('attackSpeed') || 0;
+        this.statModifiers.set('attackSpeed', currentAS - 0.20);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  private updateInfernoAura(delta: number): void {
+    this.infernoAuraTimer += delta;
+    if (this.infernoAuraTimer < this.INFERNO_AURA_INTERVAL) return;
+    this.infernoAuraTimer = 0;
+
+    const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+    if (!enemies) return;
+
+    enemies.children.each((enemy: any) => {
+      if (!enemy.active) return true;
+      const dx = enemy.x - this.x;
+      const dy = enemy.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= this.INFERNO_AURA_RADIUS) {
+        enemy.takeDamage(1);
+        if (enemy.active) {
+          enemy.setTint(0xff4400);
+          this.scene.time.delayedCall(150, () => {
+            if (enemy.active) enemy.clearTint();
+          });
+        }
+      }
+      return true;
+    });
+  }
+
+  private updateLifelineRegen(delta: number): void {
+    this.lifelineRegenTimer += delta;
+    if (this.lifelineRegenTimer >= this.LIFELINE_REGEN_INTERVAL) {
+      this.lifelineRegenTimer = 0;
+      if (this.health < this.maxHealth) {
+        this.health++;
+        EventBus.emit("health-change", { health: this.health, maxHealth: this.maxHealth });
+      }
+    }
+  }
+
+  public applyArsenalChain(hitEnemyX: number, hitEnemyY: number): void {
+    if (!SynergyManager.isActive('arsenal')) return;
+
+    const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+    if (!enemies) return;
+
+    const chainDamage = Math.max(1, Math.round(COMBAT.BASE_DAMAGE * this.classStats.attackDamage * 0.30));
+    let nearestEnemy: any = null;
+    let nearestDist = Infinity;
+
+    enemies.children.each((enemy: any) => {
+      if (!enemy.active) return true;
+      const dx = enemy.x - hitEnemyX;
+      const dy = enemy.y - hitEnemyY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 10 && dist < 150 && dist < nearestDist) {
+        nearestDist = dist;
+        nearestEnemy = enemy;
+      }
+      return true;
+    });
+
+    if (nearestEnemy) {
+      nearestEnemy.takeDamage(chainDamage);
+      const line = this.scene.add.graphics();
+      line.lineStyle(2, 0xff6600, 0.8);
+      line.lineBetween(hitEnemyX, hitEnemyY, nearestEnemy.x, nearestEnemy.y);
+      line.setDepth(5);
+      this.scene.time.delayedCall(150, () => line.destroy());
+    }
+  }
+
+  // ─── Subclass System ──────────────────────────────────────────────────
+
+  /**
+   * Apply a subclass specialization to the player.
+   * Sets stat bonuses, enables passive effects, and unlocks the subclass ability.
+   */
+  public applySubclass(subclassId: string): void {
+    const def = SUBCLASSES[subclassId];
+    if (!def) return;
+
+    this.subclass = subclassId;
+    this.subclassDef = def;
+    this.subclassAbilityCooldown = 0;
+
+    // Apply stat bonuses
+    for (const [stat, bonus] of Object.entries(def.statBonuses)) {
+      const current = this.statModifiers.get(stat as StatType) || 0;
+      this.statModifiers.set(stat as StatType, current + bonus);
+    }
+
+    // Subclass-specific initialization
+    if (subclassId === 'oracle') {
+      this.oracleDoubleRadius = true;
+    }
+
+    // Visual feedback: golden glow
+    this.setTint(0xffd700);
+    this.scene.cameras.main.flash(500, 255, 215, 0, false, undefined, this);
+    this.scene.time.delayedCall(800, () => {
+      if (this.active) this.restoreDefaultTint();
+    });
+
+    // Show subclass name text
+    const subText = this.scene.add.text(this.x, this.y - 60, def.name.toUpperCase(), {
+      fontSize: '28px',
+      fontFamily: 'monospace',
+      color: '#ffd700',
+      stroke: '#000000',
+      strokeThickness: 4,
+      fontStyle: 'bold',
+    });
+    subText.setOrigin(0.5);
+    subText.setDepth(101);
+    this.scene.tweens.add({
+      targets: subText,
+      y: this.y - 120,
+      alpha: 0,
+      scale: 1.5,
+      duration: 1500,
+      ease: 'Power2',
+      onComplete: () => subText.destroy(),
+    });
+  }
+
+  /** Returns true if the player has a subclass assigned. */
+  public hasSubclass(): boolean {
+    return this.subclass !== null;
+  }
+
+  /**
+   * Crusader passive: 15% chance to smite (2x damage burst).
+   * Called by CombatManager when calculating damage.
+   */
+  public getCrusaderSmiteDamageMultiplier(): number {
+    if (this.subclass !== 'crusader') return 1;
+    if (Math.random() < 0.15) {
+      // Show "SMITE!" text
+      const smiteText = this.scene.add.text(this.x, this.y - 50, 'SMITE!', {
+        fontSize: '22px',
+        fontFamily: 'monospace',
+        color: '#ffdd44',
+        stroke: '#000000',
+        strokeThickness: 3,
+        fontStyle: 'bold',
+      });
+      smiteText.setOrigin(0.5);
+      smiteText.setDepth(101);
+      this.scene.tweens.add({
+        targets: smiteText,
+        y: this.y - 100,
+        alpha: 0,
+        scale: 1.4,
+        duration: 800,
+        ease: 'Power2',
+        onComplete: () => smiteText.destroy(),
+      });
+      // Golden flash
+      if (!GameSettings.get().flashReduction) {
+        this.setTint(0xffdd44);
+        this.scene.time.delayedCall(150, () => {
+          if (this.active) this.restoreDefaultTint();
+        });
+      }
+      return 2.0;
+    }
+    return 1;
+  }
+
+  /**
+   * Templar passive: enhanced block.
+   * Returns adjusted damage reduction multiplier (lower = more reduction).
+   */
+  public getTemplarBlockReduction(): number {
+    if (this.subclass !== 'templar') return this.SHIELD_GUARD_DAMAGE_REDUCTION;
+    // +50% block effectiveness: original 0.5 reduction -> 0.25 (blocks 75% instead of 50%)
+    return this.SHIELD_GUARD_DAMAGE_REDUCTION * 0.5;
+  }
+
+  /**
+   * Templar passive: blocking heals 1 HP.
+   * Called when a block successfully reduces damage.
+   */
+  public onTemplarBlock(): void {
+    if (this.subclass !== 'templar') return;
+    this.healPlayer(1);
+    // Green flash for heal
+    if (!GameSettings.get().flashReduction) {
+      this.setTint(0x44ff88);
+      this.scene.time.delayedCall(150, () => {
+        if (this.active && this.isShieldGuarding) this.setTint(0x4444ff);
+        else if (this.active) this.restoreDefaultTint();
+      });
+    }
+  }
+
+  /**
+   * Shadow Dancer passive: dodge grants 1s invisibility.
+   * Called after dodge ends.
+   */
+  public applyShadowDancerInvisibility(): void {
+    if (this.subclass !== 'shadow_dancer') return;
+    this.shadowDancerInvisible = true;
+    this.shadowDancerInvisTimer = 1000;
+    this.setAlpha(0.2);
+    // While invisible, enemies should ignore (checked via isShadowDancerInvisible)
+  }
+
+  /** Whether Shadow Dancer invisibility is active. */
+  public get isShadowDancerInvisible(): boolean {
+    return this.shadowDancerInvisible;
+  }
+
+  /**
+   * Shadow Dancer passive: +30% crit chance from stealth.
+   * Returns additional crit chance if invisible.
+   */
+  public getShadowDancerCritBonus(): number {
+    if (this.subclass !== 'shadow_dancer' || !this.shadowDancerInvisible) return 0;
+    return 0.30;
+  }
+
+  /**
+   * Iron Fist passive: consecutive hits deal +10% more (stacking).
+   * Called on successful hit. Returns damage multiplier.
+   */
+  public getIronFistDamageMultiplier(): number {
+    if (this.subclass !== 'iron_fist') return 1;
+    return 1 + (this.ironFistConsecutiveHits * 0.10);
+  }
+
+  /** Iron Fist: increment consecutive hit counter. */
+  public onIronFistHit(): void {
+    if (this.subclass !== 'iron_fist') return;
+    this.ironFistConsecutiveHits++;
+    this.ironFistComboTimer = this.IRON_FIST_COMBO_TIMEOUT;
+
+    // Show stacking indicator at high counts
+    if (this.ironFistConsecutiveHits >= 5 && this.ironFistConsecutiveHits % 5 === 0) {
+      const stackText = this.scene.add.text(this.x, this.y - 40,
+        `x${this.ironFistConsecutiveHits} FIST!`, {
+        fontSize: '18px',
+        fontFamily: 'monospace',
+        color: '#ff8844',
+        stroke: '#000000',
+        strokeThickness: 3,
+        fontStyle: 'bold',
+      });
+      stackText.setOrigin(0.5);
+      stackText.setDepth(101);
+      this.scene.tweens.add({
+        targets: stackText,
+        y: this.y - 80,
+        alpha: 0,
+        duration: 600,
+        ease: 'Power2',
+        onComplete: () => stackText.destroy(),
+      });
+    }
+  }
+
+  /**
+   * Inquisitor passive: smite enemies below 20% HP (instant kill).
+   * Returns true if the enemy should be instantly killed.
+   */
+  public shouldInquisitorSmite(enemyHealth: number, enemyMaxHealth: number): boolean {
+    if (this.subclass !== 'inquisitor') return false;
+    return enemyHealth > 0 && enemyHealth <= enemyMaxHealth * 0.20;
+  }
+
+  /** Update subclass-related timers. */
+  private updateSubclassTimers(delta: number): void {
+    // Subclass ability cooldown
+    if (this.subclassAbilityCooldown > 0) {
+      this.subclassAbilityCooldown -= delta;
+      if (this.subclassAbilityCooldown < 0) this.subclassAbilityCooldown = 0;
+    }
+
+    // Divine Shield timer (Templar)
+    if (this.divineShieldActive) {
+      this.divineShieldTimer -= delta;
+      if (this.divineShieldTimer <= 0) {
+        this.divineShieldActive = false;
+        this.divineShieldTimer = 0;
+        // Remove invincibility (natural expiry handled by invincibilityTimer)
+        this.restoreDefaultTint();
+        this.setAlpha(1);
+      }
+    }
+
+    // Shadow Dancer invisibility timer
+    if (this.shadowDancerInvisible) {
+      this.shadowDancerInvisTimer -= delta;
+      if (this.shadowDancerInvisTimer <= 0) {
+        this.shadowDancerInvisible = false;
+        this.shadowDancerInvisTimer = 0;
+        if (!this.isDodging && !this.isInvincible) {
+          this.setAlpha(1);
+        }
+      }
+    }
+
+    // Iron Fist combo timer (reset consecutive hits if not hitting)
+    if (this.subclass === 'iron_fist' && this.ironFistConsecutiveHits > 0) {
+      this.ironFistComboTimer -= delta;
+      if (this.ironFistComboTimer <= 0) {
+        this.ironFistConsecutiveHits = 0;
+        this.ironFistComboTimer = 0;
+      }
+    }
+  }
+
+  /** Handle subclass ability activation (key press). */
+  private handleSubclassAbility(): void {
+    if (!this.subclass || !this.subclassDef) return;
+    if (this.subclassAbilityCooldown > 0) return;
+
+    const useKeyboard = this.playerIndex === 0;
+    if (!useKeyboard) return; // Only P1 can use subclass ability via keyboard
+
+    if (!Phaser.Input.Keyboard.JustDown(this.subclassAbilityKey)) return;
+
+    switch (this.subclass) {
+      case 'crusader':
+        this.useHolyCharge();
+        break;
+      case 'templar':
+        this.useDivineShield();
+        break;
+      case 'shadow_dancer':
+        this.useShadowStep();
+        break;
+      case 'iron_fist':
+        this.useQuakePunch();
+        break;
+      case 'oracle':
+        this.useProphecy();
+        break;
+      case 'inquisitor':
+        this.useJudgment();
+        break;
+    }
+  }
+
+  // --- Crusader: Holy Charge ---
+  private useHolyCharge(): void {
+    if (!this.subclassDef) return;
+    this.subclassAbilityCooldown = this.subclassDef.abilityCooldown;
+    EventBus.emit("subclass-ability-used", { subclassId: 'crusader' });
+
+    const facingRight = !this.flipX;
+    const dashSpeed = 800;
+    const dashDuration = 300; // ms
+    const dashDir = facingRight ? 1 : -1;
+
+    // Make briefly invincible during charge
+    this.invincibilityTimer = Math.max(this.invincibilityTimer, dashDuration);
+
+    // Golden charge effect
+    this.setTint(0xffd700);
+    this.setVelocityX(dashSpeed * dashDir);
+    this.setVelocityY(-100); // Slight upward to look like a charge
+
+    // Create a damage trail
+    const damage = Math.round(COMBAT.BASE_DAMAGE * this.classStats.attackDamage * 2.0);
+    const hitEnemies = new Set<any>();
+
+    // Repeatedly check for enemies during the dash
+    const checkInterval = this.scene.time.addEvent({
+      delay: 50,
+      repeat: Math.floor(dashDuration / 50),
+      callback: () => {
+        const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+        if (!enemies) return;
+        enemies.children.each((enemy: any) => {
+          if (!enemy.active || hitEnemies.has(enemy)) return true;
+          if (typeof enemy.takeDamage !== 'function') return true;
+          const dx = enemy.x - this.x;
+          const dy = enemy.y - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 80) {
+            hitEnemies.add(enemy);
+            enemy.takeDamage(damage);
+            // Impact effect
+            const impactText = this.scene.add.text(enemy.x, enemy.y - 20, `${damage}`, {
+              fontSize: '20px',
+              fontFamily: 'monospace',
+              color: '#ffd700',
+              stroke: '#000000',
+              strokeThickness: 3,
+              fontStyle: 'bold',
+            });
+            impactText.setOrigin(0.5);
+            impactText.setDepth(101);
+            this.scene.tweens.add({
+              targets: impactText,
+              y: enemy.y - 60,
+              alpha: 0,
+              duration: 600,
+              ease: 'Power2',
+              onComplete: () => impactText.destroy(),
+            });
+          }
+          return true;
+        });
+      },
+    });
+
+    // End charge
+    this.scene.time.delayedCall(dashDuration, () => {
+      checkInterval.destroy();
+      if (this.active) {
+        this.restoreDefaultTint();
+        this.setVelocityX(0);
+      }
+    });
+
+    // Trail particles
+    const trail = this.scene.add.graphics();
+    trail.fillStyle(0xffd700, 0.4);
+    trail.fillCircle(this.x, this.y, 20);
+    trail.setDepth(5);
+    this.scene.tweens.add({
+      targets: trail,
+      alpha: 0,
+      duration: 400,
+      onComplete: () => trail.destroy(),
+    });
+  }
+
+  // --- Templar: Divine Shield ---
+  private useDivineShield(): void {
+    if (!this.subclassDef) return;
+    this.subclassAbilityCooldown = this.subclassDef.abilityCooldown;
+    EventBus.emit("subclass-ability-used", { subclassId: 'templar' });
+
+    this.divineShieldActive = true;
+    this.divineShieldTimer = this.DIVINE_SHIELD_DURATION;
+    this.invincibilityTimer = Math.max(this.invincibilityTimer, this.DIVINE_SHIELD_DURATION);
+
+    // Bright golden glow
+    this.setTint(0xffffaa);
+    this.setAlpha(0.9);
+
+    // Show "DIVINE SHIELD" text
+    const shieldText = this.scene.add.text(this.x, this.y - 60, 'DIVINE SHIELD', {
+      fontSize: '22px',
+      fontFamily: 'monospace',
+      color: '#ffd700',
+      stroke: '#000000',
+      strokeThickness: 4,
+      fontStyle: 'bold',
+    });
+    shieldText.setOrigin(0.5);
+    shieldText.setDepth(101);
+    this.scene.tweens.add({
+      targets: shieldText,
+      y: this.y - 100,
+      alpha: 0,
+      scale: 1.3,
+      duration: 1200,
+      ease: 'Power2',
+      onComplete: () => shieldText.destroy(),
+    });
+
+    // Camera flash
+    if (!GameSettings.get().flashReduction) {
+      this.scene.cameras.main.flash(300, 255, 255, 200);
+    }
+  }
+
+  // --- Shadow Dancer: Shadow Step ---
+  private useShadowStep(): void {
+    if (!this.subclassDef) return;
+    this.subclassAbilityCooldown = this.subclassDef.abilityCooldown;
+    EventBus.emit("subclass-ability-used", { subclassId: 'shadow_dancer' });
+
+    // Find nearest enemy
+    const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+    if (!enemies) return;
+
+    let nearestEnemy: any = null;
+    let nearestDist = Infinity;
+
+    enemies.children.each((enemy: any) => {
+      if (!enemy.active) return true;
+      const dx = enemy.x - this.x;
+      const dy = enemy.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 400 && dist < nearestDist) {
+        nearestDist = dist;
+        nearestEnemy = enemy;
+      }
+      return true;
+    });
+
+    if (nearestEnemy) {
+      // Teleport behind the enemy
+      const behindOffset = nearestEnemy.x > this.x ? -50 : 50;
+      const oldX = this.x;
+      const oldY = this.y;
+
+      this.setPosition(nearestEnemy.x + behindOffset, nearestEnemy.y);
+      this.setVelocity(0, 0);
+
+      // Become invisible briefly
+      this.applyShadowDancerInvisibility();
+
+      // Visual: purple trail from origin to destination
+      const trail = this.scene.add.graphics();
+      trail.lineStyle(3, 0x8844cc, 0.6);
+      trail.lineBetween(oldX, oldY, this.x, this.y);
+      trail.setDepth(5);
+      this.scene.tweens.add({
+        targets: trail,
+        alpha: 0,
+        duration: 400,
+        onComplete: () => trail.destroy(),
+      });
+
+      // Show "SHADOW STEP" text
+      const stepText = this.scene.add.text(this.x, this.y - 40, 'SHADOW STEP', {
+        fontSize: '18px',
+        fontFamily: 'monospace',
+        color: '#8844cc',
+        stroke: '#000000',
+        strokeThickness: 3,
+        fontStyle: 'bold',
+      });
+      stepText.setOrigin(0.5);
+      stepText.setDepth(101);
+      this.scene.tweens.add({
+        targets: stepText,
+        y: this.y - 80,
+        alpha: 0,
+        duration: 600,
+        ease: 'Power2',
+        onComplete: () => stepText.destroy(),
+      });
+    } else {
+      // No enemy nearby — still teleport forward a short distance
+      const facingRight = !this.flipX;
+      this.setPosition(this.x + (facingRight ? 150 : -150), this.y);
+      this.applyShadowDancerInvisibility();
+    }
+  }
+
+  // --- Iron Fist: Quake Punch ---
+  private useQuakePunch(): void {
+    if (!this.subclassDef) return;
+    if (!this.onGround) return; // Must be grounded
+    this.subclassAbilityCooldown = this.subclassDef.abilityCooldown;
+    EventBus.emit("subclass-ability-used", { subclassId: 'iron_fist' });
+
+    const stunRadius = 200;
+    const damage = Math.round(COMBAT.BASE_DAMAGE * this.classStats.attackDamage * 2.5);
+
+    // Screen shake
+    this.scene.cameras.main.shake(400, 0.01);
+
+    // Damage and stun all grounded enemies in range
+    const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+    if (enemies) {
+      enemies.children.each((enemy: any) => {
+        if (!enemy.active || typeof enemy.takeDamage !== 'function') return true;
+        const dx = enemy.x - this.x;
+        const dy = enemy.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist <= stunRadius) {
+          enemy.takeDamage(damage);
+          // Stun: stop enemy movement briefly
+          if (typeof enemy.setVelocity === 'function') {
+            enemy.setVelocity(0, -200); // Knock up
+          }
+          if (typeof enemy.stun === 'function') {
+            enemy.stun(2000); // 2s stun
+          }
+        }
+        return true;
+      });
+    }
+
+    // Visual: shockwave ring
+    const ring = this.scene.add.graphics();
+    ring.lineStyle(4, 0xff6600, 0.8);
+    ring.strokeCircle(this.x, this.y + 20, 10);
+    ring.setDepth(5);
+    this.scene.tweens.add({
+      targets: ring,
+      scaleX: stunRadius / 10,
+      scaleY: stunRadius / 10,
+      alpha: 0,
+      duration: 400,
+      ease: 'Power2',
+      onComplete: () => ring.destroy(),
+    });
+
+    // Show "QUAKE PUNCH" text
+    const quakeText = this.scene.add.text(this.x, this.y - 50, 'QUAKE PUNCH', {
+      fontSize: '22px',
+      fontFamily: 'monospace',
+      color: '#ff6600',
+      stroke: '#000000',
+      strokeThickness: 4,
+      fontStyle: 'bold',
+    });
+    quakeText.setOrigin(0.5);
+    quakeText.setDepth(101);
+    this.scene.tweens.add({
+      targets: quakeText,
+      y: this.y - 100,
+      alpha: 0,
+      scale: 1.3,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => quakeText.destroy(),
+    });
+  }
+
+  // --- Oracle: Prophecy ---
+  private useProphecy(): void {
+    if (!this.subclassDef) return;
+    this.subclassAbilityCooldown = this.subclassDef.abilityCooldown;
+    EventBus.emit("subclass-ability-used", { subclassId: 'oracle' });
+
+    // Emit a custom event that the UI can listen to for showing item previews
+    // For now, reveal hidden items nearby (boost item radar range briefly)
+    const revealText = this.scene.add.text(this.x, this.y - 50, 'PROPHECY', {
+      fontSize: '22px',
+      fontFamily: 'monospace',
+      color: '#cc88ff',
+      stroke: '#000000',
+      strokeThickness: 4,
+      fontStyle: 'bold',
+    });
+    revealText.setOrigin(0.5);
+    revealText.setDepth(101);
+    this.scene.tweens.add({
+      targets: revealText,
+      y: this.y - 100,
+      alpha: 0,
+      scale: 1.3,
+      duration: 1200,
+      ease: 'Power2',
+      onComplete: () => revealText.destroy(),
+    });
+
+    // Visual: expanding purple ring
+    const ring = this.scene.add.graphics();
+    ring.lineStyle(3, 0xcc88ff, 0.6);
+    ring.strokeCircle(this.x, this.y, 10);
+    ring.setDepth(5);
+    this.scene.tweens.add({
+      targets: ring,
+      scaleX: 30,
+      scaleY: 30,
+      alpha: 0,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => ring.destroy(),
+    });
+
+    // Reveal all items on screen for 5 seconds
+    // This is a simplified version — full implementation would show next 3 item choices
+    // For now, expand item radar to entire screen
+    const items = (this.scene as any).items as Phaser.Physics.Arcade.Group;
+    if (items) {
+      items.children.each((item: any) => {
+        if (!item.active) return true;
+        // Highlight items with a glow
+        const glow = this.scene.add.graphics();
+        glow.fillStyle(0xcc88ff, 0.3);
+        glow.fillCircle(item.x, item.y, 20);
+        glow.setDepth(4);
+        this.scene.tweens.add({
+          targets: glow,
+          alpha: 0,
+          duration: 5000,
+          onComplete: () => glow.destroy(),
+        });
+        return true;
+      });
+    }
+
+    // Camera flash
+    if (!GameSettings.get().flashReduction) {
+      this.scene.cameras.main.flash(300, 200, 140, 255);
+    }
+  }
+
+  // --- Inquisitor: Judgment ---
+  private useJudgment(): void {
+    if (!this.subclassDef) return;
+    this.subclassAbilityCooldown = this.subclassDef.abilityCooldown;
+    EventBus.emit("subclass-ability-used", { subclassId: 'inquisitor' });
+
+    const facingRight = !this.flipX;
+    const beamLength = 600;
+    const beamWidth = 40;
+    const damage = Math.round(COMBAT.BASE_DAMAGE * this.classStats.attackDamage * 3.0);
+
+    // Create beam visual
+    const beamX = facingRight ? this.x + beamLength / 2 : this.x - beamLength / 2;
+    const beam = this.scene.add.rectangle(
+      beamX,
+      this.y,
+      beamLength,
+      beamWidth,
+      0xffffaa,
+      0.6,
+    );
+    beam.setDepth(5);
+    this.scene.tweens.add({
+      targets: beam,
+      alpha: 0,
+      scaleY: 0.1,
+      duration: 400,
+      ease: 'Power2',
+      onComplete: () => beam.destroy(),
+    });
+
+    // Deal damage to all enemies in the beam path
+    const enemies = (this.scene as any).enemies as Phaser.Physics.Arcade.Group;
+    if (enemies) {
+      enemies.children.each((enemy: any) => {
+        if (!enemy.active || typeof enemy.takeDamage !== 'function') return true;
+        const dx = enemy.x - this.x;
+        const dy = Math.abs(enemy.y - this.y);
+        // Check if enemy is in the beam's horizontal range and close enough vertically
+        const inBeamH = facingRight ? (dx > 0 && dx < beamLength) : (dx < 0 && dx > -beamLength);
+        if (inBeamH && dy < beamWidth) {
+          enemy.takeDamage(damage);
+          // Show damage number
+          const dmgText = this.scene.add.text(enemy.x, enemy.y - 20, `${damage}`, {
+            fontSize: '20px',
+            fontFamily: 'monospace',
+            color: '#ffffaa',
+            stroke: '#000000',
+            strokeThickness: 3,
+            fontStyle: 'bold',
+          });
+          dmgText.setOrigin(0.5);
+          dmgText.setDepth(101);
+          this.scene.tweens.add({
+            targets: dmgText,
+            y: enemy.y - 60,
+            alpha: 0,
+            duration: 600,
+            ease: 'Power2',
+            onComplete: () => dmgText.destroy(),
+          });
+        }
+        return true;
+      });
+    }
+
+    // Show "JUDGMENT" text
+    const judgText = this.scene.add.text(this.x, this.y - 60, 'JUDGMENT', {
+      fontSize: '24px',
+      fontFamily: 'monospace',
+      color: '#ffffaa',
+      stroke: '#000000',
+      strokeThickness: 4,
+      fontStyle: 'bold',
+    });
+    judgText.setOrigin(0.5);
+    judgText.setDepth(101);
+    this.scene.tweens.add({
+      targets: judgText,
+      y: this.y - 110,
+      alpha: 0,
+      scale: 1.3,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => judgText.destroy(),
+    });
+
+    // Screen shake
+    this.scene.cameras.main.shake(200, 0.005);
   }
 }

@@ -103,16 +103,20 @@ export const ShopUI: React.FC<ShopUIProps> = ({
           const canAfford = essence >= offering.cost;
           const wasPurchased = purchasedIds.has(offering.id);
           const isFlashing = flashId === offering.id;
+          const isCursed = offering.id.startsWith('cursed_');
 
           return (
             <div
               key={offering.id}
               style={{
                 ...glassPanel,
+                border: isCursed ? "1px solid rgba(153, 51, 204, 0.4)" : glassPanel.border,
                 transform: isFlashing ? "scale(1.08)" : "scale(1)",
                 boxShadow: isFlashing
                   ? "0 0 30px rgba(255, 204, 0, 0.6), inset 0 1px 0 rgba(255, 204, 0, 0.15)"
-                  : glassPanel.boxShadow,
+                  : isCursed
+                    ? "0 0 12px rgba(153, 51, 204, 0.3), inset 0 1px 0 rgba(153, 51, 204, 0.1)"
+                    : glassPanel.boxShadow,
                 opacity: wasPurchased ? 0.5 : 1,
               }}
             >
@@ -121,7 +125,9 @@ export const ShopUI: React.FC<ShopUIProps> = ({
                 style={{
                   fontSize: "48px",
                   lineHeight: 1,
-                  textShadow: "0 0 12px rgba(255, 204, 0, 0.4)",
+                  textShadow: isCursed
+                    ? "0 0 12px rgba(153, 51, 204, 0.6), 0 0 24px rgba(153, 51, 204, 0.3)"
+                    : "0 0 12px rgba(255, 204, 0, 0.4)",
                 }}
               >
                 {offering.icon}
@@ -132,7 +138,7 @@ export const ShopUI: React.FC<ShopUIProps> = ({
                 style={{
                   fontSize: "18px",
                   fontWeight: "bold",
-                  color: "#ffcc00",
+                  color: isCursed ? "#9933cc" : "#ffcc00",
                   textAlign: "center",
                 }}
               >

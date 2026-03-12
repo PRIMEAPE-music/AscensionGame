@@ -39,6 +39,9 @@ import { ReplayManager } from "../systems/ReplayManager";
 import { SoundCueManager } from "../systems/SoundCueManager";
 import { AchievementManager } from "../systems/AchievementManager";
 import { CoopManager } from "../systems/CoopManager";
+import { ComboManager } from "../systems/ComboManager";
+import { SynergyManager } from "../systems/SynergyManager";
+import { EndlessManager } from "../systems/EndlessManager";
 
 const ESSENCE_REWARDS: Record<string, number> = {
   basic: 5,
@@ -61,6 +64,7 @@ export class MainScene extends Phaser.Scene {
 
   private staticPlatforms!: Phaser.Physics.Arcade.StaticGroup;
   private movingPlatforms!: Phaser.Physics.Arcade.Group;
+  private verticalWalls!: Phaser.Physics.Arcade.StaticGroup;
   private enemies!: Phaser.Physics.Arcade.Group;
   private items!: Phaser.Physics.Arcade.Group;
   private portals!: Phaser.Physics.Arcade.Group;
@@ -141,12 +145,19 @@ export class MainScene extends Phaser.Scene {
   }
 
   create() {
+    // Reset combo system for new run
+    ComboManager.resetRun();
+
+    // Initialize themed synergy system for new run
+    SynergyManager.init();
+
     // Groups
     this.staticPlatforms = this.physics.add.staticGroup();
     this.movingPlatforms = this.physics.add.group({
       allowGravity: false,
       immovable: true,
     });
+    this.verticalWalls = this.physics.add.staticGroup();
     this.enemies = this.physics.add.group({ runChildUpdate: true });
     this.items = this.physics.add.group();
     this.portals = this.physics.add.group({ allowGravity: false });
@@ -191,6 +202,7 @@ export class MainScene extends Phaser.Scene {
     );
     this.levelGenerator.setTextureManager(this.platformTextureManager);
     this.levelGenerator.setPlatformEffectsManager(this.platformEffectsManager);
+    this.levelGenerator.setVerticalWalls(this.verticalWalls);
 
     // Boss arena manager
     this.bossArenaManager = new BossArenaManager(this, this.staticPlatforms);
@@ -221,6 +233,11 @@ export class MainScene extends Phaser.Scene {
       );
     }
     this.players = this.player2 ? [this.player, this.player2] : [this.player];
+
+    // Store player references in CoopManager for co-op item effects
+    if (CoopManager.isActive()) {
+      CoopManager.setPlayers(this.players);
+    }
 
     this.highestY = WORLD.PLAYER_SPAWN.y;
 
@@ -318,6 +335,8 @@ export class MainScene extends Phaser.Scene {
     this.physics.add.collider(this.items, this.movingPlatforms);
     this.physics.add.collider(this.player, this.leftWall);
     this.physics.add.collider(this.player, this.rightWall);
+    this.physics.add.collider(this.player, this.verticalWalls);
+    this.physics.add.collider(this.enemies, this.verticalWalls);
 
     // Combat overlaps (delegated to CombatManager)
     this.physics.add.overlap(
@@ -340,6 +359,15 @@ export class MainScene extends Phaser.Scene {
       this.player,
       this.hazardManager.getStalactites(),
       (_p, s) => this.hazardManager.handleStalactitePlayerOverlap(_p, s),
+      undefined,
+      this,
+    );
+
+    // Cave-in rock-player overlap (hazard system)
+    this.physics.add.overlap(
+      this.player,
+      this.hazardManager.getCaveInRocks(),
+      (_p, r) => this.hazardManager.handleCaveInRockPlayerOverlap(_p, r),
       undefined,
       this,
     );
@@ -384,6 +412,7 @@ export class MainScene extends Phaser.Scene {
       );
       this.physics.add.collider(this.player2, this.leftWall);
       this.physics.add.collider(this.player2, this.rightWall);
+      this.physics.add.collider(this.player2, this.verticalWalls);
 
       // Combat overlaps for P2
       this.physics.add.overlap(
@@ -406,6 +435,15 @@ export class MainScene extends Phaser.Scene {
         this.player2,
         this.hazardManager.getStalactites(),
         (_p, s) => this.hazardManager.handleStalactitePlayerOverlap(_p, s),
+        undefined,
+        this,
+      );
+
+      // Cave-in rock overlap for P2
+      this.physics.add.overlap(
+        this.player2,
+        this.hazardManager.getCaveInRocks(),
+        (_p, r) => this.hazardManager.handleCaveInRockPlayerOverlap(_p, r),
         undefined,
         this,
       );
@@ -515,9 +553,32 @@ export class MainScene extends Phaser.Scene {
       PersistentStats.addBossDefeat();
       let bossEssence = 50 * data.bossNumber;
 
+      // Endless mode: notify EndlessManager of boss defeat (resets corruption)
+      if (EndlessManager.isActive()) {
+        EndlessManager.onBossDefeated(data.bossNumber);
+      }
+
       // Essence Boost ability: +25% essence
       if (this.player.abilities.has('essence_boost')) {
         bossEssence = Math.round(bossEssence * 1.25);
+      }
+
+      // Synergy: Avarice — +50% essence from all sources
+      if (SynergyManager.isActive('avarice')) {
+        bossEssence = Math.round(bossEssence * 1.5);
+      }
+
+      // Combo multiplier: higher combos earn more essence
+      bossEssence = Math.round(bossEssence * ComboManager.getMultiplier());
+
+      // Soul Siphon curse: -50% essence gain
+      if (this.player.curses.has('soul_siphon')) {
+        bossEssence = Math.round(bossEssence * 0.5);
+      }
+
+      // Weekly challenge: 3x essence rewards
+      if ((window as any).__weeklyEssenceMultiplier) {
+        bossEssence = Math.round(bossEssence * (window as any).__weeklyEssenceMultiplier);
       }
 
       this.essenceTotal += bossEssence;
@@ -531,16 +592,44 @@ export class MainScene extends Phaser.Scene {
         this.player.addSilverItemSlot();
       }
 
-      // Every 15th boss offers an Ascension boost
-      if (data.rewards.includes('ascension')) {
+      // Every 15th boss offers an Ascension boost (skip in endless mode — keep climbing)
+      if (data.rewards.includes('ascension') && !EndlessManager.isActive()) {
         this.scene.pause();
         EventBus.emit('ascension-offer', { bossNumber: data.bossNumber });
+      }
+
+      // After boss #2 is defeated, offer subclass specialization (if not already chosen)
+      if (data.bossNumber === 2 && !this.player.hasSubclass()) {
+        const classType = (window as any).__selectedClass as string || this.player.classType;
+        // Delay slightly so ascension/rewards finish first
+        this.time.delayedCall(500, () => {
+          this.scene.pause();
+          EventBus.emit('subclass-offer', { classType });
+        });
       }
     }));
 
     // Resume game after player chooses an ascension boost
     this._eventCleanups.push(EventBus.on("ascension-chosen", () => {
       this.scene.resume();
+    }));
+
+    // Apply subclass when player chooses one
+    this._eventCleanups.push(EventBus.on("subclass-chosen", (data) => {
+      this.player.applySubclass(data.subclassId);
+      this.scene.resume();
+    }));
+
+    // Handle co-op item draft completion — give each player their chosen item
+    this._eventCleanups.push(EventBus.on("coop-draft-complete", (data) => {
+      const p1ItemData = ITEMS[data.p1Item];
+      const p2ItemData = ITEMS[data.p2Item];
+      if (p1ItemData) {
+        this.player.collectItem(p1ItemData);
+      }
+      if (p2ItemData && this.player2) {
+        this.player2.collectItem(p2ItemData);
+      }
     }));
 
     // Track enemy kills and award essence
@@ -569,6 +658,37 @@ export class MainScene extends Phaser.Scene {
       if (this.player.abilities.has('soul_collector')) {
         const soulBonus = this.player.stackedAbilities.has('soul_collector') ? 0.30 : 0.15;
         essenceReward = Math.round(essenceReward * (1 + soulBonus));
+      }
+
+      // Finishing Move bonus: +50% essence
+      if (data.finishingMove) {
+        essenceReward = Math.round(essenceReward * 1.5);
+      }
+
+      // Elite affix kill bonus: 3x essence and guaranteed item drop
+      if (data.isElite && data.affixes && data.affixes.length > 0) {
+        essenceReward = Math.round(essenceReward * 3);
+        // Guaranteed item drop from elite kills
+        const currentAlt = Math.max(0, (WORLD.BASE_PLATFORM_Y - this.player.y) / WORLD.ALTITUDE_SCALE);
+        this.spawnManager.spawnRandomItem(data.x, data.y - 30, currentAlt);
+      }
+
+      // Synergy: Avarice — +50% essence from all sources
+      if (SynergyManager.isActive('avarice')) {
+        essenceReward = Math.round(essenceReward * 1.5);
+      }
+
+      // Combo multiplier: higher combos earn more essence
+      essenceReward = Math.round(essenceReward * ComboManager.getMultiplier());
+
+      // Soul Siphon curse: -50% essence gain
+      if (this.player.curses.has('soul_siphon')) {
+        essenceReward = Math.round(essenceReward * 0.5);
+      }
+
+      // Weekly challenge: 3x essence rewards
+      if ((window as any).__weeklyEssenceMultiplier) {
+        essenceReward = Math.round(essenceReward * (window as any).__weeklyEssenceMultiplier);
       }
 
       this.essenceTotal += essenceReward;
@@ -603,6 +723,16 @@ export class MainScene extends Phaser.Scene {
           });
           break;
         }
+        default: {
+          // Handle cursed item purchases (id format: "cursed_<itemId>")
+          if (data.offeringId.startsWith('cursed_')) {
+            const itemId = data.offeringId.replace('cursed_', '');
+            if (ITEMS[itemId]) {
+              this.spawnManager.spawnItem(this.player.x, this.player.y - 40, itemId);
+            }
+          }
+          break;
+        }
       }
       // Deduct essence
       this.essenceTotal -= data.cost;
@@ -614,12 +744,15 @@ export class MainScene extends Phaser.Scene {
 
     // Listen for Priest Sacred Ground creation
     this.sacredGroundUnsubscribe = EventBus.on("priest-sacred-ground", (data) => {
+      // Oracle subclass: double Sacred Ground radius
+      const radiusMult = this.player.oracleDoubleRadius ? 2 : 1;
       const sg = new SacredGround(
         this,
         this.player,
         this.enemies,
         data.x,
         data.y,
+        radiusMult,
       );
       this.sacredGrounds.push(sg);
     });
@@ -654,6 +787,15 @@ export class MainScene extends Phaser.Scene {
           // Spawn a second item for gold tier
           this.spawnManager.spawnRandomItem(this.player.x + 60, this.player.y - 40);
           break;
+        case "cursed_item": {
+          // Spawn a random cursed item
+          const cursedItems = Object.values(ITEMS).filter(i => i.type === 'CURSED');
+          if (cursedItems.length > 0) {
+            const chosen = cursedItems[Math.floor(Math.random() * cursedItems.length)];
+            this.spawnManager.spawnItem(this.player.x, this.player.y - 40, chosen.id);
+          }
+          break;
+        }
       }
       // Deduct essence
       this.essenceTotal -= data.bet;
@@ -710,7 +852,28 @@ export class MainScene extends Phaser.Scene {
     SoundCueManager.init(this);
 
     // Music state: biome changes
-    this._eventCleanups.push(EventBus.on("biome-change", (data) => AudioManager.setBiome(data.biome)));
+    this._eventCleanups.push(EventBus.on("biome-change", (data) => {
+      AudioManager.setBiome(data.biome);
+
+      // Dark Pact curse: take 1 damage + gain random buff on each biome change
+      if (this.player.curses.has('dark_pact') && this.player.darkPactLastBiome !== data.biome) {
+        this.player.darkPactLastBiome = data.biome;
+        // Curse: take 1 damage
+        this.player.takeDamage(1);
+        // Benefit: random temporary buff (+20% to a random stat for 30 seconds)
+        const buffStats: Array<'attackDamage' | 'moveSpeed' | 'jumpHeight'> = ['attackDamage', 'moveSpeed', 'jumpHeight'];
+        const stat = buffStats[Math.floor(Math.random() * buffStats.length)];
+        const current = this.player.statModifiers.get(stat) || 0;
+        this.player.statModifiers.set(stat, current + 0.20);
+        // Remove buff after 30 seconds
+        this.time.delayedCall(30000, () => {
+          if (this.player.active) {
+            const cur = this.player.statModifiers.get(stat) || 0;
+            this.player.statModifiers.set(stat, cur - 0.20);
+          }
+        });
+      }
+    }));
 
     // Music state: boss fight
     this._eventCleanups.push(EventBus.on("boss-spawn", () => AudioManager.setBossState(true)));
@@ -1034,6 +1197,19 @@ export class MainScene extends Phaser.Scene {
       this.enemies,
     );
 
+    // Endless Mode: corruption system
+    if (EndlessManager.isActive()) {
+      EndlessManager.updateCorruption(delta);
+
+      // When corruption activates a modifier, apply its effects
+      const corruptionMod = EndlessManager.getActiveCorruptionModifier();
+      if (corruptionMod && !ActiveModifiers.isActive(corruptionMod)) {
+        // Temporarily activate this modifier for the corruption effect
+        ActiveModifiers.active.push(corruptionMod);
+        (window as any).__activeModifiers = ActiveModifiers.active;
+      }
+    }
+
     // Style tracking
     const vx = this.player.body!.velocity.x;
     const vy = this.player.body!.velocity.y;
@@ -1157,6 +1333,7 @@ export class MainScene extends Phaser.Scene {
       damageTaken: PersistentStats.getRunStats().damageTaken,
       perfectDodges: PersistentStats.getRunStats().perfectDodges,
       itemsCollected: PersistentStats.getRunStats().itemsCollected,
+      subclass: this.player.subclass || undefined,
     };
   }
 
@@ -1206,6 +1383,11 @@ export class MainScene extends Phaser.Scene {
 
     // Scroll camera to player
     this.cameras.main.scrollY = this.player.y - this.cameras.main.height / 2;
+
+    // Restore subclass if saved
+    if ((data as any).subclass) {
+      this.player.applySubclass((data as any).subclass);
+    }
 
     // Clear the save (will re-save at next checkpoint)
     RunSaveManager.clear();
@@ -1326,6 +1508,16 @@ export class MainScene extends Phaser.Scene {
     this.hazardManager?.destroy?.();
     this.risingDarkness?.destroy?.();
 
+    // Clean up vertical walls (destroy highlight decorations before clearing)
+    if (this.verticalWalls) {
+      this.verticalWalls.children.each((child: any) => {
+        const highlight = child.getData?.("highlight");
+        if (highlight) highlight.destroy();
+        return true;
+      });
+      this.verticalWalls.clear(true, true);
+    }
+
     // Clean up portal platforms
     if (this.portals) {
       this.portals.clear(true, true);
@@ -1380,13 +1572,31 @@ export class MainScene extends Phaser.Scene {
 
       platform.setData("shopVisited", true);
       this.scene.pause();
-      EventBus.emit("shop-open", {
-        offerings: [
-          { id: "health_restore", name: "Health Restore", description: "Restore 1 HP", cost: 30, icon: "\u2665" },
-          { id: "random_item", name: "Random Item", description: "Random silver item", cost: 100, icon: "\u25C6" },
-          { id: "damage_buff", name: "Demon Fury", description: "+20% damage for 2 min", cost: 75, icon: "\u2694" },
-        ],
-      });
+
+      // Synergy: Avarice — shops 20% cheaper
+      const avariceDiscount = SynergyManager.isActive('avarice') ? 0.8 : 1.0;
+      const shopOfferings = [
+          { id: "health_restore", name: "Health Restore", description: "Restore 1 HP", cost: Math.round(30 * avariceDiscount), icon: "\u2665" },
+          { id: "random_item", name: "Random Item", description: "Random silver item", cost: Math.round(100 * avariceDiscount), icon: "\u25C6" },
+          { id: "damage_buff", name: "Demon Fury", description: "+20% damage for 2 min", cost: Math.round(75 * avariceDiscount), icon: "\u2694" },
+      ];
+
+      // 25% chance to add a cursed item to the shop (discounted 50%)
+      if (Math.random() < 0.25) {
+        const cursedItems = Object.values(ITEMS).filter(i => i.type === 'CURSED');
+        if (cursedItems.length > 0) {
+          const cursed = cursedItems[Math.floor(Math.random() * cursedItems.length)];
+          shopOfferings.push({
+            id: `cursed_${cursed.id}`,
+            name: cursed.name,
+            description: cursed.description,
+            cost: Math.round(75 * avariceDiscount),
+            icon: "\u2623",
+          });
+        }
+      }
+
+      EventBus.emit("shop-open", { offerings: shopOfferings });
     }
 
     // Gambling shrine detection

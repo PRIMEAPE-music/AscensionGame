@@ -3,6 +3,7 @@ import { CosmeticManager } from "../systems/CosmeticManager";
 import { DailyChallenge, WEEKLY_RULES } from "../systems/DailyChallenge";
 import { RUN_MODIFIERS, ActiveModifiers } from "../config/RunModifiers";
 import { LeaderboardManager, type NewRecordInfo } from "../systems/LeaderboardManager";
+import { EndlessLeaderboard } from "../systems/EndlessManager";
 
 interface DeathScreenProps {
   altitude: number;
@@ -197,6 +198,15 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
     return { seed: weekly.seed, modifiers: modNames, specialRuleName: ruleName };
   });
 
+  // Capture endless mode state at mount time (before cleanup)
+  const [isEndlessMode] = useState(() => !!(window as any).__isEndlessMode);
+  const [isEndlessNewBest] = useState(() => !!(window as any).__endlessModeNewBest);
+  const [endlessBestAltitude] = useState(() => {
+    if (!(window as any).__isEndlessMode) return 0;
+    EndlessLeaderboard.load();
+    return EndlessLeaderboard.getHighestAltitude();
+  });
+
   // Submit run to leaderboard and track new records
   const [newRecords] = useState<NewRecordInfo[]>(() => {
     try {
@@ -226,10 +236,11 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
     const titleTimer = setTimeout(() => setTitleVisible(true), 200);
     const buttonsTimer = setTimeout(() => setButtonsVisible(true), 1400);
 
-    // Clean up daily/weekly challenge flags
+    // Clean up daily/weekly/endless challenge flags
     return () => {
       delete (window as any).__dailyChallengeNewBest;
       delete (window as any).__weeklyChallengeNewBest;
+      delete (window as any).__endlessModeNewBest;
       clearTimeout(titleTimer);
       clearTimeout(buttonsTimer);
     };
@@ -350,6 +361,56 @@ export const DeathScreen: React.FC<DeathScreenProps> = ({
               }}
             >
               Seed #{weeklyInfo.seed} | {weeklyInfo.modifiers.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Endless Mode Header */}
+      {isEndlessMode && (
+        <div
+          style={{
+            opacity: titleVisible ? 1 : 0,
+            transition: "opacity 0.5s ease",
+            textAlign: "center",
+            marginBottom: "8px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "20px",
+              fontWeight: "bold",
+              color: "#cc44ff",
+              letterSpacing: "6px",
+              textTransform: "uppercase",
+              textShadow: "0 0 20px rgba(204, 68, 255, 0.5)",
+            }}
+          >
+            Endless Mode
+          </div>
+          <div
+            style={{
+              fontSize: "14px",
+              color: "rgba(204, 68, 255, 0.7)",
+              letterSpacing: "2px",
+              marginTop: "4px",
+            }}
+          >
+            Highest altitude: {Math.floor(endlessBestAltitude)}m
+          </div>
+          {isEndlessNewBest && (
+            <div
+              style={{
+                fontSize: "16px",
+                fontWeight: "bold",
+                color: "#ffd700",
+                letterSpacing: "3px",
+                textTransform: "uppercase",
+                marginTop: "6px",
+                textShadow: "0 0 16px rgba(255, 215, 0, 0.6)",
+              }}
+            >
+              New Record!
             </div>
           )}
         </div>

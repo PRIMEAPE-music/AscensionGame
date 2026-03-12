@@ -4,6 +4,7 @@ import { DailyChallenge } from "../systems/DailyChallenge";
 import { RUN_MODIFIERS } from "../config/RunModifiers";
 import { CLASSES } from "../config/ClassConfig";
 import type { ClassType } from "../config/ClassConfig";
+import { UnlockManager } from "../systems/UnlockManager";
 
 interface MainMenuProps {
   onStartRun: () => void;
@@ -18,6 +19,10 @@ interface MainMenuProps {
   onLeaderboard: () => void;
   onReplay?: () => void;
   onCoopStart?: () => void;
+  onTrainingRoom?: () => void;
+  onBossRush?: () => void;
+  onEndlessMode?: () => void;
+  onWeeklyChallenge?: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -45,6 +50,18 @@ const menuButtonStyle: React.CSSProperties = {
   textAlign: "center" as const,
 };
 
+/** Style for locked mode buttons (grayed out, not clickable). */
+const lockedButtonStyle: React.CSSProperties = {
+  ...menuButtonStyle,
+  width: "auto",
+  fontSize: "18px",
+  padding: "14px 36px",
+  cursor: "default",
+  background: "rgba(60, 60, 80, 0.15)",
+  borderColor: "rgba(100, 100, 120, 0.2)",
+  color: "rgba(120, 120, 140, 0.5)",
+};
+
 export const MainMenu: React.FC<MainMenuProps> = ({
   onStartRun,
   onResumeRun,
@@ -58,6 +75,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onLeaderboard,
   onReplay,
   onCoopStart,
+  onTrainingRoom,
+  onBossRush,
+  onEndlessMode,
+  onWeeklyChallenge,
 }) => {
   const [hoveredButton, setHoveredButton] = useState<string | null>(null);
   const [titleVisible, setTitleVisible] = useState(false);
@@ -68,6 +89,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const [totalRuns, setTotalRuns] = useState(0);
   const [highestAlt, setHighestAlt] = useState(0);
   const [totalPlayTime, setTotalPlayTime] = useState(0);
+
+  // Unlock states
+  const [trainingUnlocked, setTrainingUnlocked] = useState(false);
+  const [bossRushUnlocked, setBossRushUnlocked] = useState(false);
+  const [endlessUnlocked, setEndlessUnlocked] = useState(false);
+  const [weeklyUnlocked, setWeeklyUnlocked] = useState(false);
 
   useEffect(() => {
     const titleTimer = setTimeout(() => setTitleVisible(true), 100);
@@ -87,6 +114,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     } catch {
       // Stats not loaded yet
     }
+
+    // Check unlock states
+    setTrainingUnlocked(UnlockManager.isUnlocked("training_room"));
+    setBossRushUnlocked(UnlockManager.isUnlocked("boss_rush"));
+    setEndlessUnlocked(UnlockManager.isUnlocked("endless_mode"));
+    setWeeklyUnlocked(UnlockManager.isUnlocked("weekly_challenge"));
 
     return () => {
       clearTimeout(titleTimer);
@@ -142,6 +175,22 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         color: isHovered ? "#ffd700" : "#e0d0a0",
       };
     }
+    if (id === "coop") {
+      return {
+        ...menuButtonStyle,
+        background: isHovered
+          ? "rgba(100, 180, 255, 0.2)"
+          : "rgba(100, 180, 255, 0.08)",
+        borderColor: isHovered
+          ? "rgba(100, 180, 255, 0.5)"
+          : "rgba(100, 180, 255, 0.25)",
+        transform: isHovered ? "scale(1.04)" : "scale(1)",
+        boxShadow: isHovered
+          ? "0 0 25px rgba(100, 180, 255, 0.2), inset 0 0 15px rgba(100, 180, 255, 0.05)"
+          : "0 0 8px rgba(100, 180, 255, 0.08)",
+        color: isHovered ? "#aaddff" : "#70b0e0",
+      };
+    }
     if (id === "daily") {
       return {
         ...menuButtonStyle,
@@ -156,6 +205,26 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           ? "0 0 25px rgba(240, 160, 48, 0.2), inset 0 0 15px rgba(240, 160, 48, 0.05)"
           : "0 0 8px rgba(240, 160, 48, 0.08)",
         color: isHovered ? "#ffd080" : "#f0a030",
+      };
+    }
+    // Unlocked special mode buttons
+    if (id === "training" || id === "bossrush" || id === "endless" || id === "weekly") {
+      return {
+        ...menuButtonStyle,
+        width: "auto",
+        fontSize: "18px",
+        padding: "14px 36px",
+        background: isHovered
+          ? "rgba(180, 120, 255, 0.2)"
+          : "rgba(180, 120, 255, 0.06)",
+        borderColor: isHovered
+          ? "rgba(180, 120, 255, 0.5)"
+          : "rgba(180, 120, 255, 0.2)",
+        color: isHovered ? "#d4a0ff" : "rgba(180, 150, 220, 0.8)",
+        transform: isHovered ? "scale(1.03)" : "scale(1)",
+        boxShadow: isHovered
+          ? "0 0 20px rgba(180, 120, 255, 0.15)"
+          : "none",
       };
     }
     return {
@@ -176,6 +245,40 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         : "none",
     };
   };
+
+  /** Render a locked mode button with a lock icon and hint text. */
+  const renderLockedButton = (label: string, hint: string) => (
+    <div
+      style={{
+        ...lockedButtonStyle,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "4px",
+        position: "relative",
+      }}
+      title={hint}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <span style={{ fontSize: "14px", opacity: 0.5 }}>&#x1F512;</span>
+        <span>???</span>
+      </div>
+      <div
+        style={{
+          fontSize: "10px",
+          fontWeight: "normal",
+          letterSpacing: "1px",
+          opacity: 0.4,
+          textTransform: "none",
+        }}
+      >
+        {hint}
+      </div>
+    </div>
+  );
+
+  // Determine which unlockable modes exist (any that have a handler OR are locked)
+  const hasAnyUnlockableMode = true; // Always show the row, locked buttons act as progression teasers
 
   return (
     <div
@@ -318,30 +421,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           transition: "opacity 0.5s ease, transform 0.5s ease",
         }}
       >
-        {/* Row 1: Primary actions */}
-        {hasSavedRun && onResumeRun && (
-          <button
-            style={getButtonStyle("resume")}
-            onMouseEnter={() => setHoveredButton("resume")}
-            onMouseLeave={() => setHoveredButton(null)}
-            onClick={onResumeRun}
-          >
-            <div>Resume Run</div>
-            {savedRunInfo && (
-              <div
-                style={{
-                  fontSize: "12px",
-                  fontWeight: "normal",
-                  letterSpacing: "1px",
-                  marginTop: "4px",
-                  opacity: 0.7,
-                }}
-              >
-                {savedRunInfo.classType} at {Math.floor(savedRunInfo.altitude)}m
-              </div>
-            )}
-          </button>
-        )}
+        {/* Row 1: New Run alone, or New Run + Resume Run side by side */}
         <div style={{ display: "flex", gap: "16px", justifyContent: "center" }}>
           <button
             style={getButtonStyle("start")}
@@ -351,6 +431,32 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           >
             {hasSavedRun ? "New Run" : "Start Run"}
           </button>
+          {hasSavedRun && onResumeRun && (
+            <button
+              style={getButtonStyle("resume")}
+              onMouseEnter={() => setHoveredButton("resume")}
+              onMouseLeave={() => setHoveredButton(null)}
+              onClick={onResumeRun}
+            >
+              <div>Resume Run</div>
+              {savedRunInfo && (
+                <div
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: "normal",
+                    letterSpacing: "1px",
+                    marginTop: "4px",
+                    opacity: 0.7,
+                  }}
+                >
+                  {savedRunInfo.classType} at {Math.floor(savedRunInfo.altitude)}m
+                </div>
+              )}
+            </button>
+          )}
+        </div>
+        {/* Row 2: Local Co-Op + Challenge side by side */}
+        <div style={{ display: "flex", gap: "16px", justifyContent: "center" }}>
           {onCoopStart && (
             <button
               style={getButtonStyle("coop")}
@@ -361,30 +467,90 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               LOCAL CO-OP
             </button>
           )}
+          <button
+            style={getButtonStyle("daily")}
+            onMouseEnter={() => setHoveredButton("daily")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={onDailyChallenge}
+          >
+            <div>Challenge</div>
+            {dailyPreview && (
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: "normal",
+                  letterSpacing: "1px",
+                  marginTop: "4px",
+                  opacity: 0.7,
+                }}
+              >
+                {dailyPreview}
+              </div>
+            )}
+          </button>
         </div>
-        <button
-          style={getButtonStyle("daily")}
-          onMouseEnter={() => setHoveredButton("daily")}
-          onMouseLeave={() => setHoveredButton(null)}
-          onClick={onDailyChallenge}
-        >
-          <div>Daily Challenge</div>
-          {dailyPreview && (
-            <div
-              style={{
-                fontSize: "11px",
-                fontWeight: "normal",
-                letterSpacing: "1px",
-                marginTop: "4px",
-                opacity: 0.7,
-              }}
-            >
-              {dailyPreview}
-            </div>
-          )}
-        </button>
 
-        {/* Row 2: Secondary buttons in a 2-column grid */}
+        {/* Row 3: Unlockable game modes (shown as locked/unlocked) */}
+        {hasAnyUnlockableMode && (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "12px",
+            width: "100%",
+            maxWidth: "660px",
+          }}>
+            {trainingUnlocked ? (
+              <button
+                style={getButtonStyle("training")}
+                onMouseEnter={() => setHoveredButton("training")}
+                onMouseLeave={() => setHoveredButton(null)}
+                onClick={onTrainingRoom}
+              >
+                Training Room
+              </button>
+            ) : (
+              renderLockedButton("Training Room", "Kill your first enemy")
+            )}
+            {bossRushUnlocked ? (
+              <button
+                style={getButtonStyle("bossrush")}
+                onMouseEnter={() => setHoveredButton("bossrush")}
+                onMouseLeave={() => setHoveredButton(null)}
+                onClick={onBossRush}
+              >
+                Boss Rush
+              </button>
+            ) : (
+              renderLockedButton("Boss Rush", "Defeat your first boss")
+            )}
+            {endlessUnlocked ? (
+              <button
+                style={getButtonStyle("endless")}
+                onMouseEnter={() => setHoveredButton("endless")}
+                onMouseLeave={() => setHoveredButton(null)}
+                onClick={onEndlessMode}
+              >
+                Endless Mode
+              </button>
+            ) : (
+              renderLockedButton("Endless Mode", "Complete an ascension")
+            )}
+            {weeklyUnlocked ? (
+              <button
+                style={getButtonStyle("weekly")}
+                onMouseEnter={() => setHoveredButton("weekly")}
+                onMouseLeave={() => setHoveredButton(null)}
+                onClick={onWeeklyChallenge}
+              >
+                Weekly Challenge
+              </button>
+            ) : (
+              renderLockedButton("Weekly Challenge", "Defeat all 5 boss types")
+            )}
+          </div>
+        )}
+
+        {/* Row 4: Secondary buttons in a 2-column grid */}
         <div style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
