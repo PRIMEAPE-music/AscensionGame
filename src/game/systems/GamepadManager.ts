@@ -94,10 +94,16 @@ function createDefaultState(): GamepadState {
 }
 
 export const GamepadManager = {
-  state: createDefaultState(),      // Player 1's gamepad state (solo mode only)
-  _p2State: createDefaultState(),   // Player 2's gamepad state (co-op mode)
-  previousButtons: new Map<number, boolean>(),
-  _p2PreviousButtons: new Map<number, boolean>(),
+  // Per-gamepad state: supports up to 4 gamepads (index 0-3)
+  _states: [createDefaultState(), createDefaultState(), createDefaultState(), createDefaultState()] as GamepadState[],
+  _prevButtons: [new Map<number, boolean>(), new Map<number, boolean>(), new Map<number, boolean>(), new Map<number, boolean>()] as Map<number, boolean>[],
+
+  // Legacy aliases for backward compat
+  get state(): GamepadState { return this._states[0]; },
+  set state(v: GamepadState) { this._states[0] = v; },
+  get _p2State(): GamepadState { return this._states[1]; },
+  get previousButtons(): Map<number, boolean> { return this._prevButtons[0]; },
+  get _p2PreviousButtons(): Map<number, boolean> { return this._prevButtons[1]; },
 
   _updateStateFromGamepad(
     gp: Gamepad,
@@ -185,33 +191,45 @@ export const GamepadManager = {
 
   update(): void {
     const gamepads = navigator.getGamepads();
-    const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
-
-    if (!gp) {
-      this.state.connected = false;
-      this._p2State.connected = false;
-      return;
-    }
 
     if (CoopManager.isActive()) {
-      // In co-op: gamepad goes to Player 2 only
-      this.state = createDefaultState(); // P1 uses keyboard only
-      this._updateStateFromGamepad(gp, this._p2State, this._p2PreviousButtons);
+      // Co-op: each physical gamepad maps to a player slot.
+      // P1 uses keyboard primarily; first gamepad goes to P2, second to P1 (if present).
+      // Reset all states first
+      for (let i = 0; i < 4; i++) {
+        this._states[i] = createDefaultState();
+      }
+
+      // Collect connected gamepads in order
+      const connected: Gamepad[] = [];
+      for (let i = 0; i < gamepads.length; i++) {
+        if (gamepads[i]) connected.push(gamepads[i]!);
+      }
+
+      if (connected.length >= 2) {
+        // Two+ gamepads: first goes to P1 (index 0), second to P2 (index 1)
+        this._updateStateFromGamepad(connected[0], this._states[0], this._prevButtons[0]);
+        this._updateStateFromGamepad(connected[1], this._states[1], this._prevButtons[1]);
+      } else if (connected.length === 1) {
+        // One gamepad: goes to P2 (P1 uses keyboard)
+        this._updateStateFromGamepad(connected[0], this._states[1], this._prevButtons[1]);
+      }
     } else {
-      // Solo: gamepad goes to Player 1 (existing behavior)
-      this._updateStateFromGamepad(gp, this.state, this.previousButtons);
+      // Solo mode: first connected gamepad goes to Player 1
+      const gp = gamepads[0] || gamepads[1] || gamepads[2] || gamepads[3];
+      if (!gp) {
+        this._states[0] = createDefaultState();
+        return;
+      }
+      this._updateStateFromGamepad(gp, this._states[0], this._prevButtons[0]);
     }
   },
 
   getStateForPlayer(playerIndex: number): GamepadState {
-    if (playerIndex === 0) return this.state;
-    return this._p2State;
+    return this._states[Math.min(playerIndex, 3)];
   },
 
   isConnected(): boolean {
-    if (CoopManager.isActive()) {
-      return this.state.connected || this._p2State.connected;
-    }
-    return this.state.connected;
+    return this._states.some(s => s.connected);
   },
 };

@@ -425,11 +425,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   update(time: number, delta: number) {
     // Determine input source gating for co-op mode
-    // In co-op: P1 gets keyboard+touch+mouse, P2 gets gamepad exclusively
-    // In solo (playerIndex=0): all inputs are OR'd together (existing behavior)
+    // Each player gets their own gamepad via GamepadManager.getStateForPlayer(playerIndex)
+    // With 2 gamepads: P1 gets gamepad 0, P2 gets gamepad 1
+    // With 1 gamepad: P2 gets it, P1 uses keyboard only
+    // In solo: P1 gets everything (keyboard + first gamepad)
     const isCoopActive = CoopManager.isActive();
     const useKeyboard = this.playerIndex === 0; // P1 always has keyboard/touch/mouse
-    const useGamepad = !isCoopActive || this.playerIndex === 1; // Solo: yes; Coop P2: yes; Coop P1: no
+    const useGamepad = true; // Always — GamepadManager routes per playerIndex
     const useTouchMouse = this.playerIndex === 0; // Only P1
 
     // Gamepad state is polled once per frame in MainScene.update() before this call
