@@ -21,7 +21,7 @@ export const ANIMATIONS: AnimConfig[] = [
   {
     key: "monk_idle",
     textureKey: "monk_idle",
-    frameCount: 6,
+    frameCount: 8,
     frameRate: 6,
     repeat: -1,
   },

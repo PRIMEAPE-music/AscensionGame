@@ -11,7 +11,7 @@ import type { PlatformEffectsManager } from "./PlatformEffectsManager";
 import type { BossArenaManager } from "./BossArenaManager";
 import { CosmeticManager } from "./CosmeticManager";
 import { EndlessManager } from "./EndlessManager";
-import { SecretRoomManager } from "./SecretRoomManager";
+import { SecretRoomManager, type SecretRoomType } from "./SecretRoomManager";
 
 interface DifficultyParams {
   minGap: number;
@@ -227,10 +227,10 @@ export class LevelGenerator {
   private getDifficultyParams(altitude: number): DifficultyParams {
     const biomeKey = this.getBiomeKey(altitude);
 
-    // Lerp between anchor points: altitude 0 → 120/220, altitude 5000 → 200/400
+    // Lerp between anchor points: altitude 0 → 155/265, altitude 5000 → 230/440
     const t = Math.min(1, altitude / 5000);
-    let minGap = Math.round(120 + t * 80);
-    let maxGap = Math.round(220 + t * 180);
+    let minGap = Math.round(155 + t * 75);
+    let maxGap = Math.round(265 + t * 175);
 
     // Endless mode: scale platform gaps based on progression past boss #15
     if (EndlessManager.isActive()) {
@@ -949,12 +949,65 @@ export class LevelGenerator {
   /**
    * Creates a vertical wall pillar that players can wall-jump off.
    * These are thin, tall static bodies — not one-way, so they block from all sides.
+   * Skips creation if the pillar would overlap slopes, platforms, or other walls.
    */
   private createVerticalWall(x: number, y: number, height: number): void {
     if (!this.verticalWalls) return;
 
     // Clamp position to stay within playable area (away from boundary walls)
     x = Phaser.Math.Clamp(x, 80, WORLD.WIDTH - 80);
+
+    const halfW = VERTICAL_WALL.WIDTH / 2;
+    const wallTop = y - height;
+    const margin = 30;
+
+    // Check overlap with slopes
+    const slopeClearY = this.slopeManager.findClearY(x, y - height / 2, halfW, height / 2, margin);
+    if (slopeClearY !== null) return; // Overlaps a slope — skip
+
+    // Check overlap with existing static and moving platforms
+    const wallLeft = x - halfW - margin;
+    const wallRight = x + halfW + margin;
+    const wallTopM = wallTop - margin;
+    const wallBottomM = y + margin;
+
+    let overlaps = false;
+    const checkGroup = (group: Phaser.Physics.Arcade.Group | Phaser.Physics.Arcade.StaticGroup) => {
+      group.children.each((child: any) => {
+        if (!child.active || overlaps) return true;
+        const hw = child.displayWidth / 2;
+        const hh = child.displayHeight / 2;
+        if (
+          child.x + hw > wallLeft &&
+          child.x - hw < wallRight &&
+          child.y + hh > wallTopM &&
+          child.y - hh < wallBottomM
+        ) {
+          overlaps = true;
+        }
+        return true;
+      });
+    };
+    checkGroup(this.staticPlatforms);
+    checkGroup(this.movingPlatforms);
+    if (overlaps) return; // Overlaps a platform — skip
+
+    // Check overlap with existing vertical walls
+    this.verticalWalls.children.each((child: any) => {
+      if (!child.active || overlaps) return true;
+      const hw = child.displayWidth / 2;
+      const hh = child.displayHeight / 2;
+      if (
+        child.x + hw > wallLeft &&
+        child.x - hw < wallRight &&
+        child.y + hh > wallTopM &&
+        child.y - hh < wallBottomM
+      ) {
+        overlaps = true;
+      }
+      return true;
+    });
+    if (overlaps) return; // Overlaps another wall — skip
 
     const wall = this.scene.add.rectangle(
       x,
@@ -978,6 +1031,96 @@ export class LevelGenerator {
     highlight.setAlpha(0.4);
     highlight.setDepth(wall.depth + 1);
     wall.setData("highlight", highlight);
+  }
+
+  /**
+   * Creates a cracked wall that players can attack to reveal a secret room.
+   */
+  private createCrackedWall(x: number, y: number, height: number, secretType: SecretRoomType): void {
+    // Clamp position
+    x = Phaser.Math.Clamp(x, 80, WORLD.WIDTH - 80);
+
+    const wallWidth = VERTICAL_WALL.WIDTH + 10;
+    const wall = this.scene.add.rectangle(
+      x,
+      y - height / 2,
+      wallWidth,
+      height,
+      0x776655,
+    );
+    wall.setAlpha(0.9);
+    wall.setData("secretType", secretType);
+    wall.setData("cracked", true);
+
+    // Draw crack lines on top of the wall
+    const crackGfx = this.scene.add.graphics();
+    crackGfx.setDepth(wall.depth + 1);
+    crackGfx.lineStyle(2, 0x443322, 0.8);
+    const cx = x;
+    const cy = y - height / 2;
+    for (let i = 0; i < 5; i++) {
+      const sx = cx + Phaser.Math.Between(-wallWidth / 2, wallWidth / 2);
+      const sy = cy + Phaser.Math.Between(-height / 3, height / 3);
+      crackGfx.beginPath();
+      crackGfx.moveTo(sx, sy);
+      crackGfx.lineTo(sx + Phaser.Math.Between(-15, 15), sy + Phaser.Math.Between(-20, 20));
+      crackGfx.strokePath();
+    }
+    wall.setData("crackGfx", crackGfx);
+
+    // Add to vertical walls group for physics collision
+    if (this.verticalWalls) {
+      this.verticalWalls.add(wall);
+      (wall.body as Phaser.Physics.Arcade.StaticBody).updateFromGameObject();
+    } else {
+      this.scene.physics.add.existing(wall, true);
+    }
+
+    // Check for player attack overlap each frame to break the wall
+    const sceneAny = this.scene as any;
+    let broken = false;
+
+    const checkBreak = () => {
+      if (!wall.active || broken) {
+        this.scene.events.off("update", checkBreak);
+        return;
+      }
+      const players: any[] = [];
+      if (sceneAny.player?.active) players.push(sceneAny.player);
+      if (sceneAny.player2?.active) players.push(sceneAny.player2);
+
+      const wallBounds = new Phaser.Geom.Rectangle(
+        wall.x - wallWidth / 2 - 10,
+        wall.y - height / 2 - 10,
+        wallWidth + 20,
+        height + 20,
+      );
+
+      for (const p of players) {
+        if (!p.isAttacking || !p.attackHitbox) continue;
+        const hb = p.attackHitbox;
+        const hbBody = hb.body as Phaser.Physics.Arcade.Body;
+        if (!hbBody) continue;
+        const hbBounds = new Phaser.Geom.Rectangle(
+          hb.x - hbBody.halfWidth,
+          hb.y - hbBody.halfHeight,
+          hbBody.width,
+          hbBody.height,
+        );
+        if (Phaser.Geom.Rectangle.Overlaps(hbBounds, wallBounds)) {
+          broken = true;
+          this.scene.events.off("update", checkBreak);
+          crackGfx.destroy();
+          wall.destroy();
+          SecretRoomManager.generateRoom(
+            secretType, this.scene, x, y,
+            sceneAny.spawnManager, sceneAny.enemies, p,
+          );
+          return;
+        }
+      }
+    };
+    this.scene.events.on("update", checkBreak);
   }
 
   /** Special platform types that should not be affected by cosmetic theme tinting. */
@@ -1227,6 +1370,12 @@ export class LevelGenerator {
       // Register for visual effects (glow/shimmer)
       if (this.platformEffectsManager) {
         this.platformEffectsManager.registerPlatform(platform, type);
+      }
+
+      // Place demon shopkeeper sprite on shop platforms
+      if (type === PlatformType.SHOP && this.scene.textures.exists("demon_shop")) {
+        const shopkeeper = this.scene.add.image(x, y - 64, "demon_shop");
+        shopkeeper.setDepth(1);
       }
     }
 

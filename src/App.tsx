@@ -235,6 +235,15 @@ function App() {
     return unsub;
   }, []);
 
+  // Menu music: play Warmth on main menu, stop when leaving
+  useEffect(() => {
+    if (gameState === "MAIN_MENU") {
+      AudioManager.startMenuMusic();
+    } else {
+      AudioManager.stopMenuMusic();
+    }
+  }, [gameState]);
+
   const handleStartRun = useCallback(() => {
     setGameState("CLASS_SELECT");
   }, []);

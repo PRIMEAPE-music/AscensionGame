@@ -260,10 +260,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       setSynergies(data.synergies || []);
     });
 
-    const unsubWarning = EventBus.on("boss-warning", (data) => {
-      // Update distance indicator continuously
-      setBossDistance(Math.floor(data.distance));
-
+    const unsubWarning = EventBus.on("boss-warning", () => {
       // Show the big "BOSS APPROACHING" warning once (when first entering range)
       if (!showWarningFiredRef.current) {
         showWarningFiredRef.current = true;
@@ -299,6 +296,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
     const unsubProgress = EventBus.on("progress-update", (data) => {
       setProgressData(data);
+      // Calculate boss distance from progress data (throttled to every 500ms)
+      const dist = data.nextBossAltitude - data.altitude;
+      if (dist > 0 && dist <= 300) {
+        setBossDistance(Math.floor(dist));
+      }
     });
 
     const unsubFinish = EventBus.on("finishing-move", () => {
@@ -580,7 +582,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         <div
           style={{
             position: 'absolute',
-            top: 80,
+            top: 10,
             left: '50%',
             transform: 'translateX(-50%)',
             display: 'flex',
@@ -658,201 +660,116 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       )}
 
-      {/* Top Bar */}
+      {/* Inventory Row — sits above the bottom bar */}
       <div
         style={{
           position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          padding: "10px 16px",
-          pointerEvents: "none",
+          bottom: 52,
+          left: "50%",
+          transform: "translateX(-50%)",
+          pointerEvents: "auto",
           display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "3px",
           fontFamily: "monospace",
-          color: "white",
-          textShadow: hcTextShadow,
           zIndex: 10,
         }}
       >
-        {/* Left: Health */}
-        <div
-          style={{
-            ...activeGlassStyle,
-            padding: "12px 18px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "6px",
-            minWidth: "240px",
-          }}
-        >
-          <div style={{ fontSize: "18px", fontWeight: "bold", letterSpacing: "1px", color: themeColor }}>
-            HP: {health} / {maxHealth}
-          </div>
-
-          {/* Health Bar */}
-          <div
-            style={{
-              width: "210px",
-              height: "22px",
-              backgroundColor: "rgba(20, 0, 0, 0.6)",
-              border: "1px solid rgba(180, 40, 40, 0.5)",
-              borderRadius: "6px",
-              overflow: "hidden",
-              position: "relative",
-            }}
-          >
-            {/* Blood red gradient fill */}
-            <div
-              style={{
-                width: `${healthPercentage}%`,
-                height: "100%",
-                background: "linear-gradient(to right, #4a0000, #8b0000, #cc1a1a, #e63939)",
-                transition: "width 0.3s ease-in-out",
-                position: "relative",
-                borderRadius: "5px",
-                boxShadow: "inset 0 1px 2px rgba(255,150,150,0.3), inset 0 -2px 4px rgba(0,0,0,0.4)",
-              }}
-            >
-              {/* Specular highlight */}
-              <div
-                style={{
-                  position: "absolute",
-                  top: "2px",
-                  left: "4px",
-                  right: "4px",
-                  height: "5px",
-                  background: "linear-gradient(to right, rgba(255,180,180,0.05), rgba(255,180,180,0.25), rgba(255,180,180,0.05))",
-                  borderRadius: "3px",
-                }}
-              />
-              {/* Bubbles */}
-              {BUBBLES.map((b, i) => (
-                <div
-                  key={i}
-                  className="health-bubble"
-                  style={{
-                    left: b.left,
-                    bottom: 0,
-                    width: `${b.size}px`,
-                    height: `${b.size}px`,
-                    animationDuration: `${b.duration}s`,
-                    animationDelay: `${b.delay}s`,
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div style={{ fontSize: "13px", color: themeColor, opacity: 0.85 }}>
-            {className}
-          </div>
-        </div>
-
-        {/* Right: Altitude + Style + Boss Distance */}
-        <div
-          style={{
-            ...activeGlassStyle,
-            padding: "12px 18px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-            alignItems: "flex-end",
-            minWidth: "200px",
-          }}
-        >
-          <div style={{ fontSize: "18px", fontWeight: "bold", letterSpacing: "1px", color: themeColor }}>
-            {Math.floor(altitude)}m
-            {progressDistanceToBoss <= 300 && !bossActive && (
-              <span style={{ color: '#ff4444', fontSize: '12px' }}>
-                {' '}| BOSS IN {progressDistanceToBoss}m
-              </span>
-            )}
-          </div>
-
-          {/* Biome Indicator */}
-          <div style={{
-            fontSize: '10px',
-            color: getBiomeColor(currentBiome),
-            opacity: 0.7,
-            textTransform: 'uppercase',
-            letterSpacing: '2px',
-          }}>
-            {formatBiomeName(currentBiome)}
-          </div>
-
-          {/* Boss Distance Indicator */}
-          {bossDistance !== null && (
-            <div
-              style={{
-                fontSize: "14px",
-                fontWeight: "bold",
-                color: "#ff2222",
-                letterSpacing: "1px",
-                textShadow: "0 0 8px rgba(255, 34, 34, 0.6)",
-                animation: "hud-pulse 1.2s ease-in-out infinite",
-              }}
-            >
-              BOSS IN {bossDistance}m
-            </div>
-          )}
-
-          {/* Style Meter */}
+        <InventoryUI items={inventory} maxSlots={maxSlots} />
+        {synergies.length > 0 && (
           <div
             style={{
               display: "flex",
-              alignItems: "center",
-              gap: "8px",
+              gap: "10px",
+              flexWrap: "wrap",
+              justifyContent: "center",
             }}
           >
-            <div
-              style={{
-                fontSize: "24px",
-                fontWeight: "bold",
-                color: tierColor,
-                minWidth: "24px",
-                textAlign: "center",
-              }}
-            >
-              {styleTier}
-            </div>
-            <div
-              style={{
-                width: "110px",
-                height: "14px",
-                backgroundColor: "rgba(0,0,0,0.4)",
-                border: `1px solid ${tierColor}44`,
-                borderRadius: "4px",
-                overflow: "hidden",
-              }}
-            >
+            {synergies.map((s, i) => (
               <div
+                key={i}
                 style={{
-                  width: `${styleMeter}%`,
-                  height: "100%",
-                  backgroundColor: tierColor,
-                  transition: "width 0.15s ease-out, background-color 0.3s",
-                  boxShadow: `0 0 8px ${tierColor}66`,
+                  fontSize: "10px",
+                  fontWeight: "bold",
+                  color: themeColor,
+                  textShadow: `0 0 6px ${themeColor}66`,
+                  letterSpacing: "0.5px",
                 }}
-              />
-            </div>
+              >
+                {s.count}x {s.rarity} +{Math.round(s.bonus * 100)}%
+              </div>
+            ))}
           </div>
-
-          {/* Essence Counter */}
+        )}
+        {activeThemedSynergies.length > 0 && (
           <div
             style={{
               display: "flex",
-              alignItems: "center",
               gap: "6px",
-              marginTop: "2px",
+              flexWrap: "wrap",
+              justifyContent: "center",
+            }}
+          >
+            {activeThemedSynergies.map((s, i) => (
+              <div
+                key={i}
+                style={{
+                  fontSize: "9px",
+                  fontWeight: "bold",
+                  color: s.color,
+                  textShadow: `0 0 8px ${s.color}88`,
+                  letterSpacing: "1px",
+                  textTransform: "uppercase",
+                  padding: "1px 5px",
+                  border: `1px solid ${s.color}44`,
+                  borderRadius: "3px",
+                  background: `${s.color}11`,
+                }}
+              >
+                {s.name}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ═══════════ BOTTOM BAR ═══════════ */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          width: "100%",
+          height: "46px",
+          background: "rgba(0, 0, 0, 0.55)",
+          borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "monospace",
+          color: "white",
+          textShadow: hcTextShadow,
+          pointerEvents: "none",
+          zIndex: 10,
+          padding: "0 16px",
+        }}
+      >
+        {/* Left section: Essence + Class ability */}
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", flex: "1 1 0", justifyContent: "flex-start" }}>
+          {/* Essence */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
               transform: essenceFlash ? "scale(1.15)" : "scale(1)",
               transition: "transform 0.2s ease-out",
             }}
           >
             <span
               style={{
-                fontSize: "16px",
+                fontSize: "14px",
                 color: "#cc44ff",
                 textShadow: essenceFlash
                   ? "0 0 12px rgba(204, 68, 255, 0.8)"
@@ -864,7 +781,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </span>
             <span
               style={{
-                fontSize: "16px",
+                fontSize: "14px",
                 fontWeight: "bold",
                 color: essenceFlash ? "#dd66ff" : "#cc44ff",
                 transition: "color 0.2s ease-out",
@@ -874,19 +791,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </span>
           </div>
 
+          {/* Divider */}
+          <div style={{ width: "1px", height: "24px", background: "rgba(255,255,255,0.1)" }} />
+
           {/* Monk Flow Meter */}
           {className === "Monk" && flowMaxFlow > 0 && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                marginTop: "4px",
-              }}
-            >
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <div
                 style={{
-                  fontSize: "12px",
+                  fontSize: "10px",
                   color:
                     flowMeter >= 100
                       ? "#ff4444"
@@ -894,21 +807,18 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                         ? "#ffaa00"
                         : flowMeter >= 50
                           ? "#ffcc44"
-                          : flowMeter >= 25
-                            ? "#ffdd88"
-                            : "#888",
+                          : "#888",
                   fontWeight: "bold",
-                  minWidth: "36px",
-                  textAlign: "right",
+                  letterSpacing: "1px",
                 }}
               >
                 FLOW
               </div>
               <div
                 style={{
-                  width: "110px",
-                  height: "10px",
-                  backgroundColor: "rgba(0,0,0,0.4)",
+                  width: "80px",
+                  height: "8px",
+                  backgroundColor: "rgba(0,0,0,0.5)",
                   border: "1px solid rgba(255, 170, 0, 0.3)",
                   borderRadius: "3px",
                   overflow: "hidden",
@@ -929,42 +839,29 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                     transition: "width 0.15s ease-out",
                     boxShadow:
                       flowMeter >= 75
-                        ? "0 0 8px rgba(255, 170, 0, 0.6)"
+                        ? "0 0 6px rgba(255, 170, 0, 0.6)"
                         : "none",
+                    borderRadius: "2px",
                   }}
                 />
               </div>
             </div>
           )}
 
-          {/* Paladin Shield Guard Indicator */}
+          {/* Paladin Shield Guard */}
           {className === "Paladin" && isShieldGuarding && (
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "6px",
-                marginTop: "4px",
+                gap: "4px",
                 animation: "hud-pulse 1.2s ease-in-out infinite",
               }}
             >
-              <span
-                style={{
-                  fontSize: "18px",
-                  color: "#4488ff",
-                  textShadow: "0 0 10px rgba(68, 136, 255, 0.8)",
-                }}
-              >
+              <span style={{ fontSize: "14px", color: "#4488ff", textShadow: "0 0 8px rgba(68, 136, 255, 0.8)" }}>
                 &#9711;
               </span>
-              <span
-                style={{
-                  fontSize: "12px",
-                  fontWeight: "bold",
-                  color: "#4488ff",
-                  letterSpacing: "1px",
-                }}
-              >
+              <span style={{ fontSize: "10px", fontWeight: "bold", color: "#4488ff", letterSpacing: "1px" }}>
                 SHIELD
               </span>
             </div>
@@ -972,30 +869,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
           {/* Priest Sacred Ground Cooldown */}
           {className === "Priest" && sacredGroundCooldown.remaining > 0 && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                marginTop: "4px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: "#ffdd88",
-                  fontWeight: "bold",
-                  minWidth: "36px",
-                  textAlign: "right",
-                }}
-              >
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <div style={{ fontSize: "10px", color: "#ffdd88", fontWeight: "bold", letterSpacing: "1px" }}>
                 HOLY
               </div>
               <div
                 style={{
-                  width: "110px",
-                  height: "10px",
-                  backgroundColor: "rgba(0,0,0,0.4)",
+                  width: "80px",
+                  height: "8px",
+                  backgroundColor: "rgba(0,0,0,0.5)",
                   border: "1px solid rgba(255, 221, 136, 0.3)",
                   borderRadius: "3px",
                   overflow: "hidden",
@@ -1005,110 +887,190 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   style={{
                     width: `${((sacredGroundCooldown.total - sacredGroundCooldown.remaining) / sacredGroundCooldown.total) * 100}%`,
                     height: "100%",
-                    background:
-                      "linear-gradient(to right, #886600, #ffdd88)",
+                    background: "linear-gradient(to right, #886600, #ffdd88)",
                     transition: "width 0.15s ease-out",
+                    borderRadius: "2px",
                   }}
                 />
               </div>
-              <span
-                style={{
-                  fontSize: "11px",
-                  color: "#aaa",
-                }}
-              >
+              <span style={{ fontSize: "10px", color: "#aaa" }}>
                 {Math.ceil(sacredGroundCooldown.remaining / 1000)}s
               </span>
             </div>
           )}
         </div>
-      </div>
 
-      {/* Bottom Bar */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: 0,
-          left: 0,
-          width: "100%",
-          padding: "10px 16px",
-          pointerEvents: "none",
-          display: "flex",
-          justifyContent: "center",
-          fontFamily: "monospace",
-          color: "white",
-          textShadow: hcTextShadow,
-          zIndex: 10,
-        }}
-      >
-        <div
-          style={{
-            ...activeGlassStyle,
-            padding: "8px 18px",
-            pointerEvents: "auto",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "4px",
-          }}
-        >
-          <InventoryUI items={inventory} maxSlots={maxSlots} />
-          {synergies.length > 0 && (
+        {/* Center section: HP (left) + Speed (right) */}
+        <div style={{ display: "flex", alignItems: "center", gap: "24px", flexShrink: 0 }}>
+          {/* HP */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ fontSize: "11px", color: themeColor, fontWeight: "bold", letterSpacing: "1px" }}>
+              {className}
+            </div>
             <div
               style={{
-                display: "flex",
-                gap: "10px",
-                flexWrap: "wrap",
-                justifyContent: "center",
+                width: "140px",
+                height: "16px",
+                backgroundColor: "rgba(20, 0, 0, 0.6)",
+                border: "1px solid rgba(180, 40, 40, 0.5)",
+                borderRadius: "4px",
+                overflow: "hidden",
+                position: "relative",
               }}
             >
-              {synergies.map((s, i) => (
+              <div
+                style={{
+                  width: `${healthPercentage}%`,
+                  height: "100%",
+                  background: "linear-gradient(to right, #4a0000, #8b0000, #cc1a1a, #e63939)",
+                  transition: "width 0.3s ease-in-out",
+                  borderRadius: "3px",
+                  boxShadow: "inset 0 1px 2px rgba(255,150,150,0.3), inset 0 -2px 4px rgba(0,0,0,0.4)",
+                  position: "relative",
+                }}
+              >
                 <div
-                  key={i}
                   style={{
-                    fontSize: "11px",
-                    fontWeight: "bold",
-                    color: themeColor,
-                    textShadow: `0 0 6px ${themeColor}66`,
-                    letterSpacing: "0.5px",
+                    position: "absolute",
+                    top: "1px",
+                    left: "3px",
+                    right: "3px",
+                    height: "4px",
+                    background: "linear-gradient(to right, rgba(255,180,180,0.05), rgba(255,180,180,0.25), rgba(255,180,180,0.05))",
+                    borderRadius: "2px",
                   }}
-                >
-                  {s.count}x {s.rarity} +{Math.round(s.bonus * 100)}%
-                </div>
-              ))}
+                />
+                {BUBBLES.slice(0, 5).map((b, i) => (
+                  <div
+                    key={i}
+                    className="health-bubble"
+                    style={{
+                      left: b.left,
+                      bottom: 0,
+                      width: `${b.size}px`,
+                      height: `${b.size}px`,
+                      animationDuration: `${b.duration}s`,
+                      animationDelay: `${b.delay}s`,
+                    }}
+                  />
+                ))}
+              </div>
             </div>
-          )}
-          {activeThemedSynergies.length > 0 && (
+            <div style={{ fontSize: "13px", fontWeight: "bold", color: themeColor, minWidth: "60px" }}>
+              {health}/{maxHealth}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: "1px", height: "28px", background: "rgba(255,255,255,0.12)" }} />
+
+          {/* Speed */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={{ fontSize: "10px", color: "#888", fontWeight: "bold", letterSpacing: "1px" }}>
+              SPD
+            </div>
             <div
               style={{
-                display: "flex",
-                gap: "8px",
-                flexWrap: "wrap",
-                justifyContent: "center",
-                marginTop: "2px",
+                width: "80px",
+                height: "8px",
+                background: "rgba(0,0,0,0.5)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                borderRadius: "4px",
+                overflow: "hidden",
               }}
             >
-              {activeThemedSynergies.map((s, i) => (
-                <div
-                  key={i}
-                  style={{
-                    fontSize: "10px",
-                    fontWeight: "bold",
-                    color: s.color,
-                    textShadow: `0 0 8px ${s.color}88`,
-                    letterSpacing: "1px",
-                    textTransform: "uppercase",
-                    padding: "1px 6px",
-                    border: `1px solid ${s.color}44`,
-                    borderRadius: "4px",
-                    background: `${s.color}11`,
-                  }}
-                >
-                  {s.name}
-                </div>
-              ))}
+              <div
+                style={{
+                  width: `${Math.min(100, (speed / maxSpeed) * 100)}%`,
+                  height: "100%",
+                  background: getSpeedColor(speed, maxSpeed),
+                  transition: "width 0.1s, background 0.1s",
+                  borderRadius: "3px",
+                }}
+              />
             </div>
-          )}
+            <div
+              style={{
+                fontSize: "13px",
+                fontWeight: "bold",
+                color: getSpeedColor(speed, maxSpeed),
+                minWidth: "36px",
+                textAlign: "right",
+              }}
+            >
+              {speed}
+            </div>
+          </div>
+        </div>
+
+        {/* Right section: Style + Altitude/Biome */}
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", flex: "1 1 0", justifyContent: "flex-end" }}>
+          {/* Style Meter */}
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <div
+              style={{
+                fontSize: "18px",
+                fontWeight: "bold",
+                color: tierColor,
+                lineHeight: 1,
+              }}
+            >
+              {styleTier}
+            </div>
+            <div
+              style={{
+                width: "70px",
+                height: "8px",
+                backgroundColor: "rgba(0,0,0,0.5)",
+                border: `1px solid ${tierColor}44`,
+                borderRadius: "3px",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${styleMeter}%`,
+                  height: "100%",
+                  backgroundColor: tierColor,
+                  transition: "width 0.15s ease-out, background-color 0.3s",
+                  boxShadow: `0 0 6px ${tierColor}66`,
+                  borderRadius: "2px",
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: "1px", height: "24px", background: "rgba(255,255,255,0.1)" }} />
+
+          {/* Altitude + Biome */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "1px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
+              <span style={{ fontSize: "14px", fontWeight: "bold", color: themeColor }}>
+                {Math.floor(altitude)}m
+              </span>
+              {progressDistanceToBoss <= 300 && !bossActive && (
+                <span style={{
+                  fontSize: "10px",
+                  fontWeight: "bold",
+                  color: "#ff4444",
+                  textShadow: "0 0 6px rgba(255, 68, 68, 0.5)",
+                  animation: "hud-pulse 1.2s ease-in-out infinite",
+                }}>
+                  BOSS {progressDistanceToBoss}m
+                </span>
+              )}
+            </div>
+            <div style={{
+              fontSize: "9px",
+              color: getBiomeColor(currentBiome),
+              opacity: 0.7,
+              textTransform: "uppercase",
+              letterSpacing: "1.5px",
+            }}>
+              {formatBiomeName(currentBiome)}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1266,48 +1228,6 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             textShadow: progressDistanceToBoss <= 300 ? '0 0 6px rgba(255, 68, 68, 0.6)' : 'none',
           }}>
             {progressDistanceToBoss}m
-          </div>
-        </div>
-      )}
-
-      {/* Speed Meter */}
-      {GameSettings.get().showSpeedMeter && (
-        <div style={{
-          position: 'absolute',
-          bottom: '20px',
-          left: '20px',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '4px',
-          pointerEvents: 'none',
-          fontFamily: 'monospace',
-          zIndex: 10,
-        }}>
-          <div style={{ fontSize: '11px', color: '#888' }}>SPEED</div>
-          <div style={{
-            width: '60px',
-            height: '8px',
-            background: 'rgba(0,0,0,0.5)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: '4px',
-            overflow: 'hidden',
-          }}>
-            <div style={{
-              width: `${Math.min(100, (speed / maxSpeed) * 100)}%`,
-              height: '100%',
-              background: getSpeedColor(speed, maxSpeed),
-              transition: 'width 0.1s, background 0.1s',
-              borderRadius: '4px',
-            }} />
-          </div>
-          <div style={{
-            fontSize: '14px',
-            fontWeight: 'bold',
-            color: getSpeedColor(speed, maxSpeed),
-            textShadow: '0 0 4px rgba(0,0,0,0.8)',
-          }}>
-            {speed}
           </div>
         </div>
       )}

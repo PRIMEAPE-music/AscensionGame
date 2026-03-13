@@ -47,6 +47,8 @@ const AchievementToast: React.FC<{
 }> = ({ achievement, index, onDone }) => {
   const [visible, setVisible] = useState(false);
   const [exiting, setExiting] = useState(false);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
   useEffect(() => {
     ensureShimmerStyle();
@@ -62,7 +64,7 @@ const AchievementToast: React.FC<{
 
     // Call onDone after exit animation completes
     const doneTimer = setTimeout(() => {
-      onDone(achievement.id);
+      onDoneRef.current(achievement.id);
     }, DISPLAY_DURATION + ANIMATION_DURATION);
 
     return () => {
@@ -70,7 +72,7 @@ const AchievementToast: React.FC<{
       clearTimeout(exitTimer);
       clearTimeout(doneTimer);
     };
-  }, [achievement.id, onDone]);
+  }, [achievement.id]);
 
   const topOffset = 20 + index * STAGGER_OFFSET;
 

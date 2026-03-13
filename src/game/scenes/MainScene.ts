@@ -142,6 +142,9 @@ export class MainScene extends Phaser.Scene {
         },
       );
     }
+
+    // Load demon shop sprite
+    this.load.image("demon_shop", "assets/sprites/demon_shop.png");
   }
 
   create() {

@@ -885,11 +885,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.wasAirborne = airborne;
 
-    // Run sprite faces opposite direction from the other sprites, so invert flip
-    if (anim === "monk_run") {
-      this.setFlipX(!this.flipX);
-    }
-
     // Only call play if animation changed (avoids restarting loops)
     if (this.currentAnim !== anim) {
       this.currentAnim = anim;

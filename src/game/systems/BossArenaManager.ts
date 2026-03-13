@@ -277,12 +277,14 @@ export class BossArenaManager {
   }
 
   update(altitude: number, playerY: number): void {
-    // Emit boss warning continuously when player is within 300m
+    // Emit boss warning once when player enters 300m range
     if (
       !this.isBossFight &&
+      !this.warningEmitted &&
       altitude >= this.nextBossAltitude - 300 &&
       altitude < this.nextBossAltitude
     ) {
+      this.warningEmitted = true;
       EventBus.emit("boss-warning", {
         distance: this.nextBossAltitude - altitude,
       });

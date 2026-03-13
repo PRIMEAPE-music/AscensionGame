@@ -10,7 +10,8 @@ interface AudioSettings {
 }
 
 // Gameplay track playlist (shuffled per run)
-const GAMEPLAY_TRACKS = ['Warmth', 'gtfu', 'DRIFTIN', 'Bright', 'VIBRATIONS'];
+const GAMEPLAY_TRACKS = ['gtfu', 'DRIFTIN', 'Bright', 'VIBRATIONS'];
+const MENU_TRACK = 'Warmth';
 const BOSS_TRACK = 'GRAYHORSE';
 const DEATH_TRACK = 'SPIRITS';
 const MUSIC_PATH = 'assets/music/';
@@ -52,6 +53,10 @@ export const AudioManager = {
     _bossGain: null as GainNode | null,
     _deathTrack: null as HTMLAudioElement | null,
     _deathSource: null as MediaElementAudioSourceNode | null,
+    _menuTrack: null as HTMLAudioElement | null,
+    _menuSource: null as MediaElementAudioSourceNode | null,
+    _menuGain: null as GainNode | null,
+    _menuPlaying: false,
 
     init(): void {
         if (this.ctx) return;
@@ -310,9 +315,126 @@ export const AudioManager = {
 
     // ============ MP3 MUSIC PLAYBACK ============
 
+    /** Stop ALL music — gameplay, boss, death, and menu */
+    stopAllMusic(): void {
+        this._musicPlaying = false;
+        this._inBoss = false;
+        this._menuPlaying = false;
+        this._stopFade();
+        this._destroyTrack('_currentTrack', '_currentSource', '_trackGain');
+        this._destroyTrack('_bossTrack', '_bossSource', '_bossGain');
+        this._cleanupDeathTrack();
+        this._cleanupMenuTrack();
+    },
+
+    _cleanupDeathTrack(): void {
+        if (this._deathTrack) {
+            this._deathTrack.pause();
+            this._deathTrack.src = '';
+            this._deathTrack = null;
+        }
+        if (this._deathSource) {
+            try { this._deathSource.disconnect(); } catch { /* already disconnected */ }
+            this._deathSource = null;
+        }
+    },
+
+    _cleanupMenuTrack(): void {
+        if (this._menuTrack) {
+            this._menuTrack.pause();
+            this._menuTrack.src = '';
+            this._menuTrack = null;
+        }
+        if (this._menuSource) {
+            try { this._menuSource.disconnect(); } catch { /* already disconnected */ }
+            this._menuSource = null;
+        }
+        if (this._menuGain) {
+            try { this._menuGain.disconnect(); } catch { /* already disconnected */ }
+            this._menuGain = null;
+        }
+    },
+
+    _menuGestureCleanup: null as (() => void) | null,
+
+    /** Play the menu track (Warmth) on loop */
+    startMenuMusic(): void {
+        this.init();
+        this.resume();
+        if (this._menuPlaying) return;
+
+        // Stop everything else first
+        this.stopAllMusic();
+        this._menuPlaying = true;
+
+        this._tryPlayMenuTrack();
+    },
+
+    _tryPlayMenuTrack(): void {
+        if (!this._menuPlaying || !this.ctx || !this.musicGain) return;
+
+        // If AudioContext is suspended, wait for a user gesture to resume it
+        if (this.ctx.state === 'suspended') {
+            this._removeMenuGestureListener();
+            const handler = () => {
+                this._removeMenuGestureListener();
+                if (this._menuPlaying) {
+                    this.resume();
+                    this._tryPlayMenuTrack();
+                }
+            };
+            this._menuGestureCleanup = () => {
+                document.removeEventListener('click', handler);
+                document.removeEventListener('keydown', handler);
+            };
+            document.addEventListener('click', handler, { once: true });
+            document.addEventListener('keydown', handler, { once: true });
+            return;
+        }
+
+        // Clean up any leftover menu audio before creating new
+        this._cleanupMenuTrack();
+
+        const audio = new Audio(`${MUSIC_PATH}${MENU_TRACK}.mp3`);
+        audio.loop = true;
+        audio.preload = 'auto';
+
+        const menuGain = this.ctx.createGain();
+        menuGain.gain.value = 1.0;
+        menuGain.connect(this.musicGain!);
+
+        const source = this.ctx.createMediaElementSource(audio);
+        source.connect(menuGain);
+
+        this._menuTrack = audio;
+        this._menuSource = source;
+        this._menuGain = menuGain;
+
+        audio.play().catch(() => { /* autoplay blocked — gesture listener handles retry */ });
+    },
+
+    _removeMenuGestureListener(): void {
+        if (this._menuGestureCleanup) {
+            this._menuGestureCleanup();
+            this._menuGestureCleanup = null;
+        }
+    },
+
+    /** Stop the menu track */
+    stopMenuMusic(): void {
+        this._menuPlaying = false;
+        this._removeMenuGestureListener();
+        this._cleanupMenuTrack();
+    },
+
     /** Shuffle the playlist and start playing from the first track */
     startMusic(): void {
         if (this._musicPlaying) return;
+        // Don't override death music (scene restarts after death)
+        if (this._deathTrack) return;
+
+        // Stop any other music (menu) before starting gameplay
+        this.stopAllMusic();
         this._musicPlaying = true;
 
         // Shuffle playlist for this run
@@ -328,20 +450,7 @@ export const AudioManager = {
     },
 
     stopMusic(): void {
-        this._musicPlaying = false;
-        this._inBoss = false;
-        this._stopFade();
-        this._destroyTrack('_currentTrack', '_currentSource', '_trackGain');
-        this._destroyTrack('_bossTrack', '_bossSource', '_bossGain');
-        if (this._deathTrack) {
-            this._deathTrack.pause();
-            this._deathTrack.src = '';
-            this._deathTrack = null;
-        }
-        if (this._deathSource) {
-            try { this._deathSource.disconnect(); } catch { /* already disconnected */ }
-            this._deathSource = null;
-        }
+        this.stopAllMusic();
     },
 
     _destroyTrack(
@@ -508,12 +617,8 @@ export const AudioManager = {
     playDeathMusic(): void {
         if (!this.ctx || !this.musicGain) return;
 
-        // Fully stop all current music (crossfades, gameplay, boss)
-        this._musicPlaying = false;
-        this._inBoss = false;
-        this._stopFade();
-        this._destroyTrack('_currentTrack', '_currentSource', '_trackGain');
-        this._destroyTrack('_bossTrack', '_bossSource', '_bossGain');
+        // Fully stop all current music (gameplay, boss, menu, previous death)
+        this.stopAllMusic();
 
         const audio = new Audio(`${MUSIC_PATH}${DEATH_TRACK}.mp3`);
         audio.loop = false;
