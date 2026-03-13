@@ -19,6 +19,7 @@
 // Left Stick axes[1]: Vertical (-1 to 1)
 
 import { CoopManager } from './CoopManager';
+import { RemoteInputAdapter } from './RemoteInputAdapter';
 
 export interface GamepadState {
   connected: boolean;
@@ -226,6 +227,10 @@ export const GamepadManager = {
   },
 
   getStateForPlayer(playerIndex: number): GamepadState {
+    // Online co-op host: player 2 input comes from the remote guest
+    if (playerIndex === 1 && CoopManager.isActive() && CoopManager.isOnline()) {
+      return RemoteInputAdapter.getState();
+    }
     return this._states[Math.min(playerIndex, 3)];
   },
 

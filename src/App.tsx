@@ -57,6 +57,16 @@ import { RunHistory } from "./game/systems/RunHistory";
 import { ItemCodex } from "./game/systems/ItemCodex";
 import { RunHistoryUI } from "./game/ui/RunHistoryUI";
 import { ItemCodexUI } from "./game/ui/ItemCodexUI";
+import { AscensionTree } from "./game/systems/AscensionTree";
+import { ClassMastery } from "./game/systems/ClassMastery";
+import { AscensionTreeUI } from "./game/ui/AscensionTreeUI";
+import { ClassMasteryUI } from "./game/ui/ClassMasteryUI";
+import { ExtrasScreen } from "./game/ui/ExtrasScreen";
+import { OnlineLobby } from "./game/ui/OnlineLobby";
+import { ConnectionStatus } from "./game/ui/ConnectionStatus";
+import { OnlineCoopManager } from "./game/systems/OnlineCoopManager";
+import { NetworkManager } from "./game/systems/NetworkManager";
+import { GuestScene } from "./game/scenes/GuestScene";
 import "./App.css";
 
 type GameState = "MAIN_MENU" | "CLASS_SELECT" | "EQUIP" | "MODIFIERS" | "PLAYING" | "DEATH" | "TRAINING" | "BOSS_RUSH";
@@ -73,7 +83,7 @@ function App() {
   const gameRef = useRef<Phaser.Game | null>(null);
   const bossRushGameRef = useRef<Phaser.Game | null>(null);
   const [gameState, setGameState] = useState<GameState>("MAIN_MENU");
-  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics" | "daily" | "leaderboard" | "replay" | "run_history" | "item_codex">("main");
+  const [menuScreen, setMenuScreen] = useState<"main" | "stats" | "collection" | "settings" | "cosmetics" | "daily" | "leaderboard" | "replay" | "run_history" | "item_codex" | "ascension_tree" | "class_mastery" | "extras" | "online_lobby">("main");
   const [replayPlaying, setReplayPlaying] = useState(false);
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
   const [isPaused, setIsPaused] = useState(false);
@@ -117,6 +127,10 @@ function App() {
   const [hasSavedRun, setHasSavedRun] = useState(false);
   const [savedRunInfo, setSavedRunInfo] = useState<{ classType: string; altitude: number; timestamp: number } | null>(null);
   const [isCoopMode, setIsCoopMode] = useState(false);
+  const [isOnlineMode, setIsOnlineMode] = useState(false);
+  const [onlineLatency, setOnlineLatency] = useState(0);
+  const [onlineConnectionState, setOnlineConnectionState] = useState("idle");
+  const [onlineRoomCode, setOnlineRoomCode] = useState("");
   const [coopSelectingPlayer, setCoopSelectingPlayer] = useState<1 | 2>(1);
   const [selectedClass2, setSelectedClass2] = useState<ClassType | null>(null);
   const [health2, setHealth2] = useState(3);
@@ -147,6 +161,8 @@ function App() {
     UnlockManager.load();
     RunHistory.load();
     ItemCodex.load();
+    AscensionTree.load();
+    ClassMastery.load();
 
     // Check for saved run
     setHasSavedRun(RunSaveManager.hasSave());
@@ -396,6 +412,57 @@ function App() {
     setMenuScreen("item_codex");
   }, []);
 
+  const handleShowAscensionTree = useCallback(() => {
+    setMenuScreen("ascension_tree");
+  }, []);
+
+  const handleShowClassMastery = useCallback(() => {
+    setMenuScreen("class_mastery");
+  }, []);
+
+  const handleShowExtras = useCallback(() => {
+    setMenuScreen("extras");
+  }, []);
+
+  const handleOnlineCoopStart = useCallback(() => {
+    setMenuScreen("online_lobby");
+  }, []);
+
+  const handleOnlineGameStart = useCallback((role: 'host' | 'guest', roomCode: string, hostClass: string, guestClass: string) => {
+    setIsOnlineMode(true);
+    setOnlineRoomCode(roomCode);
+
+    if (role === 'host') {
+      // Host: set up classes and start the game like local co-op
+      setSelectedClass(hostClass as ClassType);
+      (window as any).__selectedClass = hostClass;
+      setSelectedClass2(guestClass as ClassType);
+      setIsCoopMode(true);
+      // CoopManager.activateOnline is called by OnlineCoopManager.startGame
+      setGameState("EQUIP");
+    } else {
+      // Guest: will render GuestScene instead of MainScene
+      setSelectedClass(guestClass as ClassType);
+      (window as any).__selectedClass = guestClass;
+      (window as any).__isOnlineGuest = true;
+      setIsCoopMode(true);
+      setGameState("PLAYING");
+      startTimeRef.current = Date.now();
+      elapsedTimeRef.current = 0;
+    }
+    setMenuScreen("main");
+  }, []);
+
+  // Update online connection state for the status indicator
+  useEffect(() => {
+    if (!isOnlineMode) return;
+    const interval = setInterval(() => {
+      setOnlineLatency(NetworkManager.getLatency());
+      setOnlineConnectionState(NetworkManager.getState());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isOnlineMode]);
+
   const handleBackToMenu = useCallback(() => {
     setMenuScreen("main");
   }, []);
@@ -518,10 +585,16 @@ function App() {
     setHealth2(3);
     setMaxHealth2(3);
     CoopManager.deactivate();
+    if (isOnlineMode) {
+      OnlineCoopManager.disconnect();
+      setIsOnlineMode(false);
+      setOnlineRoomCode("");
+    }
+    delete (window as any).__isOnlineGuest;
     setGameState("MAIN_MENU");
     setMenuScreen("main");
     setSelectedClass(null);
-  }, []);
+  }, [isOnlineMode]);
 
   const handleQuit = useCallback(() => {
     AudioManager.stopMusic();
@@ -580,10 +653,16 @@ function App() {
     setHealth2(3);
     setMaxHealth2(3);
     CoopManager.deactivate();
+    if (isOnlineMode) {
+      OnlineCoopManager.disconnect();
+      setIsOnlineMode(false);
+      setOnlineRoomCode("");
+    }
+    delete (window as any).__isOnlineGuest;
     setGameState("MAIN_MENU");
     setMenuScreen("main");
     setSelectedClass(null);
-  }, [gameState]);
+  }, [gameState, isOnlineMode]);
 
   // Retry from death screen - restart with the same class
   const handleDeathRetry = useCallback(() => {
@@ -768,7 +847,7 @@ function App() {
           debug: false,
         },
       },
-      scene: [MainScene],
+      scene: (window as any).__isOnlineGuest ? [GuestScene] : [MainScene],
       scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -778,7 +857,24 @@ function App() {
     gameRef.current = new Phaser.Game(config);
 
     // Set up achievement event listeners for real-time tracking during gameplay
-    AchievementManager.setupEventListeners();
+    if (!(window as any).__isOnlineGuest) {
+      AchievementManager.setupEventListeners();
+    }
+
+    // Online host: start the OnlineCoopManager once the scene is ready
+    let onlineStartTimer: ReturnType<typeof setTimeout> | null = null;
+    if (isOnlineMode && NetworkManager.isHost()) {
+      onlineStartTimer = setTimeout(() => {
+        const scene = gameRef.current?.scene.getScene("MainScene");
+        if (scene) {
+          OnlineCoopManager.startGame(
+            scene,
+            (window as any).__selectedClass || "PALADIN",
+            selectedClass2 || "MONK"
+          );
+        }
+      }, 500); // Short delay to ensure scene is initialized
+    }
 
     // Apply colorblind filter to the game canvas once it renders
     const applyColorblindFilter = () => {
@@ -908,6 +1004,31 @@ function App() {
       } catch {
         // Silently ignore errors in run history / codex recording
       }
+      // Add earned essence to Ascension Tree meta-essence pool
+      try {
+        const essenceForTree = Math.floor(stats.essenceEarned * AscensionTree.getBonusEssenceGain());
+        if (essenceForTree > 0) {
+          AscensionTree.addEssence(essenceForTree);
+        }
+      } catch { /* silently ignore */ }
+
+      // Award Class Mastery XP
+      try {
+        const runClass = (window as any).__selectedClass || "";
+        if (runClass) {
+          const masteryXP = ClassMastery.calculateRunXP({
+            altitude: stats.altitude,
+            kills: stats.kills,
+            bossesDefeated: stats.bossesDefeated,
+            perfectParries: PersistentStats.getRunStats().perfectParries,
+            maxCombo: maxComboRef.current,
+          });
+          if (masteryXP > 0) {
+            ClassMastery.addXP(runClass, masteryXP);
+          }
+        }
+      } catch { /* silently ignore */ }
+
       // Reset inventory ref for next run
       inventoryRef.current = [];
 
@@ -1103,6 +1224,7 @@ function App() {
 
     return () => {
       clearTimeout(filterTimer);
+      if (onlineStartTimer) clearTimeout(onlineStartTimer);
       // Clean up achievement event listeners
       AchievementManager.cleanupEventListeners();
       // Remove colorblind filter from canvas
@@ -1353,18 +1475,17 @@ function App() {
           onResumeRun={handleResumeRun}
           hasSavedRun={hasSavedRun}
           savedRunInfo={savedRunInfo ?? undefined}
-          onCollection={handleShowCollection}
-          onStatistics={handleShowStats}
           onSettings={handleShowSettings}
-          onCosmetics={handleShowCosmetics}
+          onExtras={handleShowExtras}
           onDailyChallenge={handleDailyChallenge}
-          onLeaderboard={handleShowLeaderboard}
-          onReplay={handleShowReplay}
           onCoopStart={handleCoopStart}
+          onOnlineCoopStart={handleOnlineCoopStart}
           onTrainingRoom={handleTrainingRoom}
           onBossRush={handleBossRush}
           onEndlessMode={handleEndlessMode}
           onWeeklyChallenge={handleWeeklyChallenge}
+          onAscensionTree={handleShowAscensionTree}
+          onClassMastery={handleShowClassMastery}
         />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "stats" && (
@@ -1393,6 +1514,24 @@ function App() {
       )}
       {gameState === "MAIN_MENU" && menuScreen === "item_codex" && (
         <ItemCodexUI onBack={handleBackToMenu} />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "extras" && (
+        <ExtrasScreen
+          onClose={handleBackToMenu}
+          onWatchReplay={handleWatchReplay}
+        />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "online_lobby" && (
+        <OnlineLobby
+          onBack={handleBackToMenu}
+          onStartGame={handleOnlineGameStart}
+        />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "ascension_tree" && (
+        <AscensionTreeUI onClose={handleBackToMenu} />
+      )}
+      {gameState === "MAIN_MENU" && menuScreen === "class_mastery" && (
+        <ClassMasteryUI onClose={handleBackToMenu} />
       )}
       {gameState === "MAIN_MENU" && menuScreen === "daily" && (
         <DailyChallengeScreen
@@ -1574,6 +1713,14 @@ function App() {
       )}
       {replayPlaying && (
         <PlaybackControls onStop={handleStopPlayback} />
+      )}
+      {isOnlineMode && gameState === "PLAYING" && (
+        <ConnectionStatus
+          latency={onlineLatency}
+          connectionState={onlineConnectionState}
+          role={NetworkManager.isHost() ? "host" : "guest"}
+          roomCode={onlineRoomCode}
+        />
       )}
       <AchievementPopup
         achievement={achievementPopup}

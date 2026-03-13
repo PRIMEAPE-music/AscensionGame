@@ -25,6 +25,9 @@ import {
 import { SPRITE_CONFIG } from "../config/AnimationConfig";
 import { PersistentStats } from "../systems/PersistentStats";
 import { AscensionManager } from "../systems/AscensionManager";
+import { AscensionTree } from "../systems/AscensionTree";
+import { ClassMastery } from "../systems/ClassMastery";
+import type { MasteryBonuses } from "../systems/ClassMastery";
 import { GameSettings } from "../systems/GameSettings";
 import { CosmeticManager } from "../systems/CosmeticManager";
 import { GamepadManager } from "../systems/GamepadManager";
@@ -404,7 +407,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // Copy classStats so ascension boosts don't mutate the shared config
     this.classStats = { ...CLASSES[classType] };
 
-    // Apply ascension boosts to class stats
+    // Apply ascension boosts to class stats (per-boss stat choices)
     const ascensionBoosts = AscensionManager.getBoosts();
     this.classStats.attackDamage *= (1 + ascensionBoosts.attackDamage);
     this.classStats.moveSpeed *= (1 + ascensionBoosts.moveSpeed);
@@ -412,9 +415,28 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // attackSpeed: lower = faster, so boost makes it smaller (faster)
     this.classStats.attackSpeed *= (1 - ascensionBoosts.attackSpeed);
     // maxHealth: each 0.02 increment adds +1 flat HP; bake into classStats.health
-    // so that applyItems() also respects this bonus when recalculating maxHealth
     const ascensionHealthBonus = Math.round(ascensionBoosts.maxHealth / 0.02);
     this.classStats.health += ascensionHealthBonus;
+
+    // Apply Ascension Tree permanent upgrades (between-run purchases)
+    this.classStats.attackDamage *= AscensionTree.getBonusAttackDamage();
+    this.classStats.moveSpeed *= AscensionTree.getBonusMoveSpeed();
+    this.classStats.jumpHeight *= AscensionTree.getBonusJumpHeight();
+    // attackSpeed: lower = faster, tree returns 1.15 for +15% faster, so multiply by inverse
+    const treeAtkSpd = AscensionTree.getBonusAttackSpeed();
+    if (treeAtkSpd > 1) this.classStats.attackSpeed *= (2 - treeAtkSpd);
+    this.classStats.health += AscensionTree.getBonusMaxHP();
+
+    // Apply Class Mastery bonuses
+    const mastery: MasteryBonuses = ClassMastery.getBonuses(classType);
+    this.classStats.attackDamage *= mastery.attackDamage;
+    this.classStats.moveSpeed *= mastery.moveSpeed;
+    this.classStats.jumpHeight *= mastery.jumpHeight;
+    if (mastery.attackSpeed > 1) {
+      this.classStats.attackSpeed *= (1 - (mastery.attackSpeed - 1));
+    }
+    this.classStats.health += mastery.maxHP + mastery.startingHP;
+    this.classStats.health = Math.round(this.classStats.health * mastery.maxHPMultiplier);
 
     this.maxHealth = this.classStats.health;
 

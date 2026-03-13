@@ -39,6 +39,8 @@ import { ReplayManager } from "../systems/ReplayManager";
 import { SoundCueManager } from "../systems/SoundCueManager";
 import { AchievementManager } from "../systems/AchievementManager";
 import { CoopManager } from "../systems/CoopManager";
+import { OnlineCoopManager } from "../systems/OnlineCoopManager";
+import { StateSerializer } from "../systems/StateSerializer";
 import { ComboManager } from "../systems/ComboManager";
 import { SynergyManager } from "../systems/SynergyManager";
 import { EndlessManager } from "../systems/EndlessManager";
@@ -1299,6 +1301,11 @@ export class MainScene extends Phaser.Scene {
 
     // Clear one-frame mouse click flags after all input consumers have read them
     MouseManager.lateUpdate();
+
+    // Online co-op: serialize and send state to guest at 20Hz
+    if (CoopManager.isOnline()) {
+      OnlineCoopManager.update(delta);
+    }
 
     // Update wall positions to follow camera
     this.updateWalls();

@@ -7,6 +7,7 @@ const BATTLE_BOND_DAMAGE_BONUS = 0.15;
 
 export const CoopManager = {
   _active: false,
+  _isOnline: false,
   _player2Class: '' as string,
   _players: null as Player[] | null,
 
@@ -15,14 +16,25 @@ export const CoopManager = {
     this._player2Class = player2Class;
   },
 
+  activateOnline(player2Class: string): void {
+    this._active = true;
+    this._isOnline = true;
+    this._player2Class = player2Class;
+  },
+
   deactivate(): void {
     this._active = false;
+    this._isOnline = false;
     this._player2Class = '';
     this._players = null;
   },
 
   isActive(): boolean {
     return this._active;
+  },
+
+  isOnline(): boolean {
+    return this._isOnline;
   },
 
   getPlayer2Class(): string {

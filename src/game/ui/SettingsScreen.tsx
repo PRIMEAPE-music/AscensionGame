@@ -811,6 +811,37 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack }) => {
         overflowY: "auto",
       }}
     >
+      {/* Fixed Back Button */}
+      <button
+        onClick={onBack}
+        onMouseEnter={() => setBackHover(true)}
+        onMouseLeave={() => setBackHover(false)}
+        style={{
+          position: "fixed",
+          top: "20px",
+          left: "20px",
+          padding: "10px 22px",
+          fontSize: "14px",
+          fontFamily: "monospace",
+          fontWeight: "bold",
+          letterSpacing: "2px",
+          textTransform: "uppercase",
+          background: backHover
+            ? "rgba(255, 255, 255, 0.12)"
+            : "rgba(10, 10, 18, 0.85)",
+          color: backHover ? "#fff" : "rgba(200, 200, 220, 0.7)",
+          border: `1px solid ${backHover ? "rgba(255, 255, 255, 0.25)" : "rgba(255, 255, 255, 0.12)"}`,
+          borderRadius: "6px",
+          cursor: "pointer",
+          transition: "all 0.2s ease",
+          outline: "none",
+          zIndex: 200,
+          backdropFilter: "blur(8px)",
+        }}
+      >
+        BACK
+      </button>
+
       {/* Header */}
       <div
         style={{

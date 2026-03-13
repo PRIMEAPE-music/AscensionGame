@@ -11,18 +11,17 @@ interface MainMenuProps {
   onResumeRun?: () => void;
   hasSavedRun?: boolean;
   savedRunInfo?: { classType: string; altitude: number; timestamp: number };
-  onCollection: () => void;
-  onStatistics: () => void;
   onSettings: () => void;
-  onCosmetics: () => void;
+  onExtras: () => void;
   onDailyChallenge: () => void;
-  onLeaderboard: () => void;
-  onReplay?: () => void;
   onCoopStart?: () => void;
+  onOnlineCoopStart?: () => void;
   onTrainingRoom?: () => void;
   onBossRush?: () => void;
   onEndlessMode?: () => void;
   onWeeklyChallenge?: () => void;
+  onAscensionTree?: () => void;
+  onClassMastery?: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -50,15 +49,29 @@ const menuButtonStyle: React.CSSProperties = {
   textAlign: "center" as const,
 };
 
-/** Style for locked mode buttons (grayed out, not clickable). */
-const lockedButtonStyle: React.CSSProperties = {
-  ...menuButtonStyle,
-  width: "auto",
+const modePanelButtonStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "14px 24px",
   fontSize: "18px",
-  padding: "14px 36px",
+  fontFamily: "monospace",
+  fontWeight: "bold",
+  letterSpacing: "2px",
+  textTransform: "uppercase",
+  border: "1px solid rgba(255, 255, 255, 0.1)",
+  borderRadius: "6px",
+  cursor: "pointer",
+  transition: "all 0.2s ease",
+  outline: "none",
+  background: "rgba(255, 255, 255, 0.04)",
+  color: "rgba(200, 200, 220, 0.8)",
+  textAlign: "center" as const,
+};
+
+const lockedModeStyle: React.CSSProperties = {
+  ...modePanelButtonStyle,
   cursor: "default",
-  background: "rgba(60, 60, 80, 0.15)",
-  borderColor: "rgba(100, 100, 120, 0.2)",
+  background: "rgba(60, 60, 80, 0.1)",
+  borderColor: "rgba(100, 100, 120, 0.15)",
   color: "rgba(120, 120, 140, 0.5)",
 };
 
@@ -67,23 +80,23 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onResumeRun,
   hasSavedRun,
   savedRunInfo,
-  onCollection,
-  onStatistics,
   onSettings,
-  onCosmetics,
+  onExtras,
   onDailyChallenge,
-  onLeaderboard,
-  onReplay,
   onCoopStart,
+  onOnlineCoopStart,
   onTrainingRoom,
   onBossRush,
   onEndlessMode,
   onWeeklyChallenge,
+  onAscensionTree,
+  onClassMastery,
 }) => {
   const [hoveredButton, setHoveredButton] = useState<string | null>(null);
   const [titleVisible, setTitleVisible] = useState(false);
   const [buttonsVisible, setButtonsVisible] = useState(false);
   const [statsVisible, setStatsVisible] = useState(false);
+  const [showModePanel, setShowModePanel] = useState(false);
 
   // Lifetime stats summary
   const [totalRuns, setTotalRuns] = useState(0);
@@ -105,7 +118,6 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       const stats = PersistentStats.getLifetimeStats();
       setTotalRuns(stats.totalRuns);
       setTotalPlayTime(stats.totalPlayTime);
-      // Get overall highest altitude across all classes
       let maxAlt = 0;
       for (const alt of Object.values(stats.highestAltitude)) {
         if (alt > maxAlt) maxAlt = alt;
@@ -115,7 +127,6 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       // Stats not loaded yet
     }
 
-    // Check unlock states
     setTrainingUnlocked(UnlockManager.isUnlocked("training_room"));
     setBossRushUnlocked(UnlockManager.isUnlocked("boss_rush"));
     setEndlessUnlocked(UnlockManager.isUnlocked("endless_mode"));
@@ -137,7 +148,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         const modName = dailyChallenge.modifiers.length > 0
           ? (RUN_MODIFIERS.find((m) => m.id === dailyChallenge.modifiers[0])?.name ?? dailyChallenge.modifiers[0])
           : "";
-        return `Today: ${className}${modName ? ` + ${modName}` : ""}`;
+        return `${className}${modName ? ` + ${modName}` : ""}`;
       })()
     : "";
 
@@ -162,76 +173,57 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     if (id === "start") {
       return {
         ...menuButtonStyle,
-        background: isHovered
+        background: isHovered || showModePanel
           ? "rgba(224, 208, 160, 0.2)"
           : "rgba(224, 208, 160, 0.08)",
-        borderColor: isHovered
+        borderColor: isHovered || showModePanel
           ? "rgba(224, 208, 160, 0.6)"
           : "rgba(224, 208, 160, 0.3)",
         transform: isHovered ? "scale(1.04)" : "scale(1)",
-        boxShadow: isHovered
+        boxShadow: isHovered || showModePanel
           ? "0 0 30px rgba(224, 208, 160, 0.2), inset 0 0 20px rgba(224, 208, 160, 0.05)"
           : "none",
-        color: isHovered ? "#ffd700" : "#e0d0a0",
+        color: isHovered || showModePanel ? "#ffd700" : "#e0d0a0",
       };
     }
-    if (id === "coop") {
+    if (id === "tree") {
       return {
         ...menuButtonStyle,
         background: isHovered
-          ? "rgba(100, 180, 255, 0.2)"
-          : "rgba(100, 180, 255, 0.08)",
+          ? "rgba(255, 180, 50, 0.2)"
+          : "rgba(255, 180, 50, 0.08)",
         borderColor: isHovered
-          ? "rgba(100, 180, 255, 0.5)"
-          : "rgba(100, 180, 255, 0.25)",
+          ? "rgba(255, 200, 80, 0.5)"
+          : "rgba(255, 180, 50, 0.25)",
         transform: isHovered ? "scale(1.04)" : "scale(1)",
         boxShadow: isHovered
-          ? "0 0 25px rgba(100, 180, 255, 0.2), inset 0 0 15px rgba(100, 180, 255, 0.05)"
-          : "0 0 8px rgba(100, 180, 255, 0.08)",
-        color: isHovered ? "#aaddff" : "#70b0e0",
+          ? "0 0 25px rgba(255, 200, 80, 0.2), inset 0 0 15px rgba(255, 200, 80, 0.05)"
+          : "0 0 8px rgba(255, 180, 50, 0.08)",
+        color: isHovered ? "#ffe080" : "#d4a840",
       };
     }
-    if (id === "daily") {
+    if (id === "mastery") {
       return {
         ...menuButtonStyle,
         background: isHovered
-          ? "rgba(240, 160, 48, 0.2)"
-          : "rgba(240, 160, 48, 0.08)",
+          ? "rgba(100, 220, 180, 0.2)"
+          : "rgba(100, 220, 180, 0.08)",
         borderColor: isHovered
-          ? "rgba(240, 160, 48, 0.5)"
-          : "rgba(240, 160, 48, 0.25)",
+          ? "rgba(100, 255, 200, 0.5)"
+          : "rgba(100, 220, 180, 0.25)",
         transform: isHovered ? "scale(1.04)" : "scale(1)",
         boxShadow: isHovered
-          ? "0 0 25px rgba(240, 160, 48, 0.2), inset 0 0 15px rgba(240, 160, 48, 0.05)"
-          : "0 0 8px rgba(240, 160, 48, 0.08)",
-        color: isHovered ? "#ffd080" : "#f0a030",
+          ? "0 0 25px rgba(100, 255, 200, 0.2), inset 0 0 15px rgba(100, 255, 200, 0.05)"
+          : "0 0 8px rgba(100, 220, 180, 0.08)",
+        color: isHovered ? "#80ffc0" : "#60c090",
       };
     }
-    // Unlocked special mode buttons
-    if (id === "training" || id === "bossrush" || id === "endless" || id === "weekly") {
-      return {
-        ...menuButtonStyle,
-        width: "auto",
-        fontSize: "18px",
-        padding: "14px 36px",
-        background: isHovered
-          ? "rgba(180, 120, 255, 0.2)"
-          : "rgba(180, 120, 255, 0.06)",
-        borderColor: isHovered
-          ? "rgba(180, 120, 255, 0.5)"
-          : "rgba(180, 120, 255, 0.2)",
-        color: isHovered ? "#d4a0ff" : "rgba(180, 150, 220, 0.8)",
-        transform: isHovered ? "scale(1.03)" : "scale(1)",
-        boxShadow: isHovered
-          ? "0 0 20px rgba(180, 120, 255, 0.15)"
-          : "none",
-      };
-    }
+    // Bottom buttons (Settings, Extras)
     return {
       ...menuButtonStyle,
-      width: "auto",
-      fontSize: "18px",
-      padding: "14px 36px",
+      width: "152px",
+      fontSize: "16px",
+      padding: "14px 20px",
       background: isHovered
         ? "rgba(255, 255, 255, 0.08)"
         : "rgba(255, 255, 255, 0.03)",
@@ -246,39 +238,65 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     };
   };
 
-  /** Render a locked mode button with a lock icon and hint text. */
-  const renderLockedButton = (label: string, hint: string) => (
+  const getModePanelButtonStyle = (id: string): React.CSSProperties => {
+    const isHovered = hoveredButton === id;
+    if (id === "mode_newrun") {
+      return {
+        ...modePanelButtonStyle,
+        background: isHovered ? "rgba(224, 208, 160, 0.15)" : "rgba(224, 208, 160, 0.05)",
+        borderColor: isHovered ? "rgba(224, 208, 160, 0.4)" : "rgba(224, 208, 160, 0.15)",
+        color: isHovered ? "#ffd700" : "#e0d0a0",
+        boxShadow: isHovered ? "0 0 15px rgba(224, 208, 160, 0.1)" : "none",
+      };
+    }
+    if (id === "mode_coop" || id === "mode_online") {
+      return {
+        ...modePanelButtonStyle,
+        background: isHovered ? "rgba(100, 180, 255, 0.15)" : "rgba(100, 180, 255, 0.05)",
+        borderColor: isHovered ? "rgba(100, 180, 255, 0.4)" : "rgba(100, 180, 255, 0.15)",
+        color: isHovered ? "#aaddff" : "#70b0e0",
+        boxShadow: isHovered ? "0 0 15px rgba(100, 180, 255, 0.1)" : "none",
+      };
+    }
+    if (id === "mode_challenge") {
+      return {
+        ...modePanelButtonStyle,
+        background: isHovered ? "rgba(240, 160, 48, 0.15)" : "rgba(240, 160, 48, 0.05)",
+        borderColor: isHovered ? "rgba(240, 160, 48, 0.4)" : "rgba(240, 160, 48, 0.15)",
+        color: isHovered ? "#ffd080" : "#f0a030",
+        boxShadow: isHovered ? "0 0 15px rgba(240, 160, 48, 0.1)" : "none",
+      };
+    }
+    // Unlockable mode buttons
+    return {
+      ...modePanelButtonStyle,
+      background: isHovered ? "rgba(180, 120, 255, 0.15)" : "rgba(180, 120, 255, 0.04)",
+      borderColor: isHovered ? "rgba(180, 120, 255, 0.4)" : "rgba(180, 120, 255, 0.15)",
+      color: isHovered ? "#d4a0ff" : "rgba(180, 150, 220, 0.8)",
+      boxShadow: isHovered ? "0 0 15px rgba(180, 120, 255, 0.1)" : "none",
+    };
+  };
+
+  const renderLockedMode = (hint: string) => (
     <div
       style={{
-        ...lockedButtonStyle,
+        ...lockedModeStyle,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: "4px",
-        position: "relative",
+        gap: "2px",
       }}
       title={hint}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <span style={{ fontSize: "14px", opacity: 0.5 }}>&#x1F512;</span>
+        <span style={{ fontSize: "12px", opacity: 0.5 }}>&#x1F512;</span>
         <span>???</span>
       </div>
-      <div
-        style={{
-          fontSize: "10px",
-          fontWeight: "normal",
-          letterSpacing: "1px",
-          opacity: 0.4,
-          textTransform: "none",
-        }}
-      >
+      <div style={{ fontSize: "10px", fontWeight: "normal", letterSpacing: "1px", opacity: 0.4, textTransform: "none" }}>
         {hint}
       </div>
     </div>
   );
-
-  // Determine which unlockable modes exist (any that have a handler OR are locked)
-  const hasAnyUnlockableMode = true; // Always show the row, locked buttons act as progression teasers
 
   return (
     <div
@@ -333,9 +351,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           50% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
           100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
         }
-        @keyframes raysSpin {
-          0% { transform: translate(-50%, -50%) rotate(0deg); }
-          100% { transform: translate(-50%, -50%) rotate(360deg); }
+        @keyframes modePanelSlide {
+          from { opacity: 0; transform: translateX(20px); }
+          to { opacity: 1; transform: translateX(0); }
         }
       `}</style>
 
@@ -350,7 +368,6 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           position: "relative",
         }}
       >
-        {/* Sun */}
         <div style={{ position: "relative", width: "100%", height: "360px", marginBottom: "10px" }}>
           {/* Sun outer glow */}
           <div
@@ -409,28 +426,27 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         </p>
       </div>
 
-      {/* Menu buttons */}
+      {/* Main content area: buttons + mode panel */}
       <div
         style={{
           display: "flex",
-          flexDirection: "column",
-          gap: "16px",
-          alignItems: "center",
+          gap: "40px",
+          alignItems: "flex-start",
           opacity: buttonsVisible ? 1 : 0,
           transform: buttonsVisible ? "translateY(0)" : "translateY(15px)",
           transition: "opacity 0.5s ease, transform 0.5s ease",
         }}
       >
-        {/* Row 1: New Run alone, or New Run + Resume Run side by side */}
-        <div style={{ display: "flex", gap: "16px", justifyContent: "center" }}>
-          <button
-            style={getButtonStyle("start")}
-            onMouseEnter={() => setHoveredButton("start")}
-            onMouseLeave={() => setHoveredButton(null)}
-            onClick={onStartRun}
-          >
-            {hasSavedRun ? "New Run" : "Start Run"}
-          </button>
+        {/* Left column: main menu buttons */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "14px",
+            alignItems: "center",
+          }}
+        >
+          {/* Resume Run (above Start Run, only if saved) */}
           {hasSavedRun && onResumeRun && (
             <button
               style={getButtonStyle("resume")}
@@ -454,161 +470,208 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               )}
             </button>
           )}
-        </div>
-        {/* Row 2: Local Co-Op + Challenge side by side */}
-        <div style={{ display: "flex", gap: "16px", justifyContent: "center" }}>
-          {onCoopStart && (
+
+          {/* Start Run (toggles mode panel) */}
+          <button
+            style={getButtonStyle("start")}
+            onMouseEnter={() => setHoveredButton("start")}
+            onMouseLeave={() => setHoveredButton(null)}
+            onClick={() => setShowModePanel(!showModePanel)}
+          >
+            Start Run
+          </button>
+
+          {/* Upgrades */}
+          {onAscensionTree && (
             <button
-              style={getButtonStyle("coop")}
-              onMouseEnter={() => setHoveredButton("coop")}
+              style={getButtonStyle("tree")}
+              onMouseEnter={() => setHoveredButton("tree")}
               onMouseLeave={() => setHoveredButton(null)}
-              onClick={onCoopStart}
+              onClick={onAscensionTree}
             >
-              LOCAL CO-OP
+              Upgrades
             </button>
           )}
-          <button
-            style={getButtonStyle("daily")}
-            onMouseEnter={() => setHoveredButton("daily")}
-            onMouseLeave={() => setHoveredButton(null)}
-            onClick={onDailyChallenge}
-          >
-            <div>Challenge</div>
-            {dailyPreview && (
-              <div
-                style={{
-                  fontSize: "11px",
-                  fontWeight: "normal",
-                  letterSpacing: "1px",
-                  marginTop: "4px",
-                  opacity: 0.7,
-                }}
-              >
-                {dailyPreview}
-              </div>
-            )}
-          </button>
+
+          {/* Mastery */}
+          {onClassMastery && (
+            <button
+              style={getButtonStyle("mastery")}
+              onMouseEnter={() => setHoveredButton("mastery")}
+              onMouseLeave={() => setHoveredButton(null)}
+              onClick={onClassMastery}
+            >
+              Mastery
+            </button>
+          )}
+
+          {/* Bottom row: Settings | Extras */}
+          <div style={{ display: "flex", gap: "14px", marginTop: "4px" }}>
+            <button
+              style={getButtonStyle("settings")}
+              onMouseEnter={() => setHoveredButton("settings")}
+              onMouseLeave={() => setHoveredButton(null)}
+              onClick={onSettings}
+            >
+              Settings
+            </button>
+            <button
+              style={getButtonStyle("extras")}
+              onMouseEnter={() => setHoveredButton("extras")}
+              onMouseLeave={() => setHoveredButton(null)}
+              onClick={onExtras}
+            >
+              Extras
+            </button>
+          </div>
         </div>
 
-        {/* Row 3: Unlockable game modes (shown as locked/unlocked) */}
-        {hasAnyUnlockableMode && (
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "12px",
-            width: "100%",
-            maxWidth: "660px",
-          }}>
+        {/* Right panel: game mode selection (appears when Start Run clicked) */}
+        {showModePanel && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+              width: "280px",
+              padding: "20px",
+              background: "rgba(255, 255, 255, 0.02)",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
+              borderRadius: "10px",
+              animation: "modePanelSlide 0.25s ease-out",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "12px",
+                fontWeight: "bold",
+                letterSpacing: "3px",
+                textTransform: "uppercase",
+                color: "rgba(224, 208, 160, 0.5)",
+                textAlign: "center",
+                marginBottom: "4px",
+              }}
+            >
+              Select Mode
+            </div>
+
+            {/* New Run (solo) */}
+            <button
+              style={getModePanelButtonStyle("mode_newrun")}
+              onMouseEnter={() => setHoveredButton("mode_newrun")}
+              onMouseLeave={() => setHoveredButton(null)}
+              onClick={onStartRun}
+            >
+              New Run
+            </button>
+
+            {/* Multiplayer */}
+            {(onCoopStart || onOnlineCoopStart) && (
+              <div style={{ display: "flex", gap: "8px", width: "100%" }}>
+                {onCoopStart && (
+                  <button
+                    style={{ ...getModePanelButtonStyle("mode_coop"), flex: 1 }}
+                    onMouseEnter={() => setHoveredButton("mode_coop")}
+                    onMouseLeave={() => setHoveredButton(null)}
+                    onClick={onCoopStart}
+                  >
+                    <div>Local</div>
+                    <div style={{ fontSize: "9px", fontWeight: "normal", letterSpacing: "1px", marginTop: "2px", opacity: 0.5 }}>
+                      Split Screen
+                    </div>
+                  </button>
+                )}
+                {onOnlineCoopStart && (
+                  <button
+                    style={{ ...getModePanelButtonStyle("mode_online"), flex: 1 }}
+                    onMouseEnter={() => setHoveredButton("mode_online")}
+                    onMouseLeave={() => setHoveredButton(null)}
+                    onClick={onOnlineCoopStart}
+                  >
+                    <div>Online</div>
+                    <div style={{ fontSize: "9px", fontWeight: "normal", letterSpacing: "1px", marginTop: "2px", opacity: 0.5 }}>
+                      P2P Co-Op
+                    </div>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Challenge */}
+            <button
+              style={getModePanelButtonStyle("mode_challenge")}
+              onMouseEnter={() => setHoveredButton("mode_challenge")}
+              onMouseLeave={() => setHoveredButton(null)}
+              onClick={onDailyChallenge}
+            >
+              <div>Challenge</div>
+              {dailyPreview && (
+                <div style={{ fontSize: "10px", fontWeight: "normal", letterSpacing: "1px", marginTop: "3px", opacity: 0.6 }}>
+                  {dailyPreview}
+                </div>
+              )}
+            </button>
+
+            {/* Divider */}
+            <div style={{ height: "1px", background: "rgba(255, 255, 255, 0.06)", margin: "4px 0" }} />
+
+            {/* Training Room */}
             {trainingUnlocked ? (
               <button
-                style={getButtonStyle("training")}
-                onMouseEnter={() => setHoveredButton("training")}
+                style={getModePanelButtonStyle("mode_training")}
+                onMouseEnter={() => setHoveredButton("mode_training")}
                 onMouseLeave={() => setHoveredButton(null)}
                 onClick={onTrainingRoom}
               >
                 Training Room
               </button>
             ) : (
-              renderLockedButton("Training Room", "Kill your first enemy")
+              renderLockedMode("Kill your first enemy")
             )}
+
+            {/* Boss Rush */}
             {bossRushUnlocked ? (
               <button
-                style={getButtonStyle("bossrush")}
-                onMouseEnter={() => setHoveredButton("bossrush")}
+                style={getModePanelButtonStyle("mode_bossrush")}
+                onMouseEnter={() => setHoveredButton("mode_bossrush")}
                 onMouseLeave={() => setHoveredButton(null)}
                 onClick={onBossRush}
               >
                 Boss Rush
               </button>
             ) : (
-              renderLockedButton("Boss Rush", "Defeat your first boss")
+              renderLockedMode("Defeat your first boss")
             )}
+
+            {/* Endless Mode */}
             {endlessUnlocked ? (
               <button
-                style={getButtonStyle("endless")}
-                onMouseEnter={() => setHoveredButton("endless")}
+                style={getModePanelButtonStyle("mode_endless")}
+                onMouseEnter={() => setHoveredButton("mode_endless")}
                 onMouseLeave={() => setHoveredButton(null)}
                 onClick={onEndlessMode}
               >
                 Endless Mode
               </button>
             ) : (
-              renderLockedButton("Endless Mode", "Complete an ascension")
+              renderLockedMode("Complete an ascension")
             )}
+
+            {/* Weekly Challenge */}
             {weeklyUnlocked ? (
               <button
-                style={getButtonStyle("weekly")}
-                onMouseEnter={() => setHoveredButton("weekly")}
+                style={getModePanelButtonStyle("mode_weekly")}
+                onMouseEnter={() => setHoveredButton("mode_weekly")}
                 onMouseLeave={() => setHoveredButton(null)}
                 onClick={onWeeklyChallenge}
               >
                 Weekly Challenge
               </button>
             ) : (
-              renderLockedButton("Weekly Challenge", "Defeat all 5 boss types")
+              renderLockedMode("Defeat all 5 boss types")
             )}
           </div>
         )}
-
-        {/* Row 4: Secondary buttons in a 2-column grid */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "12px",
-          width: "100%",
-          maxWidth: "660px",
-        }}>
-          <button
-            style={getButtonStyle("collection")}
-            onMouseEnter={() => setHoveredButton("collection")}
-            onMouseLeave={() => setHoveredButton(null)}
-            onClick={onCollection}
-          >
-            Collection
-          </button>
-          <button
-            style={getButtonStyle("leaderboard")}
-            onMouseEnter={() => setHoveredButton("leaderboard")}
-            onMouseLeave={() => setHoveredButton(null)}
-            onClick={onLeaderboard}
-          >
-            Leaderboards
-          </button>
-          <button
-            style={getButtonStyle("cosmetics")}
-            onMouseEnter={() => setHoveredButton("cosmetics")}
-            onMouseLeave={() => setHoveredButton(null)}
-            onClick={onCosmetics}
-          >
-            Cosmetics
-          </button>
-          <button
-            style={getButtonStyle("statistics")}
-            onMouseEnter={() => setHoveredButton("statistics")}
-            onMouseLeave={() => setHoveredButton(null)}
-            onClick={onStatistics}
-          >
-            Statistics
-          </button>
-          {onReplay && (
-            <button
-              style={getButtonStyle("replays")}
-              onMouseEnter={() => setHoveredButton("replays")}
-              onMouseLeave={() => setHoveredButton(null)}
-              onClick={onReplay}
-            >
-              Replays
-            </button>
-          )}
-          <button
-            style={getButtonStyle("settings")}
-            onMouseEnter={() => setHoveredButton("settings")}
-            onMouseLeave={() => setHoveredButton(null)}
-            onClick={onSettings}
-          >
-            Settings
-          </button>
-        </div>
       </div>
 
       {/* Lifetime stats summary at bottom */}
@@ -625,68 +688,26 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           }}
         >
           <div style={{ textAlign: "center" }}>
-            <div
-              style={{
-                fontSize: "11px",
-                color: "rgba(200, 200, 220, 0.4)",
-                textTransform: "uppercase",
-                letterSpacing: "2px",
-                marginBottom: "4px",
-              }}
-            >
+            <div style={{ fontSize: "11px", color: "rgba(200, 200, 220, 0.4)", textTransform: "uppercase", letterSpacing: "2px", marginBottom: "4px" }}>
               Total Runs
             </div>
-            <div
-              style={{
-                fontSize: "20px",
-                fontWeight: "bold",
-                color: "rgba(224, 208, 160, 0.6)",
-              }}
-            >
+            <div style={{ fontSize: "20px", fontWeight: "bold", color: "rgba(224, 208, 160, 0.6)" }}>
               {totalRuns}
             </div>
           </div>
           <div style={{ textAlign: "center" }}>
-            <div
-              style={{
-                fontSize: "11px",
-                color: "rgba(200, 200, 220, 0.4)",
-                textTransform: "uppercase",
-                letterSpacing: "2px",
-                marginBottom: "4px",
-              }}
-            >
+            <div style={{ fontSize: "11px", color: "rgba(200, 200, 220, 0.4)", textTransform: "uppercase", letterSpacing: "2px", marginBottom: "4px" }}>
               Highest Altitude
             </div>
-            <div
-              style={{
-                fontSize: "20px",
-                fontWeight: "bold",
-                color: "rgba(224, 208, 160, 0.6)",
-              }}
-            >
+            <div style={{ fontSize: "20px", fontWeight: "bold", color: "rgba(224, 208, 160, 0.6)" }}>
               {highestAlt}m
             </div>
           </div>
           <div style={{ textAlign: "center" }}>
-            <div
-              style={{
-                fontSize: "11px",
-                color: "rgba(200, 200, 220, 0.4)",
-                textTransform: "uppercase",
-                letterSpacing: "2px",
-                marginBottom: "4px",
-              }}
-            >
+            <div style={{ fontSize: "11px", color: "rgba(200, 200, 220, 0.4)", textTransform: "uppercase", letterSpacing: "2px", marginBottom: "4px" }}>
               Play Time
             </div>
-            <div
-              style={{
-                fontSize: "20px",
-                fontWeight: "bold",
-                color: "rgba(224, 208, 160, 0.6)",
-              }}
-            >
+            <div style={{ fontSize: "20px", fontWeight: "bold", color: "rgba(224, 208, 160, 0.6)" }}>
               {formatTime(totalPlayTime)}
             </div>
           </div>
